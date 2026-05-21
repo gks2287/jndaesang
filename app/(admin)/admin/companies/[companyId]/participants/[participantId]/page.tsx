@@ -1,0 +1,360 @@
+'use client';
+
+import { useParams } from 'next/navigation';
+import Link from 'next/link';
+import { useMemo } from 'react';
+import { useCompanyStore } from '@/store/companyStore';
+import { useParticipantStore, type LeadershipType, type DeliveryStatus } from '@/store/participantStore';
+import { useDiagnosisHistoryStore } from '@/store/diagnosisHistoryStore';
+
+const leadershipColor: Record<LeadershipType, string> = {
+  '독재형':    'bg-red-100 text-red-600',
+  '방관형':    'bg-orange-100 text-orange-600',
+  '성과압박형': 'bg-purple-100 text-purple-600',
+  '불통형':    'bg-pink-100 text-pink-600',
+  '불명확형':  'bg-indigo-100 text-indigo-600',
+  '감정기복형': 'bg-amber-100 text-amber-600',
+};
+
+const leadershipDesc: Record<LeadershipType, { summary: string; coaching: string }> = {
+  '독재형':    { summary: '일방적 지시와 통제 중심의 리더십', coaching: '구성원의 의견을 경청하고 자율성을 부여하는 참여형 의사결정 훈련이 필요합니다.' },
+  '방관형':    { summary: '적극적 개입 없이 방치하는 리더십', coaching: '명확한 방향 제시와 피드백 루틴 수립, 구성원 성장에 대한 책임감 강화가 필요합니다.' },
+  '성과압박형': { summary: '결과 중심의 과도한 압박 리더십', coaching: '과정 중심의 지원과 심리적 안전감 조성, 번아웃 예방을 위한 균형 잡힌 목표 설정이 필요합니다.' },
+  '불통형':    { summary: '소통 단절과 정보 독점 리더십', coaching: '열린 커뮤니케이션 채널 구축과 투명한 정보 공유, 적극적 경청 스킬 훈련이 필요합니다.' },
+  '불명확형':  { summary: '방향과 기준이 모호한 리더십', coaching: '명확한 목표 설정과 역할 정의, 일관된 기준 제시를 통한 예측 가능한 리더십이 필요합니다.' },
+  '감정기복형': { summary: '감정 조절 미숙으로 인한 불안정 리더십', coaching: '감정 인식과 자기조절 역량 강화, 스트레스 상황에서의 안정적인 리더십 발휘 훈련이 필요합니다.' },
+};
+
+const deliveryBadge: Record<DeliveryStatus, { bg: string; text: string; dot: string }> = {
+  '열람':     { bg: 'bg-blue-50',    text: 'text-blue-600',    dot: 'bg-blue-400' },
+  '발송완료': { bg: 'bg-yellow-50',  text: 'text-yellow-600',  dot: 'bg-yellow-400' },
+  '미발송':   { bg: 'bg-gray-100',   text: 'text-gray-400',    dot: 'bg-gray-300' },
+  '완료':     { bg: 'bg-emerald-50', text: 'text-emerald-600', dot: 'bg-emerald-400' },
+};
+
+// 목 뉴스레터 스텝 데이터
+const MOCK_STEPS = [
+  { step: 1, title: '자기인식: 나의 리더십 패턴', sentAt: '2026-04-21', openedAt: '2026-04-22', interactionRate: 90, completed: true },
+  { step: 2, title: '팀원의 시선: 360° 피드백 이해', sentAt: '2026-04-28', openedAt: '2026-04-29', interactionRate: 75, completed: true },
+  { step: 3, title: '소통의 재발견: 경청과 공감', sentAt: '2026-05-05', openedAt: '2026-05-07', interactionRate: 60, completed: true },
+  { step: 4, title: '갈등 관리와 심리적 안전감', sentAt: '2026-05-12', openedAt: null, interactionRate: 0, completed: false },
+  { step: 5, title: '성장 지원: 코칭형 리더십', sentAt: null, openedAt: null, interactionRate: 0, completed: false },
+  { step: 6, title: '변화 실천 계획 수립', sentAt: null, openedAt: null, interactionRate: 0, completed: false },
+];
+
+// 목 활동 로그
+const MOCK_LOGS = [
+  { date: '2026-05-07 14:32', action: '뉴스레터 열람', detail: 'Step 3 — 소통의 재발견', type: 'open' },
+  { date: '2026-05-07 14:45', action: '성찰 질문 제출', detail: '"나는 팀원의 말을 얼마나 끝까지 듣는가?"', type: 'interact' },
+  { date: '2026-05-07 14:50', action: '체크리스트 완료', detail: '경청 실천 3가지 항목 체크', type: 'interact' },
+  { date: '2026-04-29 09:15', action: '뉴스레터 열람', detail: 'Step 2 — 팀원의 시선', type: 'open' },
+  { date: '2026-04-29 09:28', action: '퀴즈 응답', detail: '4/5문항 정답', type: 'interact' },
+  { date: '2026-04-22 11:03', action: '뉴스레터 열람', detail: 'Step 1 — 자기인식', type: 'open' },
+  { date: '2026-04-22 11:20', action: '성찰 질문 제출', detail: '"내가 가장 자주 사용하는 리더십 패턴은?"', type: 'interact' },
+];
+
+const logIcon = {
+  open:     { bg: 'bg-blue-50',    icon: 'text-blue-500' },
+  interact: { bg: 'bg-purple-50',  icon: 'text-purple-500' },
+};
+
+export default function ParticipantDetailPage() {
+  const params = useParams();
+  const companyId = Number(params.companyId);
+  const participantId = Number(params.participantId);
+
+  const company = useCompanyStore(s => s.companies.find(c => c.id === companyId));
+  const participant = useParticipantStore(s => s.participants.find(p => p.id === participantId));
+  const rawHistory = useDiagnosisHistoryStore(s => s.history);
+  const diagnosisHistory = useMemo(
+    () => rawHistory.filter(h => h.participantId === participantId).sort((a, b) => b.id - a.id),
+    [rawHistory, participantId],
+  );
+
+  if (!company || !participant) {
+    return (
+      <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+        존재하지 않는 직책자입니다.
+      </div>
+    );
+  }
+
+  const badge = deliveryBadge[participant.deliveryStatus];
+  const leaderColor = leadershipColor[participant.leadershipType];
+  const leaderInfo = leadershipDesc[participant.leadershipType];
+  const progressPct = Math.round((participant.stepCurrent / participant.stepTotal) * 100);
+
+  // 실제 데이터에 맞게 스텝 완료 수 계산
+  const completedSteps = MOCK_STEPS.filter(s => s.completed).length;
+  const avgInteraction = MOCK_STEPS.filter(s => s.completed).reduce((acc, s) => acc + s.interactionRate, 0) / (completedSteps || 1);
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden bg-gray-50">
+      {/* 상단 토퍼 */}
+      <div className="bg-white border-b border-gray-200 px-8 py-3.5 flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center gap-2 text-[15px] text-gray-400 font-semibold">
+          <Link href="/admin/dashboard" className="hover:text-gray-600 transition-colors">리더십 코칭 관리</Link>
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          <Link href="/admin/dashboard" className="hover:text-gray-600 transition-colors">고객사 현황</Link>
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          <Link href={`/admin/companies/${companyId}/participants`} className="hover:text-gray-600 transition-colors">{company.name}</Link>
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          <span className="text-gray-800 font-bold">{participant.name}</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button className="text-sm font-medium text-gray-600 border border-gray-200 px-4 py-1.5 rounded-lg hover:border-gray-300 hover:bg-gray-50 transition-colors">
+            뉴스레터 발송
+          </button>
+          <button className="text-sm font-medium text-white bg-[#55A4DA] hover:bg-[#3A8BC4] px-4 py-1.5 rounded-lg transition-colors">
+            정보 수정
+          </button>
+        </div>
+      </div>
+
+      {/* 본문 스크롤 영역 */}
+      <div className="flex-1 overflow-y-auto px-8 py-6 space-y-5">
+
+        {/* ── 상단: 직책자 프로필 카드 ── */}
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+          <div className="flex items-start gap-5">
+            {/* 아바타 */}
+            <div className="w-16 h-16 rounded-2xl bg-[#55A4DA]/10 flex items-center justify-center flex-shrink-0">
+              <span className="text-[#55A4DA] text-2xl font-bold">{participant.name[0]}</span>
+            </div>
+
+            {/* 기본 정보 */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h1 className="text-xl font-bold text-gray-900">{participant.name}</h1>
+                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${leaderColor}`}>
+                  {participant.leadershipType}
+                </span>
+                <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full ${badge.bg} ${badge.text}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`} />
+                  {participant.deliveryStatus}
+                </span>
+              </div>
+              <p className="text-sm text-gray-500 mt-1">{participant.department} · {participant.position}</p>
+              <p className="text-sm text-gray-400 mt-0.5">{participant.email}</p>
+            </div>
+
+            {/* 우측 메타 */}
+            <div className="flex-shrink-0 text-right space-y-1">
+              <p className="text-xs text-gray-400">소속 고객사</p>
+              <p className="text-sm font-semibold text-gray-700">{company.name}</p>
+              <p className="text-xs text-gray-400 mt-2">마지막 열람</p>
+              <p className="text-sm font-semibold text-gray-700">
+                {participant.lastOpenedAt ?? '—'}
+              </p>
+            </div>
+          </div>
+
+          {/* 구분선 */}
+          <div className="border-t border-gray-100 my-5" />
+
+          {/* 통계 4개 */}
+          <div className="grid grid-cols-4 gap-4">
+            <StatCard
+              label="코칭 진행률"
+              value={`${progressPct}%`}
+              sub={`${participant.stepCurrent} / ${participant.stepTotal} 스텝`}
+              color="text-[#55A4DA]"
+            />
+            <StatCard
+              label="진단 회차"
+              value={`${participant.assessmentRound}회차`}
+              sub="최근 완료 기준"
+              color="text-gray-800"
+            />
+            <StatCard
+              label="평균 인터랙션"
+              value={`${Math.round(avgInteraction)}%`}
+              sub="완료 스텝 기준"
+              color="text-purple-600"
+            />
+            <StatCard
+              label="완료 스텝"
+              value={`${completedSteps}개`}
+              sub={`전체 ${participant.stepTotal}개`}
+              color="text-emerald-600"
+            />
+          </div>
+        </div>
+
+        {/* ── 중단: 리더십 진단 + 뉴스레터 스텝 ── */}
+        <div className="grid grid-cols-[1fr_1.6fr] gap-5">
+
+          {/* 리더십 진단 정보 */}
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
+            <h2 className="text-sm font-bold text-gray-800">리더십 진단 결과</h2>
+
+            <div className={`rounded-xl px-4 py-3 ${leaderColor.split(' ')[0]}`}>
+              <p className={`text-sm font-bold ${leaderColor.split(' ')[1]}`}>{participant.leadershipType}</p>
+              <p className="text-xs text-gray-600 mt-1 leading-relaxed">{leaderInfo.summary}</p>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold text-gray-500 mb-1.5">코칭 방향</p>
+              <p className="text-xs text-gray-600 leading-relaxed">{leaderInfo.coaching}</p>
+            </div>
+
+            <div className="border-t border-gray-100 pt-4 space-y-2">
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-400">진단 회차</span>
+                <span className="font-semibold text-gray-700">{participant.assessmentRound}회차</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-400">코칭 캠페인</span>
+                <span className="font-semibold text-gray-700">2026 상반기</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-400">코칭 시작일</span>
+                <span className="font-semibold text-gray-700">2026-04-21</span>
+              </div>
+            </div>
+
+            {/* 진단 변경 히스토리 */}
+            {diagnosisHistory.length > 0 && (
+              <div className="border-t border-gray-100 pt-4 mt-4">
+                <p className="text-xs font-semibold text-gray-400 mb-2">진단 변경 이력</p>
+                <div className="space-y-2">
+                  {diagnosisHistory.map(h => (
+                    <div key={h.id} className="flex items-center justify-between">
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${leadershipColor[h.leadershipType]}`}>
+                        {h.leadershipType}
+                      </span>
+                      <span className="text-xs text-gray-400">{h.changedAt}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 뉴스레터 스텝 진행 현황 */}
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-bold text-gray-800">뉴스레터 스텝 진행 현황</h2>
+              <div className="flex items-center gap-2">
+                <div className="w-24 bg-gray-100 rounded-full h-1.5">
+                  <div
+                    className="bg-[#55A4DA] h-1.5 rounded-full transition-all"
+                    style={{ width: `${progressPct}%` }}
+                  />
+                </div>
+                <span className="text-xs font-semibold text-[#55A4DA]">{progressPct}%</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {MOCK_STEPS.map((s) => {
+                const isDone = s.completed;
+                const isSent = !!s.sentAt && !isDone;
+                const isPending = !s.sentAt;
+
+                return (
+                  <div
+                    key={s.step}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
+                      isDone ? 'bg-emerald-50' : isSent ? 'bg-yellow-50' : 'bg-gray-50'
+                    }`}
+                  >
+                    {/* 스텝 번호 뱃지 */}
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold ${
+                      isDone ? 'bg-emerald-500 text-white' :
+                      isSent ? 'bg-yellow-400 text-white' :
+                      'bg-gray-200 text-gray-400'
+                    }`}>
+                      {isDone ? (
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : s.step}
+                    </div>
+
+                    {/* 제목 */}
+                    <p className={`text-xs font-medium flex-1 min-w-0 truncate ${
+                      isDone ? 'text-emerald-700' : isSent ? 'text-yellow-700' : 'text-gray-400'
+                    }`}>
+                      {s.title}
+                    </p>
+
+                    {/* 인터랙션 */}
+                    {isDone && (
+                      <span className="text-xs font-semibold text-emerald-600 flex-shrink-0">
+                        인터랙션 {s.interactionRate}%
+                      </span>
+                    )}
+                    {isSent && (
+                      <span className="text-xs font-semibold text-yellow-600 flex-shrink-0">발송완료</span>
+                    )}
+                    {isPending && (
+                      <span className="text-xs text-gray-300 flex-shrink-0">미발송</span>
+                    )}
+
+                    {/* 발송일 */}
+                    {s.sentAt && (
+                      <span className="text-xs text-gray-300 flex-shrink-0 w-20 text-right">{s.sentAt}</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* ── 하단: 활동 로그 ── */}
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold text-gray-800">활동 로그</h2>
+            <span className="text-xs text-gray-400">{MOCK_LOGS.length}건</span>
+          </div>
+
+          <div className="space-y-2">
+            {MOCK_LOGS.map((log, i) => {
+              const style = logIcon[log.type as keyof typeof logIcon];
+              return (
+                <div key={i} className="flex items-start gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 transition-colors">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${style.bg}`}>
+                    {log.type === 'open' ? (
+                      <svg className={`w-3.5 h-3.5 ${style.icon}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                    ) : (
+                      <svg className={`w-3.5 h-3.5 ${style.icon}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
+                      </svg>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-gray-700">{log.action}</p>
+                    <p className="text-xs text-gray-400 mt-0.5 truncate">{log.detail}</p>
+                  </div>
+                  <span className="text-xs text-gray-300 flex-shrink-0 whitespace-nowrap">{log.date}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value, sub, color }: { label: string; value: string; sub: string; color: string }) {
+  return (
+    <div className="bg-gray-50 rounded-xl px-4 py-3.5">
+      <p className="text-xs text-gray-400 mb-1">{label}</p>
+      <p className={`text-xl font-bold ${color}`}>{value}</p>
+      <p className="text-xs text-gray-400 mt-0.5">{sub}</p>
+    </div>
+  );
+}
