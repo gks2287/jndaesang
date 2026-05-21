@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useNewsletterStore } from '@/store/newsletterStore';
 import { useCompanyStore } from '@/store/companyStore';
 import { DEFAULT_STORYLINE, STEP_COLORS } from '@/lib/storyline';
+import { LEADERSHIP_COLOR } from '@/lib/constants/leadershipColors';
 
 type ContentFormat = '글' | '영상' | '인포그래픽' | '카드뉴스';
 type InteractionType = '퀴즈' | '시뮬레이션' | '성찰질문' | '체크리스트';
@@ -34,21 +35,13 @@ const DELIVERY_SCHEDULES: DeliverySchedule[] = ['주 1회', '격주', '월 1회'
 const SURVEY_TYPES: SurveyType[] = ['상시 조사', '정기 조사', '안보냄', '둘다 보냄'];
 
 const WIZARD_STEPS: Array<{ n: WizardStep; label: string }> = [
-  { n: 1, label: '주제 선정' },
-  { n: 2, label: '스토리라인' },
+  { n: 1, label: '스토리라인' },
+  { n: 2, label: '주제 선정' },
   { n: 3, label: '콘텐츠 구성' },
   { n: 4, label: '발송 주기' },
   { n: 5, label: '만족도 조사' },
 ];
 
-const leadershipColor: Record<string, string> = {
-  '독재형':    'bg-red-100 text-red-600',
-  '방관형':    'bg-orange-100 text-orange-600',
-  '성과압박형': 'bg-purple-100 text-purple-600',
-  '불통형':    'bg-pink-100 text-pink-600',
-  '불명확형':  'bg-indigo-100 text-indigo-600',
-  '감정기복형': 'bg-amber-100 text-amber-600',
-};
 
 function makeStep(n: number): Step {
   return {
@@ -99,7 +92,7 @@ function ConfigureContent() {
   // 위저드 상태
   const [wizardStep, setWizardStep] = useState<WizardStep>(1);
 
-  // 1단계: 주제 선정
+  // 2단계: 주제 선정
   const [suggestions, setSuggestions] = useState<TopicSuggestion[]>([]);
   const [selectedTopic, setSelectedTopic] = useState<TopicSuggestion | null>(null);
   const [isCustom, setIsCustom] = useState(false);
@@ -163,7 +156,7 @@ function ConfigureContent() {
   }
 
   function canGoNext(): boolean {
-    if (wizardStep === 1) {
+    if (wizardStep === 2) {
       if (isCustom) return customTopic.trim().length > 0;
       return selectedTopic !== null;
     }
@@ -235,7 +228,7 @@ function ConfigureContent() {
               <span className="text-gray-400">리더십 유형</span>
               <div className="flex gap-1">
                 {leadershipTypes.map(t => (
-                  <span key={t} className="font-semibold px-2 py-0.5 bg-red-50 text-red-600 rounded-full">
+                  <span key={t} className={`font-semibold px-2 py-0.5 rounded-full ${LEADERSHIP_COLOR[t] ?? 'bg-gray-100 text-gray-600'}`}>
                     {t}
                   </span>
                 ))}
@@ -288,8 +281,8 @@ function ConfigureContent() {
         </div>
       </div>
 
-      {/* ── 1단계: 주제 선정 ── */}
-      {wizardStep === 1 && (
+      {/* ── 2단계: 주제 선정 ── */}
+      {wizardStep === 2 && (
         <div className="flex-1 overflow-y-auto bg-[#F8FAFC]">
           <div className="max-w-xl mx-auto px-6 py-10 space-y-6">
 
@@ -316,7 +309,7 @@ function ConfigureContent() {
                       <span className="text-xs text-gray-500">리더십 유형</span>
                       <div className="flex flex-wrap gap-1">
                         {leadershipTypes.map(t => (
-                          <span key={t} className={`text-xs font-semibold px-2.5 py-1 rounded-full ${leadershipColor[t] ?? 'bg-gray-100 text-gray-600'}`}>
+                          <span key={t} className={`text-xs font-semibold px-2.5 py-1 rounded-full ${LEADERSHIP_COLOR[t] ?? 'bg-gray-100 text-gray-600'}`}>
                             {t}
                           </span>
                         ))}
@@ -477,7 +470,7 @@ function ConfigureContent() {
         </div>
       )}
 
-      {wizardStep === 2 && (
+      {wizardStep === 1 && (
         <div className="flex-1 overflow-y-auto bg-[#F8FAFC]">
           <div className="max-w-5xl mx-auto px-6 py-10">
 
@@ -497,7 +490,7 @@ function ConfigureContent() {
                     <div className={`flex-1 rounded-2xl border-2 ${color.border} ${color.cardBg} p-5 flex flex-col gap-3`}>
                       {/* 뱃지 + 제목 */}
                       <div className="flex items-center gap-2.5">
-                        <div className={`w-8 h-8 rounded-xl ${color.badge} flex items-center justify-center flex-shrink-0`}>
+                        <div className={`w-8 h-8 rounded-full ${color.badge} flex items-center justify-center flex-shrink-0`}>
                           <span className="text-white text-xs font-bold">{s.step}</span>
                         </div>
                         <div>
