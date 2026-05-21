@@ -40,6 +40,69 @@ const WIZARD_STEPS: Array<{ n: WizardStep; label: string }> = [
   { n: 5, label: '만족도 조사' },
 ];
 
+const STORYLINE_STEPS = [
+  {
+    key: '수용',
+    subtitle: '문제 인식과 변화 수용',
+    description: '리더가 자신의 현재 리더십 패턴이 팀에 미치는 영향을 인식하고, 변화의 필요성을 받아들이는 단계입니다. 불편하더라도 현실을 직시하는 용기가 변화의 시작입니다.',
+    question: '나는 어떤 리더인가? 나의 행동이 팀에 어떤 영향을 주고 있는가?',
+    badge: 'bg-emerald-500',
+    cardBg: 'bg-emerald-50',
+    border: 'border-emerald-200',
+    questionBg: 'bg-emerald-100/60',
+    questionText: 'text-emerald-700',
+    titleColor: 'text-emerald-700',
+  },
+  {
+    key: '분석',
+    subtitle: '원인 탐색과 패턴 이해',
+    description: '문제 행동의 근본 원인과 반복 패턴을 분석하여 변화의 출발점을 명확히 찾는 단계입니다. 증상이 아닌 원인에 집중해야 지속적인 변화가 가능합니다.',
+    question: '이 패턴은 언제부터, 왜 시작되었는가? 어떤 상황에서 반복되는가?',
+    badge: 'bg-blue-500',
+    cardBg: 'bg-blue-50',
+    border: 'border-blue-200',
+    questionBg: 'bg-blue-100/60',
+    questionText: 'text-blue-700',
+    titleColor: 'text-blue-700',
+  },
+  {
+    key: '실행',
+    subtitle: '구체적 행동 변화',
+    description: '분석한 내용을 바탕으로 실제 업무 현장에서 새로운 리더십 행동을 실천하는 단계입니다. 작은 행동 변화가 쌓여 팀과의 관계를 바꿉니다.',
+    question: '무엇을 언제, 어떻게 바꿀 것인가? 오늘 당장 할 수 있는 행동은?',
+    badge: 'bg-orange-500',
+    cardBg: 'bg-orange-50',
+    border: 'border-orange-200',
+    questionBg: 'bg-orange-100/60',
+    questionText: 'text-orange-700',
+    titleColor: 'text-orange-700',
+  },
+  {
+    key: '유지',
+    subtitle: '변화의 지속과 습관화',
+    description: '새로운 리더십 행동을 꾸준히 반복하여 자연스러운 습관으로 정착시키는 단계입니다. 일관성이 신뢰를 만들고, 신뢰가 팀의 심리적 안전감을 높입니다.',
+    question: '어떻게 일관성을 유지할 것인가? 어려울 때 나를 지지할 루틴은?',
+    badge: 'bg-purple-500',
+    cardBg: 'bg-purple-50',
+    border: 'border-purple-200',
+    questionBg: 'bg-purple-100/60',
+    questionText: 'text-purple-700',
+    titleColor: 'text-purple-700',
+  },
+  {
+    key: '확장',
+    subtitle: '팀과 조직으로의 확산',
+    description: '개인의 리더십 변화를 팀 문화로 녹여내고, 긍정적 영향을 조직 전체로 확산하는 단계입니다. 리더 한 명의 변화가 팀 전체의 성장을 이끌 수 있습니다.',
+    question: '나의 변화가 팀에 어떤 변화를 만들었는가? 함께 성장하려면?',
+    badge: 'bg-teal-500',
+    cardBg: 'bg-teal-50',
+    border: 'border-teal-200',
+    questionBg: 'bg-teal-100/60',
+    questionText: 'text-teal-700',
+    titleColor: 'text-teal-700',
+  },
+] as const;
+
 const leadershipColor: Record<string, string> = {
   '독재형':    'bg-red-100 text-red-600',
   '방관형':    'bg-orange-100 text-orange-600',
@@ -476,7 +539,86 @@ function ConfigureContent() {
         </div>
       )}
 
-      {wizardStep === 2 && <PlaceholderStep label="스토리라인 확인" />}
+      {wizardStep === 2 && (
+        <div className="flex-1 overflow-y-auto bg-[#F8FAFC]">
+          <div className="max-w-2xl mx-auto px-6 py-10">
+
+            {/* 헤더 */}
+            <div className="mb-8">
+              <h2 className="text-base font-bold text-gray-800 mb-1">뉴스레터 스토리라인</h2>
+              <p className="text-xs text-gray-400">5단계 코칭 여정으로 리더의 변화를 이끕니다. 각 단계를 확인한 뒤 다음으로 진행하세요.</p>
+            </div>
+
+            {/* 미니 흐름 인디케이터 */}
+            <div className="flex items-center mb-8 bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-4 overflow-x-auto">
+              {STORYLINE_STEPS.map((s, i) => (
+                <div key={s.key} className="flex items-center flex-shrink-0">
+                  <div className="flex flex-col items-center gap-1.5">
+                    <div className={`w-7 h-7 rounded-full ${s.badge} flex items-center justify-center text-white text-[10px] font-bold`}>
+                      {i + 1}
+                    </div>
+                    <span className={`text-[11px] font-bold ${s.titleColor}`}>{s.key}</span>
+                  </div>
+                  {i < STORYLINE_STEPS.length - 1 && (
+                    <svg className="w-5 h-5 text-gray-300 mx-2 flex-shrink-0 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* 단계별 카드 */}
+            <div className="space-y-3">
+              {STORYLINE_STEPS.map((s, i) => (
+                <div key={s.key} className="relative">
+                  <div className={`rounded-2xl border ${s.border} ${s.cardBg} p-5`}>
+                    {/* 카드 헤더 */}
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className={`w-8 h-8 rounded-xl ${s.badge} flex items-center justify-center flex-shrink-0`}>
+                        <span className="text-white text-xs font-bold">{i + 1}</span>
+                      </div>
+                      <div>
+                        <p className={`text-sm font-bold ${s.titleColor}`}>{s.key}</p>
+                        <p className="text-xs text-gray-500">{s.subtitle}</p>
+                      </div>
+                    </div>
+
+                    {/* 설명 */}
+                    <p className="text-xs text-gray-600 leading-relaxed mb-3">{s.description}</p>
+
+                    {/* 핵심 질문 */}
+                    <div className={`flex items-start gap-2 rounded-xl px-3.5 py-2.5 ${s.questionBg}`}>
+                      <svg className={`w-3.5 h-3.5 flex-shrink-0 mt-0.5 ${s.questionText}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <p className={`text-[11px] font-semibold leading-relaxed ${s.questionText}`}>{s.question}</p>
+                    </div>
+                  </div>
+
+                  {/* 카드 간 화살표 */}
+                  {i < STORYLINE_STEPS.length - 1 && (
+                    <div className="flex justify-center py-1">
+                      <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* 안내 문구 */}
+            <div className="mt-6 flex items-center gap-2 bg-[#55A4DA]/5 border border-[#55A4DA]/20 rounded-xl px-4 py-3">
+              <svg className="w-4 h-4 text-[#55A4DA] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-xs text-[#2E7DB5]">이 스토리라인은 모든 뉴스레터에 공통으로 적용됩니다. 다음 단계에서 각 회차별 콘텐츠를 구성할 수 있습니다.</p>
+            </div>
+
+          </div>
+        </div>
+      )}
       {wizardStep === 3 && <PlaceholderStep label="콘텐츠 구성" />}
 
       {wizardStep === 4 && (
