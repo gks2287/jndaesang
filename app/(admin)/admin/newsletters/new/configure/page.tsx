@@ -10,7 +10,8 @@ type ContentFormat = '글' | '영상' | '인포그래픽' | '카드뉴스';
 type InteractionType = '퀴즈' | '시뮬레이션' | '성찰질문' | '체크리스트';
 type StepLevel = '초급' | '중급' | '고급';
 type DeliverySchedule = '주 1회' | '격주' | '월 1회';
-type SurveyType = '상시 조사' | '정기 조사';
+type SurveyType = '상시 조사' | '정기 조사' | '안보냄' | '둘다 보냄';
+type WizardStep = 1 | 2 | 3 | 4 | 5;
 
 interface Step {
   id: string;
@@ -22,17 +23,16 @@ interface Step {
   specificContent: string;
 }
 
-const CONTENT_FORMATS: ContentFormat[] = ['글', '영상', '인포그래픽', '카드뉴스'];
-const INTERACTION_TYPES: InteractionType[] = ['퀴즈', '시뮬레이션', '성찰질문', '체크리스트'];
-const LEVELS: StepLevel[] = ['초급', '중급', '고급'];
 const DELIVERY_SCHEDULES: DeliverySchedule[] = ['주 1회', '격주', '월 1회'];
-const SURVEY_TYPES: SurveyType[] = ['상시 조사', '정기 조사'];
+const SURVEY_TYPES: SurveyType[] = ['상시 조사', '정기 조사', '안보냄', '둘다 보냄'];
 
-const levelStyle: Record<StepLevel, string> = {
-  '초급': 'bg-emerald-100 text-emerald-700',
-  '중급': 'bg-blue-100 text-blue-700',
-  '고급': 'bg-purple-100 text-purple-700',
-};
+const WIZARD_STEPS: Array<{ n: WizardStep; label: string }> = [
+  { n: 1, label: '주제 선정' },
+  { n: 2, label: '스토리라인' },
+  { n: 3, label: '콘텐츠 구성' },
+  { n: 4, label: '발송 주기' },
+  { n: 5, label: '만족도 조사' },
+];
 
 function makeStep(n: number): Step {
   return {
@@ -46,41 +46,19 @@ function makeStep(n: number): Step {
   };
 }
 
-function toggle<T>(arr: T[], val: T): T[] {
-  return arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val];
-}
-
-function CheckboxCard({
-  checked,
-  label,
-  onClick,
-}: {
-  checked: boolean;
-  label: string;
-  onClick: () => void;
-}) {
+function PlaceholderStep({ label }: { label: string }) {
   return (
-    <button
-      onClick={onClick}
-      className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border-2 text-sm font-medium transition-all ${
-        checked
-          ? 'border-[#55A4DA] bg-[#55A4DA]/5 text-[#55A4DA]'
-          : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
-      }`}
-    >
-      <span
-        className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-          checked ? 'bg-[#55A4DA] border-[#55A4DA]' : 'border-gray-300'
-        }`}
-      >
-        {checked && (
-          <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+    <div className="flex-1 flex items-center justify-center bg-[#F8FAFC]">
+      <div className="text-center">
+        <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
+          <svg className="w-7 h-7 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
           </svg>
-        )}
-      </span>
-      {label}
-    </button>
+        </div>
+        <p className="text-sm font-bold text-gray-500 mb-1.5">{label}</p>
+        <p className="text-xs text-gray-400">다음 작업에서 구현 예정입니다.</p>
+      </div>
+    </div>
   );
 }
 
@@ -102,32 +80,12 @@ function ConfigureContent() {
   const targetCompanies = companies.filter(c => companyIdList.includes(c.id));
   const leadershipTypes = typesParam ? typesParam.split(',').filter(Boolean) : [];
 
-  const [steps, setSteps] = useState<Step[]>([makeStep(0)]);
-  const [activeId, setActiveId] = useState<string>(steps[0].id);
+  const [wizardStep, setWizardStep] = useState<WizardStep>(1);
+  // steps 상태는 2~3단계 구현 시 setSteps, activeId 추가 예정
+  const [steps] = useState<Step[]>([makeStep(0)]);
   const [deliverySchedule, setDeliverySchedule] = useState<DeliverySchedule>('주 1회');
   const [surveyType, setSurveyType] = useState<SurveyType>('상시 조사');
   const [newsletterTitle, setNewsletterTitle] = useState('');
-  const [newsletterMemo, setNewsletterMemo] = useState('');
-
-  const activeStep = steps.find(s => s.id === activeId) ?? steps[0];
-
-  function updateStep(id: string, patch: Partial<Step>) {
-    setSteps(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
-  }
-
-  function addStep() {
-    const s = makeStep(steps.length);
-    setSteps(prev => [...prev, s]);
-    setActiveId(s.id);
-  }
-
-  function removeStep(id: string) {
-    if (steps.length === 1) return;
-    const idx = steps.findIndex(s => s.id === id);
-    const next = steps.filter(s => s.id !== id);
-    setSteps(next);
-    if (activeId === id) setActiveId(next[Math.max(0, idx - 1)].id);
-  }
 
   function handleSave(status: '제작 중' | '제작완료') {
     const company = targetCompanies[0];
@@ -135,11 +93,10 @@ function ConfigureContent() {
       leadershipTypes.length > 0
         ? leadershipTypes[0]
         : deptsParam
-        ? `부서별`
+        ? '부서별'
         : '미지정';
 
-    const autoTitle =
-      `${company?.name ?? '미지정'} ${leadershipType} 리더십 코칭`.trim();
+    const autoTitle = `${company?.name ?? '미지정'} ${leadershipType} 리더십 코칭`.trim();
 
     addNewsletter({
       title: newsletterTitle.trim() || autoTitle,
@@ -153,8 +110,17 @@ function ConfigureContent() {
     router.push(`/admin/newsletters?tab=${encodeURIComponent(status)}`);
   }
 
+  function goNext() {
+    if (wizardStep < 5) setWizardStep(prev => (prev + 1) as WizardStep);
+  }
+
+  function goPrev() {
+    if (wizardStep > 1) setWizardStep(prev => (prev - 1) as WizardStep);
+  }
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
+
       {/* ── 상단 토퍼 ── */}
       <div className="bg-white border-b border-gray-200 px-8 py-3.5 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2 text-[15px] text-gray-400 font-semibold">
@@ -185,12 +151,6 @@ function ConfigureContent() {
           >
             임시저장
           </button>
-          <button
-            onClick={() => handleSave('제작완료')}
-            className="text-sm font-semibold bg-[#55A4DA] hover:bg-[#3A8BC4] text-white px-5 py-1.5 rounded-lg transition-colors"
-          >
-            생성 완료
-          </button>
         </div>
       </div>
 
@@ -215,7 +175,9 @@ function ConfigureContent() {
               <span className="text-gray-400">리더십 유형</span>
               <div className="flex gap-1">
                 {leadershipTypes.map(t => (
-                  <span key={t} className="font-semibold px-2 py-0.5 bg-red-50 text-red-600 rounded-full">{t}</span>
+                  <span key={t} className="font-semibold px-2 py-0.5 bg-red-50 text-red-600 rounded-full">
+                    {t}
+                  </span>
                 ))}
               </div>
             </div>
@@ -227,270 +189,163 @@ function ConfigureContent() {
         </span>
       </div>
 
-      {/* ── 전역 설정 바 ── */}
-      <div className="bg-[#F8FAFC] border-b border-gray-200 px-8 py-2.5 flex items-center gap-6 flex-shrink-0">
-        <div className="flex items-center gap-2.5">
-          <span className="text-xs font-semibold text-gray-500">발송 주기</span>
-          <div className="flex gap-1">
-            {DELIVERY_SCHEDULES.map(s => (
-              <button
-                key={s}
-                onClick={() => setDeliverySchedule(s)}
-                className={`text-xs font-semibold px-3 py-1 rounded-full transition-colors ${
-                  deliverySchedule === s
-                    ? 'bg-[#55A4DA] text-white'
-                    : 'bg-white border border-gray-200 text-gray-500 hover:border-gray-300'
-                }`}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="w-px h-4 bg-gray-200" />
-        <div className="flex items-center gap-2.5">
-          <span className="text-xs font-semibold text-gray-500">만족도 조사</span>
-          <div className="flex gap-1">
-            {SURVEY_TYPES.map(t => (
-              <button
-                key={t}
-                onClick={() => setSurveyType(t)}
-                className={`text-xs font-semibold px-3 py-1 rounded-full transition-colors ${
-                  surveyType === t
-                    ? 'bg-[#55A4DA] text-white'
-                    : 'bg-white border border-gray-200 text-gray-500 hover:border-gray-300'
-                }`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
+      {/* ── 스테퍼 ── */}
+      <div className="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-center flex-shrink-0">
+        <div className="flex items-center">
+          {WIZARD_STEPS.map((s, i) => {
+            const isDone = s.n < wizardStep;
+            const isActive = s.n === wizardStep;
+            return (
+              <div key={s.n} className="flex items-center">
+                <div className="flex flex-col items-center gap-1.5">
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                    isDone
+                      ? 'bg-[#55A4DA] text-white'
+                      : isActive
+                      ? 'bg-[#55A4DA] text-white ring-4 ring-[#55A4DA]/20'
+                      : 'bg-gray-100 text-gray-400'
+                  }`}>
+                    {isDone ? (
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : s.n}
+                  </div>
+                  <span className={`text-[10px] font-semibold whitespace-nowrap ${
+                    isActive ? 'text-[#55A4DA]' : isDone ? 'text-[#55A4DA]/70' : 'text-gray-400'
+                  }`}>
+                    {s.label}
+                  </span>
+                </div>
+                {i < WIZARD_STEPS.length - 1 && (
+                  <div className={`w-16 h-px mx-3 mb-4 transition-colors ${
+                    isDone ? 'bg-[#55A4DA]' : 'bg-gray-200'
+                  }`} />
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      {/* ── 메인 2-column ── */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* ── 메인 콘텐츠 ── */}
+      {wizardStep === 1 && <PlaceholderStep label="주제 선정" />}
+      {wizardStep === 2 && <PlaceholderStep label="스토리라인 확인" />}
+      {wizardStep === 3 && <PlaceholderStep label="콘텐츠 구성" />}
 
-        {/* 왼쪽: 단계 목록 */}
-        <div className="w-60 flex-shrink-0 border-r border-gray-200 bg-white flex flex-col">
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <p className="text-xs font-bold text-gray-800">뉴스레터 단계</p>
-            <span className="text-xs font-semibold text-[#55A4DA]">{steps.length}단계</span>
-          </div>
-
-          <div className="flex-1 overflow-y-auto">
-            {steps.map((step, idx) => {
-              const isActive = step.id === activeId;
-              return (
-                <div
-                  key={step.id}
-                  onClick={() => setActiveId(step.id)}
-                  className={`group flex items-center gap-2.5 px-4 py-3 cursor-pointer border-b border-gray-100 transition-colors ${
-                    isActive ? 'bg-[#55A4DA]/5' : 'hover:bg-gray-50'
+      {wizardStep === 4 && (
+        <div className="flex-1 flex items-center justify-center bg-[#F8FAFC] overflow-y-auto py-12">
+          <div className="w-full max-w-md px-6">
+            <h2 className="text-base font-bold text-gray-800 mb-1.5">발송 주기 선택</h2>
+            <p className="text-xs text-gray-400 mb-8">뉴스레터를 얼마나 자주 발송할지 선택하세요.</p>
+            <div className="space-y-3">
+              {DELIVERY_SCHEDULES.map(s => (
+                <button
+                  key={s}
+                  onClick={() => setDeliverySchedule(s)}
+                  className={`w-full flex items-center gap-4 px-5 py-4 rounded-xl border-2 text-sm font-semibold transition-all ${
+                    deliverySchedule === s
+                      ? 'border-[#55A4DA] bg-[#55A4DA]/5 text-[#55A4DA]'
+                      : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
                   }`}
                 >
-                  <div className={`w-6 h-6 rounded-full text-[10px] font-bold flex items-center justify-center flex-shrink-0 ${
-                    isActive ? 'bg-[#55A4DA] text-white' : 'bg-gray-100 text-gray-500'
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                    deliverySchedule === s ? 'border-[#55A4DA] bg-[#55A4DA]' : 'border-gray-300'
                   }`}>
-                    {idx + 1}
+                    {deliverySchedule === s && <div className="w-2 h-2 rounded-full bg-white" />}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-xs font-semibold truncate ${isActive ? 'text-[#2E7DB5]' : 'text-gray-700'}`}>
-                      {step.title || `Step ${idx + 1}`}
-                    </p>
-                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${levelStyle[step.level]}`}>
-                      {step.level}
-                    </span>
-                  </div>
-                  {steps.length > 1 && (
-                    <button
-                      onClick={e => { e.stopPropagation(); removeStep(step.id); }}
-                      className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 transition-all flex-shrink-0 p-0.5 rounded"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-              );
-            })}
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
+        </div>
+      )}
 
-          <div className="p-3 border-t border-gray-100">
+      {wizardStep === 5 && (
+        <div className="flex-1 flex items-center justify-center bg-[#F8FAFC] overflow-y-auto py-12">
+          <div className="w-full max-w-md px-6 space-y-8">
+
+            {/* 뉴스레터 제목 */}
+            <div>
+              <h2 className="text-base font-bold text-gray-800 mb-1.5">뉴스레터 제목</h2>
+              <p className="text-xs text-gray-400 mb-4">저장 시 사용할 뉴스레터 제목을 입력하세요.</p>
+              <input
+                type="text"
+                value={newsletterTitle}
+                onChange={e => setNewsletterTitle(e.target.value)}
+                placeholder={`예: ${targetCompanies[0]?.name ?? '고객사'} ${leadershipTypes[0] ?? ''} 리더십 코칭`.trim()}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition bg-white"
+              />
+            </div>
+
+            {/* 만족도 조사 */}
+            <div>
+              <h2 className="text-base font-bold text-gray-800 mb-1.5">만족도 조사 설정</h2>
+              <p className="text-xs text-gray-400 mb-4">만족도 조사를 어떻게 발송할지 선택하세요.</p>
+              <div className="space-y-3">
+                {SURVEY_TYPES.map(t => (
+                  <button
+                    key={t}
+                    onClick={() => setSurveyType(t)}
+                    className={`w-full flex items-center gap-4 px-5 py-4 rounded-xl border-2 text-sm font-semibold transition-all ${
+                      surveyType === t
+                        ? 'border-[#55A4DA] bg-[#55A4DA]/5 text-[#55A4DA]'
+                        : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                      surveyType === t ? 'border-[#55A4DA] bg-[#55A4DA]' : 'border-gray-300'
+                    }`}>
+                      {surveyType === t && <div className="w-2 h-2 rounded-full bg-white" />}
+                    </div>
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 생성 완료 버튼 */}
             <button
-              onClick={addStep}
-              className="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-semibold text-[#55A4DA] rounded-lg transition-colors border border-dashed border-[#55A4DA]/40 hover:border-[#55A4DA] hover:bg-[#55A4DA]/5"
+              onClick={() => handleSave('제작완료')}
+              className="w-full py-3.5 bg-[#55A4DA] hover:bg-[#3A8BC4] text-white text-sm font-bold rounded-xl transition-colors shadow-sm"
             >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              단계 추가
+              생성 완료
             </button>
           </div>
         </div>
+      )}
 
-        {/* 오른쪽: 편집 영역 */}
-        <div className="flex-1 overflow-y-auto bg-[#F8FAFC] p-6">
-          <div className="max-w-2xl mx-auto space-y-4">
+      {/* ── 하단 네비게이션 ── */}
+      <div className="bg-white border-t border-gray-200 px-8 py-3.5 flex items-center justify-between flex-shrink-0">
+        <button
+          onClick={goPrev}
+          disabled={wizardStep === 1}
+          className={`flex items-center gap-1.5 text-sm font-medium px-4 py-1.5 rounded-lg border transition-colors ${
+            wizardStep === 1
+              ? 'border-gray-100 text-gray-300 cursor-not-allowed'
+              : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          이전
+        </button>
 
-            {/* ── 뉴스레터 기타 (전체 설정) ── */}
-            <section className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
-              <h3 className="text-sm font-bold text-gray-800">뉴스레터 기타</h3>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5">뉴스레터 제목</label>
-                <input
-                  type="text"
-                  value={newsletterTitle}
-                  onChange={e => setNewsletterTitle(e.target.value)}
-                  placeholder={
-                    `예: ${targetCompanies[0]?.name ?? '고객사'} ${leadershipTypes[0] ?? ''} 리더십 코칭`.trim()
-                  }
-                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5">관리자 메모</label>
-                <textarea
-                  value={newsletterMemo}
-                  onChange={e => setNewsletterMemo(e.target.value)}
-                  placeholder="이 뉴스레터에 대한 내부 메모를 입력하세요."
-                  rows={2}
-                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition resize-none"
-                />
-              </div>
-            </section>
-
-            {/* ── 구분선 ── */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-px bg-gray-200" />
-              <p className="text-xs text-gray-400 font-semibold flex items-center gap-1.5">
-                <span className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center ${
-                  steps.find(s => s.id === activeId)?.id === activeId
-                    ? 'bg-[#55A4DA] text-white'
-                    : 'bg-gray-200 text-gray-500'
-                }`}>
-                  {steps.findIndex(s => s.id === activeId) + 1}
-                </span>
-                단계 설정
-              </p>
-              <div className="flex-1 h-px bg-gray-200" />
-            </div>
-
-            {/* ── 단계 기본 정보 ── */}
-            <section className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
-              <h3 className="text-sm font-bold text-gray-800">단계 기본 정보</h3>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5">단계 제목</label>
-                <input
-                  type="text"
-                  value={activeStep.title}
-                  onChange={e => updateStep(activeStep.id, { title: e.target.value })}
-                  placeholder={`예: Step ${steps.findIndex(s => s.id === activeStep.id) + 1} — 자기인식과 리더십 패턴`}
-                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5">수준</label>
-                <div className="flex gap-2">
-                  {LEVELS.map(level => (
-                    <button
-                      key={level}
-                      onClick={() => updateStep(activeStep.id, { level })}
-                      className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                        activeStep.level === level
-                          ? levelStyle[level]
-                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                      }`}
-                    >
-                      {level}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </section>
-
-            {/* ── 콘텐츠 형식 ── */}
-            <section className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-3">
-              <h3 className="text-sm font-bold text-gray-800">콘텐츠 형식</h3>
-              <div className="grid grid-cols-2 gap-2.5">
-                {CONTENT_FORMATS.map(fmt => (
-                  <CheckboxCard
-                    key={fmt}
-                    label={fmt}
-                    checked={activeStep.formats.includes(fmt)}
-                    onClick={() => updateStep(activeStep.id, {
-                      formats: toggle(activeStep.formats, fmt),
-                    })}
-                  />
-                ))}
-              </div>
-            </section>
-
-            {/* ── Interaction 요소 ── */}
-            <section className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-3">
-              <h3 className="text-sm font-bold text-gray-800">Interaction 요소</h3>
-              <div className="grid grid-cols-2 gap-2.5">
-                {INTERACTION_TYPES.map(type => (
-                  <CheckboxCard
-                    key={type}
-                    label={type}
-                    checked={activeStep.interactions.includes(type)}
-                    onClick={() => updateStep(activeStep.id, {
-                      interactions: toggle(activeStep.interactions, type),
-                    })}
-                  />
-                ))}
-              </div>
-            </section>
-
-            {/* ── 콘텐츠 설정 ── */}
-            <section className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
-              <h3 className="text-sm font-bold text-gray-800">콘텐츠 설정</h3>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5">콘텐츠 풀 링크</label>
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    value={activeStep.contentPoolLink}
-                    onChange={e => updateStep(activeStep.id, { contentPoolLink: e.target.value })}
-                    placeholder="https://..."
-                    className="flex-1 px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition"
-                  />
-                  {activeStep.contentPoolLink && (
-                    <a
-                      href={activeStep.contentPoolLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-[#55A4DA] border border-[#55A4DA]/30 rounded-xl hover:bg-[#55A4DA]/5 transition-colors whitespace-nowrap"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                      </svg>
-                      열기
-                    </a>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5">특정 콘텐츠 선택</label>
-                <textarea
-                  value={activeStep.specificContent}
-                  onChange={e => updateStep(activeStep.id, { specificContent: e.target.value })}
-                  placeholder="이 단계에서 사용할 특정 콘텐츠를 선택하거나 메모를 입력하세요."
-                  rows={3}
-                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition resize-none"
-                />
-              </div>
-            </section>
-
-          </div>
-        </div>
+        {wizardStep < 5 && (
+          <button
+            onClick={goNext}
+            className="flex items-center gap-1.5 text-sm font-semibold px-5 py-1.5 rounded-lg bg-[#55A4DA] hover:bg-[#3A8BC4] text-white transition-colors"
+          >
+            다음
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        )}
       </div>
+
     </div>
   );
 }
