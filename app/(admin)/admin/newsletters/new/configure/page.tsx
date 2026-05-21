@@ -329,7 +329,7 @@ function ConfigureContent() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-gray-800">AI 주제 추천</h3>
-                  <p className="text-xs text-gray-400 mt-0.5">설정 기반으로 뉴스레터 주제 3개를 추천합니다.</p>
+                  <p className="text-xs text-gray-400 mt-0.5">설정 기반으로 뉴스레터 주제 2개를 추천합니다.</p>
                 </div>
                 <button
                   onClick={fetchTopics}
@@ -409,11 +409,9 @@ function ConfigureContent() {
                           </p>
                           <p className="text-xs text-gray-400 mt-1 leading-relaxed">{topic.description}</p>
                           {topic.reason && (
-                            <div className="mt-2.5 flex items-start gap-1.5 bg-[#55A4DA]/5 rounded-lg px-3 py-2">
-                              <svg className="w-3 h-3 text-[#55A4DA] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              <p className="text-[11px] text-[#2E7DB5] leading-relaxed">{topic.reason}</p>
+                            <div className="mt-3 border-t border-gray-100 pt-3">
+                              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">왜 이 주제인가요?</p>
+                              <p className="text-xs text-gray-600 leading-relaxed">{topic.reason}</p>
                             </div>
                           )}
                         </div>

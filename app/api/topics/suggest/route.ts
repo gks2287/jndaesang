@@ -135,14 +135,24 @@ export async function POST(req: NextRequest) {
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
-    const type = leadershipTypes?.[0];
-    const topics = (type && MOCK_TOPICS[type]) ? MOCK_TOPICS[type] : DEFAULT_TOPICS;
+    const types = leadershipTypes?.filter(Boolean) ?? [];
+    let topics: Topic[];
+    if (types.length === 0) {
+      topics = DEFAULT_TOPICS.slice(0, 2);
+    } else if (types.length === 1) {
+      topics = (MOCK_TOPICS[types[0]] ?? DEFAULT_TOPICS).slice(0, 2);
+    } else {
+      // 유형이 여러 개면 각 유형에서 1개씩 뽑아 최대 2개
+      topics = types
+        .slice(0, 2)
+        .map(t => (MOCK_TOPICS[t] ?? DEFAULT_TOPICS)[0]);
+    }
     return NextResponse.json({ topics, source: 'mock' });
   }
 
   const typeLabel = leadershipTypes?.join(', ') ?? '리더십';
   const prompt = `당신은 기업 리더십 교육 뉴스레터 기획자입니다.
-${companyName} 기업의 ${typeLabel} 유형(${kind}) 리더를 대상으로 하는 맞춤형 뉴스레터 주제 3가지를 제안해주세요.
+${companyName} 기업의 ${typeLabel} 유형(${kind}) 리더를 대상으로 하는 맞춤형 뉴스레터 주제 2가지를 제안해주세요.
 각 주제는 4-5분 분량의 뉴스레터로 다룰 수 있어야 하며, 실용적이고 행동 가능한 내용이어야 합니다.
 reason 필드에는 "${typeLabel} 유형"의 구체적인 특성과 문제 패턴을 언급하며, 왜 이 주제가 해당 유형의 리더에게 필요한지 2-3문장으로 설명해주세요.
 반드시 다음 JSON 형식으로만 응답해주세요:
