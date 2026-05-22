@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { DEFAULT_STORYLINE, type StorylineStep } from '@/lib/storyline';
+import { makeStepContents, type StepContent } from '@/lib/content';
 
 type NewsletterKind = '일반형' | '맞춤형';
 type TargetCategory = 'leadership' | 'department' | 'ability';
@@ -30,6 +31,7 @@ interface NewNewsletterDraft {
   selectedTopic: TopicSuggestion | null;
   isCustom: boolean;
   customTopic: string;
+  stepContents: StepContent[];
   deliverySchedule: DeliverySchedule;
   surveyType: SurveyType;
   newsletterTitle: string;
@@ -49,6 +51,7 @@ const DEFAULT_DRAFT: NewNewsletterDraft = {
   selectedTopic: null,
   isCustom: false,
   customTopic: '',
+  stepContents: makeStepContents(DEFAULT_STORYLINE.length),
   deliverySchedule: '주 1회',
   surveyType: '상시 조사',
   newsletterTitle: '',
