@@ -555,7 +555,7 @@ function ConfigureContent() {
       ════════════════════════════════ */}
       {wizardStep === 1 && (
         <div className="flex-1 overflow-y-auto bg-[#F8FAFC]">
-          <div className="max-w-5xl mx-auto px-6 py-10">
+          <div className="w-full px-8 py-10">
             <div className="mb-8">
               <h2 className="text-base font-bold text-gray-800 mb-1">뉴스레터 스토리라인</h2>
               <p className="text-xs text-gray-400">5단계 코칭 여정으로 리더의 변화를 이끕니다. 구조를 확인한 뒤 다음으로 진행하세요.</p>
@@ -630,7 +630,7 @@ function ConfigureContent() {
       ════════════════════════════════ */}
       {wizardStep === 2 && (
         <div className="flex-1 overflow-hidden bg-[#F8FAFC]">
-          <div className="max-w-5xl w-full mx-auto px-8 py-6 flex flex-col gap-4 h-full">
+          <div className="w-full px-8 py-6 flex flex-col gap-4 h-full">
 
             {/* 헤더 */}
             <div className="flex-shrink-0">
@@ -1167,7 +1167,7 @@ function ConfigureContent() {
       ════════════════════════════════ */}
       {wizardStep === 4 && (
         <div className="flex-1 overflow-y-auto bg-[#F8FAFC]">
-          <div className="max-w-4xl mx-auto px-8 py-6 space-y-5">
+          <div className="w-full px-8 py-6 space-y-5">
 
             {/* 헤더 */}
             <div>
@@ -1621,17 +1621,16 @@ function ConfigureContent() {
                       </div>
                     </div>
                     {selectedParticipants.length > 0 && (
-                      <div className="flex items-start gap-2 pt-1 border-t border-gray-200">
-                        <span className="text-[11px] text-gray-400 flex-shrink-0 mt-0.5">수신 리더</span>
-                        <div className="flex flex-wrap gap-1.5">
+                      <div className="flex items-center gap-2 pt-2 border-t border-gray-200">
+                        <span className="text-[11px] text-gray-400 flex-shrink-0">수신 리더</span>
+                        <div className="flex flex-wrap gap-2">
                           {selectedParticipants.slice(0, 5).map(p => (
-                            <span key={p.id} className="inline-flex items-center gap-1 text-xs bg-white border border-gray-200 rounded-full px-2.5 py-0.5 text-gray-700 font-medium">
-                              {p.name}
-                              <span className="text-[10px] text-gray-400">{p.position}</span>
+                            <span key={p.id} className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                              {p.name} {p.position}
                             </span>
                           ))}
                           {selectedParticipants.length > 5 && (
-                            <span className="inline-flex items-center text-xs bg-gray-100 text-gray-500 rounded-full px-2.5 py-0.5 font-medium">
+                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
                               +{selectedParticipants.length - 5}명
                             </span>
                           )}
