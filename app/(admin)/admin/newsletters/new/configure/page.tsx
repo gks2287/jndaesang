@@ -10,6 +10,7 @@ import { LEADERSHIP_COLOR } from '@/lib/constants/leadershipColors';
 import { type Round } from '@/lib/content';
 import { getContentList, type ContentPoolItem, type ContentCategory } from '@/lib/api/contentPool';
 import { useNewNewsletterDraftStore, type TopicSuggestion as DraftTopicSuggestion } from '@/store/newNewsletterDraftStore';
+import { useParticipantStore } from '@/store/participantStore';
 
 type DeliveryInterval = 'weekly' | 'biweekly' | 'monthly' | 'bimonthly' | 'quarterly' | 'semiannual';
 type WizardStep = 1 | 2 | 3 | 4;
@@ -114,6 +115,8 @@ function ConfigureContent() {
   const leadershipTypes = typesParam ? typesParam.split(',').filter(Boolean) : [];
 
   const configDraft = useNewNewsletterDraftStore();
+  const allParticipants = useParticipantStore(s => s.participants);
+  const selectedParticipants = allParticipants.filter(p => configDraft.selectedLeaders.includes(p.id));
 
   // ── 위저드 단계 ──
   const [wizardStep, setWizardStep] = useState<WizardStep>(
@@ -161,6 +164,11 @@ function ConfigureContent() {
   const [deliveryInterval, setDeliveryInterval] = useState<DeliveryInterval | null>(null);
   const [startDate, setStartDate] = useState<string>(getDefaultStartDate());
 
+  // ── 미리보기 모달 ──
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewTab, setPreviewTab] = useState(0);
+  const [previewOpenGroups, setPreviewOpenGroups] = useState<Set<number>>(new Set([0]));
+
   // ── draft store 동기화 ──
   useEffect(() => {
     configDraft.setDraft({
@@ -179,6 +187,14 @@ function ConfigureContent() {
     setOpenSections(prev => {
       const next = new Set(prev);
       next.has(n) ? next.delete(n) : next.add(n);
+      return next;
+    });
+  }
+
+  function togglePreviewGroup(stepIdx: number) {
+    setPreviewOpenGroups(prev => {
+      const next = new Set(prev);
+      next.has(stepIdx) ? next.delete(stepIdx) : next.add(stepIdx);
       return next;
     });
   }
@@ -392,6 +408,13 @@ function ConfigureContent() {
   }
 
   function handleComplete() {
+    if (!deliveryInterval || !startDate) return;
+    setPreviewTab(0);
+    setPreviewOpenGroups(new Set([0]));
+    setPreviewOpen(true);
+  }
+
+  function handleConfirmCreate() {
     if (!deliveryInterval || !startDate) return;
     const schedDates = calcScheduleDates(startDate, deliveryInterval, rounds.length);
     console.log('[뉴스레터 생성 완료]', {
@@ -1508,6 +1531,329 @@ function ConfigureContent() {
           </div>
         </div>
       )}
+
+      {/* ════════════════════════════════
+          미리보기 모달
+      ════════════════════════════════ */}
+      {previewOpen && (() => {
+        const schedDates = deliveryInterval && startDate
+          ? calcScheduleDates(startDate, deliveryInterval, rounds.length)
+          : [];
+        const stepGroups = customStoryline
+          .map((step, stepIdx) => ({
+            step,
+            stepIdx,
+            rounds: rounds
+              .map((r, globalIdx) => ({ ...r, globalIdx }))
+              .filter(r => r.stepIndex === stepIdx),
+          }))
+          .filter(g => g.rounds.length > 0);
+        const activeRound = rounds[previewTab];
+        const activeStep = activeRound ? customStoryline[activeRound.stepIndex] : null;
+        const activeColor = activeRound ? STEP_COLORS[activeRound.stepIndex % STEP_COLORS.length] : null;
+        const intervalLabel = DELIVERY_INTERVAL_OPTIONS.find(o => o.value === deliveryInterval)?.label ?? '—';
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-6">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+
+              {/* 헤더 */}
+              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+                <div>
+                  <h2 className="text-base font-bold text-gray-800">뉴스레터 미리보기</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">생성 전 전체 구성을 확인하세요.</p>
+                </div>
+                <button
+                  onClick={() => setPreviewOpen(false)}
+                  className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  닫기
+                </button>
+              </div>
+
+              {/* 스크롤 본문 */}
+              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+
+                {/* A: 상단 요약 */}
+                <div className="bg-gray-50 rounded-xl p-5">
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 text-center">
+                      <p className="text-[11px] text-gray-400 mb-1">대상 기업</p>
+                      <p className="text-sm font-bold text-gray-800 truncate">
+                        {targetCompanies.length > 0 ? targetCompanies.map(c => c.name).join(', ') : '—'}
+                      </p>
+                    </div>
+                    <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 text-center">
+                      <p className="text-[11px] text-gray-400 mb-1">총 회차</p>
+                      <p className="text-sm font-bold text-gray-800">{rounds.length}회차</p>
+                    </div>
+                    <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 text-center">
+                      <p className="text-[11px] text-gray-400 mb-1">발송 주기</p>
+                      <p className="text-sm font-bold text-gray-800">{intervalLabel}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center gap-5 flex-wrap">
+                      {leadershipTypes.length > 0 && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[11px] text-gray-400">리더십 유형</span>
+                          <div className="flex gap-1">
+                            {leadershipTypes.map(t => (
+                              <span key={t} className={`text-xs font-semibold px-2 py-0.5 rounded-full ${LEADERSHIP_COLOR[t] ?? 'bg-gray-100 text-gray-600'}`}>{t}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] text-gray-400">시작일</span>
+                        <span className="text-xs font-semibold text-gray-700">
+                          {startDate ? formatKoreanDate(new Date(startDate + 'T00:00:00')) : '—'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] text-gray-400">총 발송 기간</span>
+                        <span className="text-xs font-semibold text-gray-700">
+                          {deliveryInterval && startDate ? calcTotalDuration(startDate, deliveryInterval, rounds.length) : '—'}
+                        </span>
+                      </div>
+                    </div>
+                    {selectedParticipants.length > 0 && (
+                      <div className="flex items-start gap-2 pt-1 border-t border-gray-200">
+                        <span className="text-[11px] text-gray-400 flex-shrink-0 mt-0.5">수신 리더</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedParticipants.slice(0, 5).map(p => (
+                            <span key={p.id} className="inline-flex items-center gap-1 text-xs bg-white border border-gray-200 rounded-full px-2.5 py-0.5 text-gray-700 font-medium">
+                              {p.name}
+                              <span className="text-[10px] text-gray-400">{p.position}</span>
+                            </span>
+                          ))}
+                          {selectedParticipants.length > 5 && (
+                            <span className="inline-flex items-center text-xs bg-gray-100 text-gray-500 rounded-full px-2.5 py-0.5 font-medium">
+                              +{selectedParticipants.length - 5}명
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* B: 스토리라인 단계별 회차 묶음 */}
+                <div>
+                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">스토리라인 단계별 구성</h3>
+                  <div className="space-y-2.5">
+                    {stepGroups.map(({ step, stepIdx, rounds: groupRounds }) => {
+                      const color = STEP_COLORS[stepIdx % STEP_COLORS.length];
+                      const isOpen = previewOpenGroups.has(stepIdx);
+                      const rangeText = groupRounds.length === 1
+                        ? `${groupRounds[0].globalIdx + 1}회차`
+                        : `${groupRounds[0].globalIdx + 1}~${groupRounds[groupRounds.length - 1].globalIdx + 1}회차`;
+                      return (
+                        <div key={stepIdx} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                          <button
+                            onClick={() => togglePreviewGroup(stepIdx)}
+                            className="w-full px-5 py-3.5 flex items-center gap-3 hover:bg-gray-50 transition-colors"
+                          >
+                            <div className={`w-7 h-7 rounded-full ${color.badge} flex items-center justify-center flex-shrink-0`}>
+                              <span className="text-white text-xs font-bold">{step.step}</span>
+                            </div>
+                            <div className="flex-1 text-left">
+                              <p className={`text-sm font-bold ${color.titleColor}`}>{step.title}</p>
+                              <p className="text-[11px] text-gray-400">{step.subtitle}</p>
+                            </div>
+                            <span className="text-[11px] text-gray-400 flex-shrink-0">{rangeText} · {groupRounds.length}개</span>
+                            <svg className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                          <div className={`grid transition-all duration-200 ${isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+                            <div className="overflow-hidden">
+                              <div className="border-t border-gray-100 divide-y divide-gray-50">
+                                {groupRounds.map(r => {
+                                  const date = schedDates[r.globalIdx];
+                                  return (
+                                    <div key={r.id} className="px-5 py-3">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-xs font-bold text-gray-700">{r.globalIdx + 1}회차</span>
+                                        {r.topic.trim()
+                                          ? <span className="text-xs text-gray-600">{r.topic}</span>
+                                          : <span className="text-[11px] text-gray-300 italic">주제 미선정</span>
+                                        }
+                                      </div>
+                                      <div className="flex items-center gap-3 flex-wrap">
+                                        <span className="text-[11px] text-gray-400">콘텐츠 {r.contents.length}개</span>
+                                        {r.interactions.length > 0 && (
+                                          <span className="text-[11px] text-[#55A4DA]">
+                                            {r.interactions.map(v => v === 'quiz' ? '퀴즈' : '시뮬레이션').join(' · ')}
+                                          </span>
+                                        )}
+                                        {r.surveys.length > 0 && (
+                                          <span className="text-[11px] text-purple-500">
+                                            {r.surveys.map(v => v === 'always' ? '상시조사' : '정기조사').join(' · ')}
+                                          </span>
+                                        )}
+                                        {date && (
+                                          <span className="text-[11px] text-gray-400">📅 {formatKoreanDate(date)}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* C: 회차별 뉴스레터 첫 면 프리뷰 */}
+                <div>
+                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">회차별 뉴스레터 첫 면 프리뷰</h3>
+                  {/* 회차 탭 */}
+                  <div className="flex gap-1.5 overflow-x-auto pb-2 flex-nowrap mb-4">
+                    {rounds.map((_, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => setPreviewTab(idx)}
+                        className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                          previewTab === idx
+                            ? 'bg-[#55A4DA] text-white'
+                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                        }`}
+                      >
+                        {idx + 1}회차
+                      </button>
+                    ))}
+                  </div>
+                  {/* 프리뷰 카드 */}
+                  {activeRound && activeStep && activeColor && (
+                    <div className="bg-white rounded-2xl border border-gray-200 shadow-md overflow-hidden max-w-md mx-auto">
+                      {/* 이메일 헤더 */}
+                      <div className="bg-gray-800 px-6 py-4">
+                        <p className="text-white font-black text-base tracking-widest">J& COMPANY</p>
+                        <p className="text-gray-400 text-[11px] mt-0.5">리더십 다면진단 후속 코칭</p>
+                      </div>
+                      {/* 단계 + 회차 배지 */}
+                      <div className={`px-6 py-3 ${activeColor.cardBg} border-b ${activeColor.border} flex items-center justify-between`}>
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${activeColor.badge} text-white`}>
+                          {activeStep.title} 단계
+                        </span>
+                        <span className="text-xs font-bold text-gray-500">{previewTab + 1}회차</span>
+                      </div>
+                      {/* 본문 */}
+                      <div className="px-6 py-5 space-y-4">
+                        {/* 주제 */}
+                        <div>
+                          <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide flex items-center gap-1 mb-1.5">
+                            <span>📌</span> 이번 호 주제
+                          </p>
+                          <p className={`text-sm font-bold leading-snug ${activeRound.topic.trim() ? 'text-gray-800' : 'text-gray-300 italic'}`}>
+                            {activeRound.topic.trim() || '주제 미선정'}
+                          </p>
+                        </div>
+                        <div className="border-t border-gray-100" />
+                        {/* 콘텐츠 */}
+                        <div>
+                          <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide flex items-center gap-1 mb-1.5">
+                            <span>📄</span> 이번 호 콘텐츠
+                          </p>
+                          {activeRound.contents.length === 0 ? (
+                            <p className="text-xs text-gray-300 italic">선택된 콘텐츠 없음</p>
+                          ) : (
+                            <ul className="space-y-1.5">
+                              {activeRound.contents.map(c => (
+                                <li key={c.id} className="flex items-start gap-2">
+                                  <span className="text-gray-300 flex-shrink-0 mt-0.5 text-xs">·</span>
+                                  <span className="text-xs text-gray-700 flex-1">{c.title}</span>
+                                  <span className={`flex-shrink-0 text-[10px] px-1.5 py-0.5 rounded font-semibold ${c.type === '자사' ? 'bg-blue-50 text-blue-500' : 'bg-orange-50 text-orange-500'}`}>
+                                    {c.type}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                        <div className="border-t border-gray-100" />
+                        {/* 인터랙션 */}
+                        <div>
+                          <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide flex items-center gap-1 mb-1.5">
+                            <span>🎯</span> 인터랙션
+                          </p>
+                          {activeRound.interactions.length === 0 ? (
+                            <p className="text-xs text-gray-300">없음</p>
+                          ) : (
+                            <ul className="space-y-0.5">
+                              {activeRound.interactions.map(v => (
+                                <li key={v} className="text-xs text-gray-600">· {v === 'quiz' ? '퀴즈' : '시뮬레이션'}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                        <div className="border-t border-gray-100" />
+                        {/* 만족도 조사 */}
+                        <div>
+                          <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wide flex items-center gap-1 mb-1.5">
+                            <span>📊</span> 만족도 조사
+                          </p>
+                          {activeRound.surveys.length === 0 ? (
+                            <p className="text-xs text-gray-300">없음</p>
+                          ) : (
+                            <ul className="space-y-0.5">
+                              {activeRound.surveys.map(v => (
+                                <li key={v} className="text-xs text-gray-600">· {v === 'always' ? '상시 만족도 조사' : '정기 만족도 조사'}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                        <div className="border-t border-gray-100" />
+                        {/* 발송 예정일 */}
+                        <div className="flex items-center gap-3">
+                          <span className="text-base">📅</span>
+                          <div>
+                            <p className="text-[11px] text-gray-400">발송 예정일</p>
+                            <p className="text-sm font-bold text-gray-800">
+                              {schedDates[previewTab] ? formatKoreanDate(schedDates[previewTab]) : '—'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+
+              {/* 푸터 */}
+              <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between flex-shrink-0">
+                <button
+                  onClick={() => setPreviewOpen(false)}
+                  className="flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                  수정하러 돌아가기
+                </button>
+                <button
+                  onClick={handleConfirmCreate}
+                  className="flex items-center gap-2 px-6 py-2 bg-[#55A4DA] hover:bg-[#3A8BC4] text-white text-sm font-bold rounded-lg transition-colors shadow-sm"
+                >
+                  생성 확정
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── 하단 네비게이션 ── */}
       <div className="bg-white border-t border-gray-200 px-8 py-3.5 flex items-center justify-between flex-shrink-0">
