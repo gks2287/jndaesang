@@ -445,7 +445,7 @@ function DeleteConfirmModal({
           <div>
             <h3 className="text-sm font-bold text-gray-800">이 콘텐츠를 삭제하시겠습니까?</h3>
             <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
-              <span className="font-semibold text-gray-700">&ldquo;{item.title}&rdquo;</span>
+              <span className="font-semibold text-gray-700">"{item.title}"</span>
               <br />
               삭제 후 복구할 수 없습니다.
             </p>

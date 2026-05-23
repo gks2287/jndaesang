@@ -12,21 +12,17 @@ import { getContentList, type ContentPoolItem, type ContentCategory } from '@/li
 import { useNewNewsletterDraftStore, type TopicSuggestion as DraftTopicSuggestion } from '@/store/newNewsletterDraftStore';
 
 type DeliverySchedule = '주 1회' | '격주' | '월 1회';
-type SurveyType = '상시 조사' | '정기 조사' | '안보냄' | '둘다 보냄';
-type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
+type WizardStep = 1 | 2 | 3 | 4;
 type TopicSuggestion = DraftTopicSuggestion;
 
 const DELIVERY_SCHEDULES: DeliverySchedule[] = ['주 1회', '격주', '월 1회'];
-const SURVEY_TYPES: SurveyType[] = ['상시 조사', '정기 조사', '안보냄', '둘다 보냄'];
 const DIST_PRIORITY = [2, 3, 1, 0];
 
 const WIZARD_STEPS: Array<{ n: WizardStep; label: string }> = [
   { n: 1, label: '스토리라인' },
   { n: 2, label: '회차 설계' },
-  { n: 3, label: '주제 선정' },
-  { n: 4, label: '콘텐츠 구성' },
-  { n: 5, label: '발송 주기' },
-  { n: 6, label: '만족도 조사' },
+  { n: 3, label: '콘텐츠 구성' },
+  { n: 4, label: '발송 주기' },
 ];
 
 function calcDistribution(total: number, stepCount: number): { stepIndex: number; count: number }[] {
@@ -48,7 +44,14 @@ function makeRoundsFromDistribution(dist: { stepIndex: number; count: number }[]
   const sorted = [...dist].sort((a, b) => a.stepIndex - b.stepIndex);
   let id = 1;
   return sorted.flatMap(({ stepIndex, count }) =>
-    Array.from({ length: count }, () => ({ id: id++, stepIndex, topic: '', contents: [] }))
+    Array.from({ length: count }, () => ({
+      id: id++,
+      stepIndex,
+      topic: '',
+      contents: [],
+      interactions: [],
+      surveys: [],
+    }))
   );
 }
 
@@ -73,7 +76,9 @@ function ConfigureContent() {
   const configDraft = useNewNewsletterDraftStore();
 
   // ── 위저드 단계 ──
-  const [wizardStep, setWizardStep] = useState<WizardStep>(configDraft.wizardStep);
+  const [wizardStep, setWizardStep] = useState<WizardStep>(
+    Math.min(configDraft.wizardStep, 4) as WizardStep
+  );
 
   // ── 1단계: 스토리라인 편집 ──
   const [customStoryline, setCustomStoryline] = useState<StorylineStep[]>(configDraft.customStoryline);
@@ -93,36 +98,33 @@ function ConfigureContent() {
       : configDraft.customStoryline.map((_, i) => ({ stepIndex: i, count: 1 }))
   );
 
-  // ── 3단계: 주제 선정 (회차별) ──
+  // ── 3단계: 콘텐츠 구성 (회차별 통합) ──
   const [rounds, setRounds] = useState<Round[]>(configDraft.rounds);
-  const [topicRoundIdx, setTopicRoundIdx] = useState(0);
+  const [activeRoundIdx, setActiveRoundIdx] = useState(0);
+
+  // 주제 선정
   const [suggestions, setSuggestions] = useState<TopicSuggestion[]>(configDraft.suggestions);
   const [isLoadingTopics, setIsLoadingTopics] = useState(false);
   const [topicError, setTopicError] = useState<string | null>(null);
 
-  // ── 4단계: 콘텐츠 구성 (회차별) ──
-  const [contentRoundIdx, setContentRoundIdx] = useState(0);
+  // 콘텐츠 풀
   const [contentPoolOpen, setContentPoolOpen] = useState(false);
   const [contentPoolItems, setContentPoolItems] = useState<ContentPoolItem[]>([]);
   const [contentPoolLoading, setContentPoolLoading] = useState(false);
   const [contentPoolQuery, setContentPoolQuery] = useState('');
   const [contentPoolCategoryFilter, setContentPoolCategoryFilter] = useState<ContentCategory | ''>('');
 
-  // ── 5단계: 발송 주기 ──
+  // ── 4단계: 발송 주기 ──
   const [deliverySchedule, setDeliverySchedule] = useState<DeliverySchedule>(configDraft.deliverySchedule);
-
-  // ── 6단계: 만족도 조사 + 제목 ──
-  const [surveyType, setSurveyType] = useState<SurveyType>(configDraft.surveyType);
-  const [newsletterTitle, setNewsletterTitle] = useState(configDraft.newsletterTitle);
 
   // ── draft store 동기화 ──
   useEffect(() => {
     configDraft.setDraft({
       wizardStep, customStoryline, suggestions, rounds,
-      totalRounds, roundDistribution, deliverySchedule, surveyType, newsletterTitle,
+      totalRounds, roundDistribution, deliverySchedule,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wizardStep, customStoryline, suggestions, rounds, totalRounds, roundDistribution, deliverySchedule, surveyType, newsletterTitle]);
+  }, [wizardStep, customStoryline, suggestions, rounds, totalRounds, roundDistribution, deliverySchedule]);
 
   // ── 1단계: 스토리라인 편집 함수 ──
   function openEditModal() {
@@ -197,12 +199,12 @@ function ConfigureContent() {
   }
 
   // ── 3단계: 주제 선정 함수 ──
-  async function fetchTopicsForRound() {
+  async function fetchTopicsForRound(roundIdx: number) {
     setIsLoadingTopics(true);
     setTopicError(null);
     setSuggestions([]);
     try {
-      const currentRound = rounds[topicRoundIdx];
+      const currentRound = rounds[roundIdx];
       const res = await fetch('/api/topics/suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -211,7 +213,7 @@ function ConfigureContent() {
           companyName: targetCompanies[0]?.name ?? '',
           kind,
           stepTitle: currentRound ? customStoryline[currentRound.stepIndex]?.title : '',
-          roundIndex: topicRoundIdx + 1,
+          roundIndex: roundIdx + 1,
         }),
       });
       if (!res.ok) throw new Error('API 오류');
@@ -228,7 +230,33 @@ function ConfigureContent() {
     setRounds(prev => prev.map((r, i) => i === roundIdx ? { ...r, topic } : r));
   }
 
-  // ── 4단계: 콘텐츠 구성 함수 ──
+  function toggleInteraction(roundIdx: number, val: 'quiz' | 'simulation') {
+    setRounds(prev =>
+      prev.map((r, i) => {
+        if (i !== roundIdx) return r;
+        const has = r.interactions.includes(val);
+        return {
+          ...r,
+          interactions: has ? r.interactions.filter(v => v !== val) : [...r.interactions, val],
+        };
+      })
+    );
+  }
+
+  function toggleSurvey(roundIdx: number, val: 'always' | 'periodic') {
+    setRounds(prev =>
+      prev.map((r, i) => {
+        if (i !== roundIdx) return r;
+        const has = r.surveys.includes(val);
+        return {
+          ...r,
+          surveys: has ? r.surveys.filter(v => v !== val) : [...r.surveys, val],
+        };
+      })
+    );
+  }
+
+  // ── 3단계: 콘텐츠 풀 함수 ──
   const loadContentPool = useCallback(async (q: string, cat: ContentCategory | '') => {
     setContentPoolLoading(true);
     try {
@@ -250,7 +278,7 @@ function ConfigureContent() {
   function addContentToRound(item: ContentPoolItem) {
     setRounds(prev =>
       prev.map((r, i) =>
-        i !== contentRoundIdx ? r : {
+        i !== activeRoundIdx ? r : {
           ...r,
           contents: r.contents.some(c => c.id === item.id) ? r.contents : [...r.contents, item],
         }
@@ -274,10 +302,10 @@ function ConfigureContent() {
   }
 
   function goNext() {
-    if (wizardStep >= 6 || !canGoNext()) return;
+    if (wizardStep >= 4 || !canGoNext()) return;
     if (wizardStep === 2) {
       setRounds(makeRoundsFromDistribution(roundDistribution));
-      setTopicRoundIdx(0);
+      setActiveRoundIdx(0);
       setSuggestions([]);
     }
     setWizardStep(prev => (prev + 1) as WizardStep);
@@ -295,7 +323,7 @@ function ConfigureContent() {
       : deptsParam ? '부서별' : '미지정';
     const autoTitle = `${company?.name ?? '미지정'} ${leadershipType} 리더십 코칭`.trim();
     addNewsletter({
-      title: newsletterTitle.trim() || autoTitle,
+      title: autoTitle,
       companyId: company?.id ?? 0,
       companyName: company?.name ?? '미지정',
       leadershipType,
@@ -304,6 +332,12 @@ function ConfigureContent() {
     });
     configDraft.resetDraft();
     router.push(`/admin/newsletters?tab=${encodeURIComponent(status)}`);
+  }
+
+  function switchRound(idx: number) {
+    setActiveRoundIdx(idx);
+    setSuggestions([]);
+    setTopicError(null);
   }
 
   return (
@@ -406,7 +440,7 @@ function ConfigureContent() {
                   </span>
                 </div>
                 {i < WIZARD_STEPS.length - 1 && (
-                  <div className={`w-12 h-px mx-2 mb-4 transition-colors ${isDone ? 'bg-[#55A4DA]' : 'bg-gray-200'}`} />
+                  <div className={`w-16 h-px mx-3 mb-4 transition-colors ${isDone ? 'bg-[#55A4DA]' : 'bg-gray-200'}`} />
                 )}
               </div>
             );
@@ -425,7 +459,7 @@ function ConfigureContent() {
               <p className="text-xs text-gray-400">5단계 코칭 여정으로 리더의 변화를 이끕니다. 구조를 확인한 뒤 다음으로 진행하세요.</p>
             </div>
 
-            <div className="flex flex-col lg:flex-row items-stretch gap-0 lg:gap-0 mb-8">
+            <div className="flex flex-col lg:flex-row items-stretch gap-0 mb-8">
               {customStoryline.map((s, i) => {
                 const color = STEP_COLORS[i % STEP_COLORS.length];
                 return (
@@ -462,7 +496,7 @@ function ConfigureContent() {
                 <svg className="w-4 h-4 text-[#55A4DA] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <p className="text-xs text-[#2E7DB5]">이 스토리라인은 {targetCompanies[0]?.name ?? '해당 고객사'}의 모든 뉴스레터에 공통으로 적용됩니다. 다음 단계에서 각 회차별 콘텐츠를 구성합니다.</p>
+                <p className="text-xs text-[#2E7DB5]">이 스토리라인은 {targetCompanies[0]?.name ?? '해당 고객사'}의 모든 뉴스레터에 공통으로 적용됩니다.</p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <button
@@ -495,7 +529,6 @@ function ConfigureContent() {
       {wizardStep === 2 && (
         <div className="flex-1 overflow-y-auto bg-[#F8FAFC]">
           <div className="max-w-2xl mx-auto px-6 py-10 space-y-6">
-
             <div>
               <h2 className="text-base font-bold text-gray-800 mb-1">회차 설계</h2>
               <p className="text-xs text-gray-400">총 발송 회차를 설정하고, 각 단계별 회차 수를 배분하세요. 단계당 최소 1회차가 필요합니다.</p>
@@ -579,8 +612,7 @@ function ConfigureContent() {
                 })}
               </div>
 
-              {/* 합계 검증 */}
-              <div className={`mt-4 pt-4 border-t border-gray-100 flex items-center justify-between`}>
+              <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between">
                 <span className="text-xs text-gray-500">배분 합계</span>
                 <div className={`flex items-center gap-1.5 text-sm font-bold ${
                   distSum === totalRounds ? 'text-emerald-600' : 'text-red-500'
@@ -627,19 +659,18 @@ function ConfigureContent() {
                 </div>
               </div>
             )}
-
           </div>
         </div>
       )}
 
       {/* ════════════════════════════════
-          3단계: 주제 선정 (회차별)
+          3단계: 콘텐츠 구성 (회차별 통합)
       ════════════════════════════════ */}
       {wizardStep === 3 && (
         <div className="flex-1 overflow-hidden bg-[#F8FAFC] flex">
 
           {/* 왼쪽: 회차 목록 */}
-          <div className="w-56 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
+          <div className="w-60 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
             <div className="px-4 py-3.5 border-b border-gray-100">
               <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">회차 목록</p>
             </div>
@@ -647,44 +678,50 @@ function ConfigureContent() {
               {rounds.map((r, idx) => {
                 const s = customStoryline[r.stepIndex];
                 const color = STEP_COLORS[r.stepIndex % STEP_COLORS.length];
-                const isActive = idx === topicRoundIdx;
+                const isActive = idx === activeRoundIdx;
                 const isDone = r.topic.trim().length > 0;
                 return (
                   <button
                     key={idx}
-                    onClick={() => { setTopicRoundIdx(idx); setSuggestions([]); setTopicError(null); }}
+                    onClick={() => switchRound(idx)}
                     className={`w-full text-left px-4 py-3 transition-colors ${
                       isActive ? 'bg-[#55A4DA]/5 border-r-2 border-[#55A4DA]' : 'hover:bg-gray-50'
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center justify-between gap-2 mb-1">
                       <div className="flex items-center gap-2 min-w-0">
-                        <div className={`w-5 h-5 rounded-full ${color.badge} flex items-center justify-center flex-shrink-0`}>
-                          <span className="text-white text-[10px] font-bold">{s?.step}</span>
-                        </div>
+                        {/* 상태 아이콘 */}
+                        {isActive ? (
+                          <div className="w-4 h-4 rounded-full border-2 border-[#55A4DA] flex items-center justify-center flex-shrink-0">
+                            <div className="w-1.5 h-1.5 rounded-full bg-[#55A4DA]" />
+                          </div>
+                        ) : isDone ? (
+                          <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
+                            <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </div>
+                        ) : (
+                          <div className="w-4 h-4 rounded-full border-2 border-gray-300 flex-shrink-0" />
+                        )}
                         <span className={`text-xs font-semibold ${isActive ? 'text-[#55A4DA]' : 'text-gray-700'}`}>
                           {idx + 1}회차
                         </span>
                       </div>
-                      {isDone && (
-                        <svg className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
+                      <div className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold ${color.badge} text-white flex-shrink-0`}>
+                        {s?.title}
+                      </div>
                     </div>
-                    {isDone && (
-                      <p className="mt-1 text-[11px] text-gray-400 truncate pl-7">{r.topic}</p>
-                    )}
-                    {!isDone && (
-                      <p className="mt-1 text-[11px] text-gray-300 pl-7">주제 미입력</p>
-                    )}
+                    <p className={`text-[11px] truncate pl-6 ${isDone ? 'text-gray-500' : 'text-gray-300'}`}>
+                      {isDone ? r.topic : '주제 미선정'}
+                    </p>
                   </button>
                 );
               })}
             </div>
             <div className="px-4 py-3 border-t border-gray-100">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] text-gray-400">완료</span>
+                <span className="text-[11px] text-gray-400">주제 완료</span>
                 <span className={`text-[11px] font-bold ${
                   rounds.every(r => r.topic.trim().length > 0) ? 'text-emerald-600' : 'text-gray-500'
                 }`}>
@@ -694,311 +731,278 @@ function ConfigureContent() {
             </div>
           </div>
 
-          {/* 오른쪽: 주제 입력 패널 */}
+          {/* 오른쪽: 회차별 구성 패널 */}
           <div className="flex-1 overflow-y-auto p-6">
             {rounds.length === 0 ? (
               <div className="flex items-center justify-center h-full text-gray-400 text-sm">
                 2단계에서 회차를 먼저 설계해주세요.
               </div>
             ) : (() => {
-              const r = rounds[topicRoundIdx];
+              const r = rounds[activeRoundIdx];
               if (!r) return null;
               const s = customStoryline[r.stepIndex];
               const color = STEP_COLORS[r.stepIndex % STEP_COLORS.length];
               return (
-                <div className="max-w-xl space-y-5">
-                  {/* 현재 회차 정보 */}
-                  <div className="flex items-center gap-3">
+                <div className="max-w-xl space-y-4">
+
+                  {/* 회차 헤더 */}
+                  <div className="flex items-center gap-3 pb-2">
                     <div className={`w-8 h-8 rounded-full ${color.badge} flex items-center justify-center flex-shrink-0`}>
                       <span className="text-white text-xs font-bold">{s?.step}</span>
                     </div>
                     <div>
-                      <p className={`text-sm font-bold ${color.titleColor}`}>{topicRoundIdx + 1}회차 주제 선정</p>
+                      <p className={`text-sm font-bold ${color.titleColor}`}>{activeRoundIdx + 1}회차 구성</p>
                       <p className="text-[11px] text-gray-400">{s?.title} · {s?.subtitle}</p>
                     </div>
                   </div>
 
-                  {/* AI 추천 */}
-                  <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-bold text-gray-800">AI 주제 추천</p>
-                        <p className="text-[11px] text-gray-400 mt-0.5">이 회차와 단계에 맞는 주제를 추천합니다.</p>
-                      </div>
-                      <button
-                        onClick={fetchTopicsForRound}
-                        disabled={isLoadingTopics}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                          isLoadingTopics
-                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                            : 'bg-[#55A4DA] hover:bg-[#3A8BC4] text-white shadow-sm'
-                        }`}
-                      >
-                        {isLoadingTopics ? (
-                          <>
-                            <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                            </svg>
-                            생성 중...
-                          </>
-                        ) : (
-                          <>
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                            </svg>
-                            {suggestions.length > 0 ? '다시 추천' : 'AI 추천받기'}
-                          </>
-                        )}
-                      </button>
-                    </div>
-
-                    {isLoadingTopics && (
-                      <div className="flex items-center justify-center py-8 gap-2 text-gray-400">
-                        <svg className="w-4 h-4 animate-spin text-[#55A4DA]" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  {/* ① 주제 선정 */}
+                  <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                    <div className="px-5 py-3.5 border-b border-gray-100 flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-[#55A4DA] text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">①</span>
+                      <p className="text-sm font-bold text-gray-800">주제 선정</p>
+                      {r.topic.trim() && (
+                        <svg className="w-4 h-4 text-emerald-500 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                         </svg>
-                        <span className="text-sm">AI가 주제를 생성하고 있습니다...</span>
-                      </div>
-                    )}
-
-                    {topicError && !isLoadingTopics && (
-                      <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
-                        <svg className="w-4 h-4 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <p className="text-xs text-red-600 flex-1">{topicError}</p>
-                        <button onClick={fetchTopicsForRound} className="text-xs font-semibold text-red-500 hover:text-red-700">
-                          다시 시도
-                        </button>
-                      </div>
-                    )}
-
-                    {!isLoadingTopics && suggestions.length > 0 && (
-                      <div className="space-y-2">
-                        {suggestions.map((topic, idx) => {
-                          const isSelected = r.topic === topic.title;
-                          return (
-                            <button
-                              key={idx}
-                              onClick={() => setRoundTopic(topicRoundIdx, topic.title)}
-                              className={`w-full text-left flex items-start gap-3 px-4 py-3.5 rounded-xl border-2 transition-all ${
-                                isSelected
-                                  ? 'border-[#55A4DA] bg-[#55A4DA]/5'
-                                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                              }`}
-                            >
-                              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-colors ${
-                                isSelected ? 'border-[#55A4DA] bg-[#55A4DA]' : 'border-gray-300'
-                              }`}>
-                                {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className={`text-sm font-semibold leading-snug ${isSelected ? 'text-[#2E7DB5]' : 'text-gray-800'}`}>
-                                  {topic.title}
-                                </p>
-                                <p className="text-xs text-gray-400 mt-1 leading-relaxed">{topic.description}</p>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {!isLoadingTopics && suggestions.length === 0 && !topicError && (
-                      <div className="flex items-center justify-center py-6 text-center">
-                        <div>
-                          <div className="w-9 h-9 rounded-xl bg-[#55A4DA]/10 flex items-center justify-center mx-auto mb-2">
-                            <svg className="w-4 h-4 text-[#55A4DA]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                            </svg>
-                          </div>
-                          <p className="text-xs text-gray-400">버튼을 눌러 AI 주제 추천을 받아보세요.</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 직접 입력 */}
-                  <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-3">
-                    <p className="text-sm font-bold text-gray-800">직접 입력</p>
-                    <p className="text-xs text-gray-400">AI 추천 대신 직접 주제를 입력하거나 추천 주제를 수정하세요.</p>
-                    <input
-                      type="text"
-                      value={r.topic}
-                      onChange={e => setRoundTopic(topicRoundIdx, e.target.value)}
-                      placeholder="뉴스레터 주제를 직접 입력하세요"
-                      className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition"
-                    />
-                  </div>
-
-                  {/* 다음 회차 버튼 */}
-                  {topicRoundIdx < rounds.length - 1 && (
-                    <div className="flex justify-end">
-                      <button
-                        onClick={() => { setTopicRoundIdx(prev => prev + 1); setSuggestions([]); setTopicError(null); }}
-                        disabled={!r.topic.trim()}
-                        className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                          r.topic.trim()
-                            ? 'bg-[#55A4DA] hover:bg-[#3A8BC4] text-white'
-                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        }`}
-                      >
-                        다음 회차로
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-
-      {/* ════════════════════════════════
-          4단계: 콘텐츠 구성 (회차별)
-      ════════════════════════════════ */}
-      {wizardStep === 4 && (
-        <div className="flex-1 overflow-hidden bg-[#F8FAFC] flex">
-
-          {/* 왼쪽: 회차 목록 */}
-          <div className="w-56 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
-            <div className="px-4 py-3.5 border-b border-gray-100">
-              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">회차 목록</p>
-            </div>
-            <div className="flex-1 overflow-y-auto py-2">
-              {rounds.map((r, idx) => {
-                const s = customStoryline[r.stepIndex];
-                const color = STEP_COLORS[r.stepIndex % STEP_COLORS.length];
-                const isActive = idx === contentRoundIdx;
-                return (
-                  <button
-                    key={idx}
-                    onClick={() => setContentRoundIdx(idx)}
-                    className={`w-full text-left px-4 py-3 transition-colors ${
-                      isActive ? 'bg-[#55A4DA]/5 border-r-2 border-[#55A4DA]' : 'hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className={`w-5 h-5 rounded-full ${color.badge} flex items-center justify-center flex-shrink-0`}>
-                        <span className="text-white text-[10px] font-bold">{s?.step}</span>
-                      </div>
-                      <span className={`text-xs font-semibold ${isActive ? 'text-[#55A4DA]' : 'text-gray-700'}`}>
-                        {idx + 1}회차
-                      </span>
-                      {r.contents.length > 0 && (
-                        <span className="ml-auto text-[10px] font-bold bg-[#55A4DA]/10 text-[#55A4DA] px-1.5 py-0.5 rounded-full flex-shrink-0">
-                          {r.contents.length}
-                        </span>
                       )}
                     </div>
-                    <p className="mt-1 text-[11px] text-gray-400 truncate pl-7">{r.topic || '—'}</p>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 오른쪽: 콘텐츠 패널 */}
-          <div className="flex-1 overflow-y-auto p-6">
-            {rounds.length === 0 ? (
-              <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-                2단계에서 회차를 먼저 설계해주세요.
-              </div>
-            ) : (() => {
-              const r = rounds[contentRoundIdx];
-              if (!r) return null;
-              const s = customStoryline[r.stepIndex];
-              const color = STEP_COLORS[r.stepIndex % STEP_COLORS.length];
-              return (
-                <div className="max-w-xl space-y-5">
-                  {/* 현재 회차 정보 */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-full ${color.badge} flex items-center justify-center flex-shrink-0`}>
-                        <span className="text-white text-xs font-bold">{s?.step}</span>
-                      </div>
-                      <div>
-                        <p className={`text-sm font-bold ${color.titleColor}`}>{contentRoundIdx + 1}회차 콘텐츠</p>
-                        <p className="text-[11px] text-gray-400 truncate">{r.topic}</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={openContentPool}
-                      className="flex items-center gap-1.5 px-3 py-2 bg-[#55A4DA] hover:bg-[#3A8BC4] text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-                      </svg>
-                      콘텐츠 풀에서 선택
-                    </button>
-                  </div>
-
-                  {/* 추가된 콘텐츠 목록 */}
-                  {r.contents.length === 0 ? (
-                    <button
-                      onClick={openContentPool}
-                      className="w-full py-10 border-2 border-dashed border-gray-200 rounded-2xl text-xs text-gray-400 hover:border-[#55A4DA] hover:text-[#55A4DA] transition-colors flex flex-col items-center gap-2"
-                    >
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
-                      </svg>
-                      콘텐츠 풀에서 콘텐츠를 추가하세요
-                    </button>
-                  ) : (
-                    <div className="space-y-2">
-                      {r.contents.map(item => (
-                        <div key={item.id} className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl px-4 py-3 group">
-                          {item.thumbnail && (
-                            <img
-                              src={item.thumbnail}
-                              alt=""
-                              className="w-10 h-10 rounded-lg object-cover flex-shrink-0 bg-gray-100"
-                            />
+                    <div className="p-5 space-y-4">
+                      {/* AI 추천 버튼 */}
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-gray-500">이 회차 · 단계에 맞는 주제를 AI가 추천합니다.</p>
+                        <button
+                          onClick={() => fetchTopicsForRound(activeRoundIdx)}
+                          disabled={isLoadingTopics}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex-shrink-0 ml-3 ${
+                            isLoadingTopics
+                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                              : 'bg-[#55A4DA] hover:bg-[#3A8BC4] text-white shadow-sm'
+                          }`}
+                        >
+                          {isLoadingTopics ? (
+                            <>
+                              <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                              </svg>
+                              생성 중...
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                              </svg>
+                              {suggestions.length > 0 ? '다시 추천' : 'AI 추천받기'}
+                            </>
                           )}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 mb-0.5">
-                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                item.type === '자사'
-                                  ? 'bg-blue-50 text-blue-600'
-                                  : 'bg-orange-50 text-orange-600'
-                              }`}>
-                                {item.type}
-                              </span>
-                              <span className="text-[10px] text-gray-400">{item.category}</span>
-                            </div>
-                            <p className="text-xs font-semibold text-gray-800 truncate">{item.title}</p>
-                            <p className="text-[11px] text-gray-400">{item.author} · {item.duration}분</p>
-                          </div>
-                          <button
-                            onClick={() => removeContentFromRound(contentRoundIdx, item.id)}
-                            className="flex-shrink-0 text-gray-200 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
+                        </button>
+                      </div>
+
+                      {topicError && (
+                        <div className="flex items-center gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5">
+                          <svg className="w-3.5 h-3.5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <p className="text-xs text-red-600 flex-1">{topicError}</p>
+                          <button onClick={() => fetchTopicsForRound(activeRoundIdx)} className="text-xs font-semibold text-red-500 hover:text-red-700 whitespace-nowrap">
+                            재시도
                           </button>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      )}
 
-                  {/* 인터랙션 요소 (준비 중) */}
-                  <div className="bg-white rounded-2xl border border-gray-200 p-4">
-                    <div className="flex items-center justify-between">
+                      {/* 추천 카드 */}
+                      {suggestions.length > 0 && (
+                        <div className="space-y-2">
+                          {suggestions.map((topic, idx) => {
+                            const isSelected = r.topic === topic.title;
+                            return (
+                              <button
+                                key={idx}
+                                onClick={() => setRoundTopic(activeRoundIdx, topic.title)}
+                                className={`w-full text-left flex items-start gap-3 px-4 py-3 rounded-xl border-2 transition-all ${
+                                  isSelected
+                                    ? 'border-[#55A4DA] bg-[#55A4DA]/5'
+                                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                }`}
+                              >
+                                <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-colors ${
+                                  isSelected ? 'border-[#55A4DA] bg-[#55A4DA]' : 'border-gray-300'
+                                }`}>
+                                  {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className={`text-sm font-semibold leading-snug ${isSelected ? 'text-[#2E7DB5]' : 'text-gray-800'}`}>
+                                    {topic.title}
+                                  </p>
+                                  <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{topic.description}</p>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* 직접 입력 */}
                       <div>
-                        <p className="text-sm font-bold text-gray-700">인터랙션 요소</p>
-                        <p className="text-[11px] text-gray-400 mt-0.5">퀴즈, 성찰 질문, 체크리스트 등</p>
+                        <p className="text-[11px] text-gray-400 mb-1.5">직접 입력 또는 추천 주제 수정</p>
+                        <input
+                          type="text"
+                          value={r.topic}
+                          onChange={e => setRoundTopic(activeRoundIdx, e.target.value)}
+                          placeholder="뉴스레터 주제를 입력하세요"
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition"
+                        />
                       </div>
-                      <span className="text-[11px] font-semibold bg-gray-100 text-gray-400 px-2.5 py-1 rounded-full">
-                        준비 중
-                      </span>
                     </div>
                   </div>
+
+                  {/* ② 콘텐츠 선택 */}
+                  <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                    <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-full bg-[#55A4DA] text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">②</span>
+                        <p className="text-sm font-bold text-gray-800">콘텐츠 선택</p>
+                        <span className="text-[11px] text-gray-400">(선택사항)</span>
+                      </div>
+                      <button
+                        onClick={openContentPool}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-[#55A4DA] hover:bg-[#3A8BC4] text-white text-xs font-bold rounded-lg transition-colors"
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                        </svg>
+                        콘텐츠 풀
+                      </button>
+                    </div>
+                    <div className="p-4">
+                      {r.contents.length === 0 ? (
+                        <button
+                          onClick={openContentPool}
+                          className="w-full py-6 border-2 border-dashed border-gray-200 rounded-xl text-xs text-gray-400 hover:border-[#55A4DA] hover:text-[#55A4DA] transition-colors flex flex-col items-center gap-1.5"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
+                          </svg>
+                          콘텐츠 풀에서 선택하세요
+                        </button>
+                      ) : (
+                        <div className="space-y-2">
+                          {r.contents.map(item => (
+                            <div key={item.id} className="flex items-center gap-3 border border-gray-100 rounded-xl px-3 py-2.5 group bg-gray-50">
+                              {item.thumbnail && (
+                                <img src={item.thumbnail} alt="" className="w-8 h-8 rounded-lg object-cover flex-shrink-0 bg-gray-200" />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1 mb-0.5">
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                    item.type === '자사' ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600'
+                                  }`}>{item.type}</span>
+                                  <span className="text-[10px] text-gray-400">{item.category} · {item.duration}분</span>
+                                </div>
+                                <p className="text-xs font-semibold text-gray-700 truncate">{item.title}</p>
+                              </div>
+                              <button
+                                onClick={() => removeContentFromRound(activeRoundIdx, item.id)}
+                                className="flex-shrink-0 text-gray-300 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ③ 인터랙션 요소 */}
+                  <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                    <div className="px-5 py-3.5 border-b border-gray-100 flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-[#55A4DA] text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">③</span>
+                      <p className="text-sm font-bold text-gray-800">인터랙션 요소</p>
+                      <span className="text-[11px] text-gray-400">(선택사항)</span>
+                    </div>
+                    <div className="p-5 space-y-2">
+                      <p className="text-xs text-gray-400 mb-3">학습 참여도를 높이는 인터랙션 요소를 선택하세요.</p>
+                      {([
+                        { val: 'quiz' as const, label: '퀴즈', desc: '학습 내용 확인 퀴즈' },
+                        { val: 'simulation' as const, label: '시뮬레이션', desc: '상황별 의사결정 시뮬레이션' },
+                      ]).map(({ val, label, desc }) => {
+                        const checked = r.interactions.includes(val);
+                        return (
+                          <button
+                            key={val}
+                            onClick={() => toggleInteraction(activeRoundIdx, val)}
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-left ${
+                              checked
+                                ? 'border-[#55A4DA] bg-[#55A4DA]/5'
+                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                            }`}
+                          >
+                            <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                              checked ? 'border-[#55A4DA] bg-[#55A4DA]' : 'border-gray-300'
+                            }`}>
+                              {checked && (
+                                <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                            </div>
+                            <div>
+                              <p className={`text-sm font-semibold ${checked ? 'text-[#2E7DB5]' : 'text-gray-700'}`}>{label}</p>
+                              <p className="text-[11px] text-gray-400">{desc}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* ④ 만족도 조사 */}
+                  <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                    <div className="px-5 py-3.5 border-b border-gray-100 flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-[#55A4DA] text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">④</span>
+                      <p className="text-sm font-bold text-gray-800">만족도 조사</p>
+                      <span className="text-[11px] text-gray-400">(선택사항)</span>
+                    </div>
+                    <div className="p-5 space-y-2">
+                      <p className="text-xs text-gray-400 mb-3">이 회차에 포함할 만족도 조사를 선택하세요. 중복 선택 가능합니다.</p>
+                      {([
+                        { val: 'always' as const, label: '상시 만족도 조사', desc: '매 회차 발송 후 수집' },
+                        { val: 'periodic' as const, label: '정기 만족도 조사', desc: '주기적으로 심층 수집' },
+                      ]).map(({ val, label, desc }) => {
+                        const checked = r.surveys.includes(val);
+                        return (
+                          <button
+                            key={val}
+                            onClick={() => toggleSurvey(activeRoundIdx, val)}
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-left ${
+                              checked
+                                ? 'border-[#55A4DA] bg-[#55A4DA]/5'
+                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                            }`}
+                          >
+                            <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                              checked ? 'border-[#55A4DA] bg-[#55A4DA]' : 'border-gray-300'
+                            }`}>
+                              {checked && (
+                                <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                            </div>
+                            <div>
+                              <p className={`text-sm font-semibold ${checked ? 'text-[#2E7DB5]' : 'text-gray-700'}`}>{label}</p>
+                              <p className="text-[11px] text-gray-400">{desc}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                 </div>
               );
             })()}
@@ -1007,13 +1011,15 @@ function ConfigureContent() {
       )}
 
       {/* ════════════════════════════════
-          5단계: 발송 주기
+          4단계: 발송 주기
       ════════════════════════════════ */}
-      {wizardStep === 5 && (
+      {wizardStep === 4 && (
         <div className="flex-1 flex items-center justify-center bg-[#F8FAFC] overflow-y-auto py-12">
-          <div className="w-full max-w-md px-6">
-            <h2 className="text-base font-bold text-gray-800 mb-1.5">발송 주기 선택</h2>
-            <p className="text-xs text-gray-400 mb-8">뉴스레터를 얼마나 자주 발송할지 선택하세요.</p>
+          <div className="w-full max-w-md px-6 space-y-8">
+            <div>
+              <h2 className="text-base font-bold text-gray-800 mb-1.5">발송 주기 선택</h2>
+              <p className="text-xs text-gray-400">뉴스레터를 얼마나 자주 발송할지 선택하세요.</p>
+            </div>
             <div className="space-y-3">
               {DELIVERY_SCHEDULES.map(s => (
                 <button
@@ -1033,51 +1039,6 @@ function ConfigureContent() {
                   {s}
                 </button>
               ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ════════════════════════════════
-          6단계: 만족도 조사 + 제목
-      ════════════════════════════════ */}
-      {wizardStep === 6 && (
-        <div className="flex-1 flex items-center justify-center bg-[#F8FAFC] overflow-y-auto py-12">
-          <div className="w-full max-w-md px-6 space-y-8">
-            <div>
-              <h2 className="text-base font-bold text-gray-800 mb-1.5">뉴스레터 제목</h2>
-              <p className="text-xs text-gray-400 mb-4">저장 시 사용할 뉴스레터 제목을 입력하세요.</p>
-              <input
-                type="text"
-                value={newsletterTitle}
-                onChange={e => setNewsletterTitle(e.target.value)}
-                placeholder={`${targetCompanies[0]?.name ?? '고객사'} ${leadershipTypes[0] ?? ''} 리더십 코칭`.trim()}
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition bg-white"
-              />
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-gray-800 mb-1.5">만족도 조사 설정</h2>
-              <p className="text-xs text-gray-400 mb-4">만족도 조사를 어떻게 발송할지 선택하세요.</p>
-              <div className="space-y-3">
-                {SURVEY_TYPES.map(t => (
-                  <button
-                    key={t}
-                    onClick={() => setSurveyType(t)}
-                    className={`w-full flex items-center gap-4 px-5 py-4 rounded-xl border-2 text-sm font-semibold transition-all ${
-                      surveyType === t
-                        ? 'border-[#55A4DA] bg-[#55A4DA]/5 text-[#55A4DA]'
-                        : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                      surveyType === t ? 'border-[#55A4DA] bg-[#55A4DA]' : 'border-gray-300'
-                    }`}>
-                      {surveyType === t && <div className="w-2 h-2 rounded-full bg-white" />}
-                    </div>
-                    {t}
-                  </button>
-                ))}
-              </div>
             </div>
             <button
               onClick={() => handleSave('제작완료')}
@@ -1212,7 +1173,7 @@ function ConfigureContent() {
       )}
 
       {/* ════════════════════════════════
-          콘텐츠 풀 모달 (4단계)
+          콘텐츠 풀 모달
       ════════════════════════════════ */}
       {contentPoolOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
@@ -1221,7 +1182,7 @@ function ConfigureContent() {
               <div>
                 <h2 className="text-base font-bold text-gray-800">콘텐츠 풀</h2>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  {contentRoundIdx + 1}회차 · {rounds[contentRoundIdx]?.topic || '—'}
+                  {activeRoundIdx + 1}회차 · {rounds[activeRoundIdx]?.topic || '—'}
                 </p>
               </div>
               <button onClick={() => setContentPoolOpen(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
@@ -1282,7 +1243,7 @@ function ConfigureContent() {
                 </div>
               ) : (
                 contentPoolItems.map(item => {
-                  const currentRound = rounds[contentRoundIdx];
+                  const currentRound = rounds[activeRoundIdx];
                   const alreadyAdded = currentRound?.contents.some(c => c.id === item.id) ?? false;
                   return (
                     <button
@@ -1296,28 +1257,18 @@ function ConfigureContent() {
                       }`}
                     >
                       {item.thumbnail && (
-                        <img
-                          src={item.thumbnail}
-                          alt=""
-                          className="w-10 h-10 rounded-lg object-cover flex-shrink-0 bg-gray-100 mt-0.5"
-                        />
+                        <img src={item.thumbnail} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0 bg-gray-100 mt-0.5" />
                       )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 mb-0.5">
                           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                            item.type === '자사'
-                              ? 'bg-blue-50 text-blue-600'
-                              : 'bg-orange-50 text-orange-600'
-                          }`}>
-                            {item.type}
-                          </span>
+                            item.type === '자사' ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600'
+                          }`}>{item.type}</span>
                           <span className="text-[10px] text-gray-400">{item.category}</span>
                         </div>
                         <p className="text-xs font-semibold text-gray-800 truncate">{item.title}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-[10px] text-gray-400">{item.author}</span>
-                          <span className="text-[10px] text-gray-300">·</span>
-                          <span className="text-[10px] text-gray-400">{item.duration}분</span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[10px] text-gray-400">{item.author} · {item.duration}분</span>
                           {item.tags.slice(0, 2).map(tag => (
                             <span key={tag} className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{tag}</span>
                           ))}
@@ -1362,7 +1313,7 @@ function ConfigureContent() {
           이전
         </button>
 
-        {wizardStep < 6 && (
+        {wizardStep < 4 && (
           <button
             onClick={goNext}
             disabled={!canGoNext()}

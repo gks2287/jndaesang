@@ -4,9 +4,8 @@ import { makeStepContents, type StepContent, type Round } from '@/lib/content';
 
 type NewsletterKind = '일반형' | '맞춤형';
 type TargetCategory = 'leadership' | 'department' | 'ability';
-export type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
+export type WizardStep = 1 | 2 | 3 | 4;
 type DeliverySchedule = '주 1회' | '격주' | '월 1회';
-type SurveyType = '상시 조사' | '정기 조사' | '안보냄' | '둘다 보냄';
 
 export interface TopicSuggestion {
   title: string;
@@ -36,8 +35,6 @@ interface NewNewsletterDraft {
   roundDistribution: { stepIndex: number; count: number }[];
   rounds: Round[];
   deliverySchedule: DeliverySchedule;
-  surveyType: SurveyType;
-  newsletterTitle: string;
 }
 
 const DEFAULT_DRAFT: NewNewsletterDraft = {
@@ -59,8 +56,6 @@ const DEFAULT_DRAFT: NewNewsletterDraft = {
   roundDistribution: [],
   rounds: [],
   deliverySchedule: '주 1회',
-  surveyType: '상시 조사',
-  newsletterTitle: '',
 };
 
 interface NewNewsletterDraftStore extends NewNewsletterDraft {

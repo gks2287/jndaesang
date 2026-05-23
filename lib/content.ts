@@ -7,6 +7,8 @@ export interface Round {
   stepIndex: number;
   topic: string;
   contents: ContentPoolItem[];
+  interactions: ('quiz' | 'simulation')[];
+  surveys: ('always' | 'periodic')[];
 }
 
 export interface ContentItem {
