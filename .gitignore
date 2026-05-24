@@ -37,3 +37,6 @@ next-env.d.ts
 
 # npm cache
 /npm-cache
+
+# nested duplicate directory
+/Daesang
