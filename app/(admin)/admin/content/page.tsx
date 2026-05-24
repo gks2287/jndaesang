@@ -86,6 +86,16 @@ function ContentFormModal({
   const [saving, setSaving] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [sourceUrl, setSourceUrl] = useState('');
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    requestAnimationFrame(() => setVisible(true));
+  }, []);
+
+  function handleClose() {
+    setVisible(false);
+    setTimeout(onClose, 280);
+  }
 
   // TODO: API 키 발급 후 여기에 Claude API 파싱 로직 연결
   // 파일 → base64 변환 후 Claude API에 전달
@@ -154,8 +164,16 @@ function ContentFormModal({
   const requiredMark = <span className="text-red-400">*</span>;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex justify-end">
+      {/* 배경 오버레이 */}
+      <div className="absolute inset-0 bg-black/40" onClick={handleClose} />
+
+      {/* 슬라이드 패널 */}
+      <div
+        className={`relative w-full max-w-xl bg-white h-full shadow-2xl flex flex-col transition-transform duration-300 ease-out ${
+          visible ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
 
         {/* 헤더 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
@@ -165,7 +183,7 @@ function ContentFormModal({
             </h2>
             <p className="text-xs text-gray-400 mt-0.5">* 표시 항목은 필수 입력입니다.</p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+          <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 transition-colors">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -173,7 +191,7 @@ function ContentFormModal({
         </div>
 
         {/* 바디 (스크롤) */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+        <div className="flex-1 overflow-y-auto p-6 pb-8 space-y-5">
 
           {/* J& 오리지널: 파일 업로드 영역 */}
           {form.type === 'original' && (
@@ -388,7 +406,7 @@ function ContentFormModal({
           </p>
           <div className="flex gap-2">
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="px-4 py-2 text-sm font-medium text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
             >
               취소
@@ -484,7 +502,10 @@ function ContentCard({
   const extraTags = item.tags.length - 3;
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md hover:border-[#55A4DA]/40 transition-all overflow-hidden group">
+    <div
+      className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-lg hover:border-[#55A4DA]/40 transition-all overflow-hidden group cursor-pointer"
+      onClick={() => onEdit(item)}
+    >
       {/* 썸네일 */}
       <div className="relative aspect-video bg-gray-100 overflow-hidden">
         <img
@@ -510,7 +531,7 @@ function ContentCard({
         {/* hover 액션 버튼 */}
         <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity flex items-start justify-end p-2 gap-1.5">
           <button
-            onClick={() => onEdit(item)}
+            onClick={(e) => { e.stopPropagation(); onEdit(item); }}
             title="수정"
             className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow text-gray-600 hover:bg-[#55A4DA] hover:text-white transition-colors"
           >
@@ -519,7 +540,7 @@ function ContentCard({
             </svg>
           </button>
           <button
-            onClick={() => onDelete(item)}
+            onClick={(e) => { e.stopPropagation(); onDelete(item); }}
             title="삭제"
             className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow text-gray-600 hover:bg-red-500 hover:text-white transition-colors"
           >
