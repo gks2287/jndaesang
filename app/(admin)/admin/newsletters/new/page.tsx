@@ -4,22 +4,25 @@ import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCompanyStore } from '@/store/companyStore';
-import { useParticipantStore, type LeadershipType } from '@/store/participantStore';
+import { useParticipantStore } from '@/store/participantStore';
 import { useNewNewsletterDraftStore } from '@/store/newNewsletterDraftStore';
 
-type NewsletterKind = '일반형' | '맞춤형';
-type TargetCategory = 'leadership' | 'department' | 'ability';
+const POSITIVE_TYPES = ['코칭형', '민주형', '서번트형', '비전형', '관계중심형'] as const;
+const NEGATIVE_TYPES = ['독재형', '방관형', '불통형', '성과압박형', '감정기복형', '완벽주의형', '우유부단형'] as const;
 
-const LEADERSHIP_TYPES: LeadershipType[] = ['독재형', '방관형', '성과압박형', '불통형', '불명확형', '감정기복형'];
-const ABILITIES = ['소통 능력', '의사결정 능력', '동기부여 능력', '갈등 관리 능력', '변화 관리 능력', '코칭 능력'];
-
-const leadershipColor: Record<LeadershipType, string> = {
+const leadershipColor: Record<string, string> = {
+  '코칭형':    'bg-blue-100 text-blue-600',
+  '민주형':    'bg-sky-100 text-sky-600',
+  '서번트형':  'bg-teal-100 text-teal-600',
+  '비전형':    'bg-cyan-100 text-cyan-600',
+  '관계중심형': 'bg-emerald-100 text-emerald-600',
   '독재형':    'bg-red-100 text-red-600',
   '방관형':    'bg-orange-100 text-orange-600',
-  '성과압박형': 'bg-purple-100 text-purple-600',
   '불통형':    'bg-pink-100 text-pink-600',
-  '불명확형':  'bg-indigo-100 text-indigo-600',
+  '성과압박형': 'bg-purple-100 text-purple-600',
   '감정기복형': 'bg-amber-100 text-amber-600',
+  '완벽주의형': 'bg-rose-100 text-rose-600',
+  '우유부단형': 'bg-yellow-100 text-yellow-600',
 };
 
 export default function NewNewsletterPage() {
@@ -28,62 +31,45 @@ export default function NewNewsletterPage() {
   const rawParticipants = useParticipantStore(s => s.participants);
   const draft = useNewNewsletterDraftStore();
 
-  const [kind, setKind] = useState<NewsletterKind | null>(draft.kind);
   const [companyIds, setCompanyIds] = useState<number[]>(draft.companyIds);
   const [companySearch, setCompanySearch] = useState('');
-  const [targetCategory, setTargetCategory] = useState<TargetCategory | null>(draft.targetCategory);
-  const [selectedTypes, setSelectedTypes] = useState<LeadershipType[]>(draft.selectedTypes as LeadershipType[]);
-  const [selectedDepts, setSelectedDepts] = useState<string[]>(draft.selectedDepts);
-  const [selectedAbilities, setSelectedAbilities] = useState<string[]>(draft.selectedAbilities);
+  const [selectedTypes, setSelectedTypes] = useState<string[]>(draft.selectedTypes);
   const [selectedLeaders, setSelectedLeaders] = useState<number[]>(draft.selectedLeaders);
 
   // draft store 동기화
   useEffect(() => {
-    draft.setDraft({ kind, companyIds, targetCategory, selectedTypes, selectedDepts, selectedAbilities, selectedLeaders });
+    draft.setDraft({
+      kind: '일반형',
+      companyIds,
+      targetCategory: 'leadership',
+      selectedTypes,
+      selectedDepts: [],
+      selectedAbilities: [],
+      selectedLeaders,
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, companyIds, targetCategory, selectedTypes, selectedDepts, selectedAbilities, selectedLeaders]);
-
-  function handleSelectKind(k: NewsletterKind) {
-    setKind(k);
-    setCompanyIds([]); setTargetCategory(null);
-    setSelectedTypes([]); setSelectedDepts([]); setSelectedAbilities([]);
-    setSelectedLeaders([]);
-  }
+  }, [companyIds, selectedTypes, selectedLeaders]);
 
   function toggleCompany(id: number) {
-    if (kind === '맞춤형') {
-      setCompanyIds(prev => prev[0] === id ? [] : [id]);
-    } else {
-      setCompanyIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-    }
+    setCompanyIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   }
 
   const companyParticipants = useMemo(
     () => rawParticipants.filter(p => companyIds.includes(p.companyId)),
     [rawParticipants, companyIds],
   );
-  const departments = useMemo(
-    () => [...new Set(companyParticipants.map(p => p.department))].sort(),
-    [companyParticipants],
-  );
+
   const filteredLeaders = useMemo(() => {
-    let list = companyParticipants;
-    if (targetCategory === 'leadership' && selectedTypes.length > 0) {
-      list = list.filter(p => selectedTypes.includes(p.leadershipType));
-    }
-    if (targetCategory === 'department' && selectedDepts.length > 0) {
-      list = list.filter(p => selectedDepts.includes(p.department));
-    }
-    return list;
-  }, [companyParticipants, targetCategory, selectedTypes, selectedDepts]);
+    if (selectedTypes.length === 0) return companyParticipants;
+    return companyParticipants.filter(p => selectedTypes.includes(p.leadershipType));
+  }, [companyParticipants, selectedTypes]);
 
   const filteredCompanies = companies.filter(c =>
     !companySearch.trim() || c.name.includes(companySearch.trim())
   );
 
   useEffect(() => {
-    setTargetCategory(null);
-    setSelectedTypes([]); setSelectedDepts([]); setSelectedAbilities([]);
+    setSelectedTypes([]);
     setSelectedLeaders([]);
   }, [companyIds]);
 
@@ -91,19 +77,17 @@ export default function NewNewsletterPage() {
     setSelectedLeaders(filteredLeaders.map(p => p.id));
   }, [filteredLeaders]);
 
-  const step1Done = !!kind;
-  const step2Done = companyIds.length > 0;
-  const step3Done = targetCategory === 'leadership' ? selectedTypes.length > 0
-    : targetCategory === 'department' ? selectedDepts.length > 0
-    : targetCategory === 'ability' ? selectedAbilities.length > 0
-    : false;
-  const step4Done = selectedLeaders.length > 0;
-  const allDone = step1Done && step2Done && step3Done && step4Done;
+  const step1Done = companyIds.length > 0;
+  const step2Done = selectedTypes.length > 0;
+  const step3Done = selectedLeaders.length > 0;
+  const allDone = step1Done && step2Done && step3Done;
 
-  function toggleType(t: LeadershipType) { setSelectedTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]); }
-  function toggleDept(d: string) { setSelectedDepts(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]); }
-  function toggleAbility(a: string) { setSelectedAbilities(prev => prev.includes(a) ? prev.filter(x => x !== a) : [...prev, a]); }
-  function toggleLeader(id: number) { setSelectedLeaders(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]); }
+  function toggleType(t: string) {
+    setSelectedTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+  }
+  function toggleLeader(id: number) {
+    setSelectedLeaders(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }
   function toggleAllLeaders() {
     setSelectedLeaders(prev => prev.length === filteredLeaders.length ? [] : filteredLeaders.map(p => p.id));
   }
@@ -123,11 +107,11 @@ export default function NewNewsletterPage() {
           <button
             onClick={() => {
               const params = new URLSearchParams({
-                kind: kind ?? '',
+                kind: '일반형',
                 companyIds: companyIds.join(','),
                 types: selectedTypes.join(','),
-                depts: selectedDepts.join(','),
-                abilities: selectedAbilities.join(','),
+                depts: '',
+                abilities: '',
                 leaders: String(selectedLeaders.length),
               });
               router.push(`/admin/newsletters/new/configure?${params.toString()}`);
@@ -142,10 +126,9 @@ export default function NewNewsletterPage() {
       {/* 스텝 흐름 인디케이터 */}
       <div className="bg-white border-b border-gray-200 px-8 py-3 flex items-center gap-2 flex-shrink-0">
         {[
-          { n: 1, label: '유형 선택', done: step1Done },
-          { n: 2, label: '기업 선택', done: step2Done },
-          { n: 3, label: '대상 설정', done: step3Done },
-          { n: 4, label: '리더 설정', done: step4Done },
+          { n: 1, label: '기업 선택', done: step1Done },
+          { n: 2, label: '유형 선택', done: step2Done },
+          { n: 3, label: '리더 선택', done: step3Done },
         ].map((s, i) => (
           <div key={s.n} className="flex items-center gap-2">
             <div className="flex items-center gap-1.5">
@@ -158,42 +141,18 @@ export default function NewNewsletterPage() {
               </span>
               <span className={`text-xs font-semibold ${s.done ? 'text-[#55A4DA]' : 'text-gray-400'}`}>{s.label}</span>
             </div>
-            {i < 3 && (
+            {i < 2 && (
               <svg className={`w-4 h-4 ${s.done ? 'text-[#55A4DA]/40' : 'text-gray-200'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
             )}
           </div>
         ))}
       </div>
 
-      {/* 본문: 좌→우 4컬럼 */}
+      {/* 본문: 좌→우 3컬럼 */}
       <div className="flex-1 flex overflow-hidden bg-gray-50">
 
-        {/* ── 1. 유형 선택 ── */}
-        <div className="w-[200px] flex-shrink-0 border-r border-gray-200 bg-white flex flex-col">
-          <div className="px-4 py-3 border-b border-gray-100">
-            <p className="text-xs font-bold text-gray-800">유형 선택</p>
-          </div>
-          <div className="flex-1 p-3 space-y-2 overflow-y-auto">
-            <button onClick={() => handleSelectKind('일반형')}
-              className={`w-full rounded-lg border-2 px-3 py-2.5 text-left transition-all ${
-                kind === '일반형' ? 'border-[#55A4DA] bg-[#55A4DA]/5' : 'border-gray-200 hover:border-gray-300'
-              }`}>
-              <p className="text-xs font-bold text-gray-800">일반형</p>
-              <p className="text-[11px] text-gray-400 mt-0.5">동일 콘텐츠 발송</p>
-            </button>
-
-            <button onClick={() => handleSelectKind('맞춤형')}
-              className={`w-full rounded-lg border-2 px-3 py-2.5 text-left transition-all ${
-                kind === '맞춤형' ? 'border-[#55A4DA] bg-[#55A4DA]/5' : 'border-gray-200 hover:border-gray-300'
-              }`}>
-              <p className="text-xs font-bold text-gray-800">맞춤형</p>
-              <p className="text-[11px] text-gray-400 mt-0.5">개인별 맞춤 콘텐츠</p>
-            </button>
-          </div>
-        </div>
-
-        {/* ── 2. 기업 선택 ── */}
-        <div className={`w-[240px] flex-shrink-0 border-r border-gray-200 bg-white flex flex-col transition-opacity ${step1Done ? '' : 'opacity-40 pointer-events-none'}`}>
+        {/* ── 1. 기업 선택 ── */}
+        <div className="w-[240px] flex-shrink-0 border-r border-gray-200 bg-white flex flex-col">
           <div className="px-4 py-3 border-b border-gray-100">
             <p className="text-xs font-bold text-gray-800">기업 선택</p>
           </div>
@@ -203,7 +162,7 @@ export default function NewNewsletterPage() {
               <input type="text" placeholder="기업명 검색" value={companySearch} onChange={e => setCompanySearch(e.target.value)}
                 className="flex-1 bg-transparent text-xs text-gray-600 placeholder-gray-400 outline-none" />
             </div>
-            {kind === '일반형' && companyIds.length > 0 && (
+            {companyIds.length > 0 && (
               <p className="text-[11px] font-semibold text-[#55A4DA] px-1">{companyIds.length}개 기업 선택</p>
             )}
           </div>
@@ -215,17 +174,7 @@ export default function NewNewsletterPage() {
                   className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${
                     selected ? 'bg-[#55A4DA]/5' : 'hover:bg-gray-50'
                   }`}>
-                  {kind === '일반형' ? (
-                    <Checkbox checked={selected} />
-                  ) : (
-                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                      selected ? 'border-[#55A4DA] bg-[#55A4DA]' : 'border-gray-300'
-                    }`}>
-                      {selected && (
-                        <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                      )}
-                    </div>
-                  )}
+                  <Checkbox checked={selected} />
                   <div className={`w-8 h-8 rounded-lg ${c.color} flex items-center justify-center flex-shrink-0`}>
                     <span className="text-white text-[10px] font-bold">{c.initials}</span>
                   </div>
@@ -239,33 +188,20 @@ export default function NewNewsletterPage() {
           </div>
         </div>
 
-        {/* ── 3. 대상 설정 ── */}
-        <div className={`w-[260px] flex-shrink-0 border-r border-gray-200 bg-white flex flex-col transition-opacity ${step2Done ? '' : 'opacity-40 pointer-events-none'}`}>
+        {/* ── 2. 대상 유형 설정 ── */}
+        <div className={`w-[280px] flex-shrink-0 border-r border-gray-200 bg-white flex flex-col transition-opacity ${step1Done ? '' : 'opacity-40 pointer-events-none'}`}>
           <div className="px-4 py-3 border-b border-gray-100">
-            <p className="text-xs font-bold text-gray-800">대상 유형 설정</p>
+            <p className="text-xs font-bold text-gray-800">유형 선택</p>
           </div>
-          <div className="flex-1 overflow-y-auto p-3 space-y-3">
-            {/* 분류 기준 탭 */}
-            <div className="flex gap-1.5">
-              {([
-                { key: 'leadership' as TargetCategory, label: '리더십 유형' },
-                { key: 'department' as TargetCategory, label: '부서' },
-                { key: 'ability' as TargetCategory, label: '특정 능력' },
-              ]).map(({ key, label }) => (
-                <button key={key}
-                  onClick={() => { setTargetCategory(key); setSelectedTypes([]); setSelectedDepts([]); setSelectedAbilities([]); }}
-                  className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-colors ${
-                    targetCategory === key ? 'bg-[#55A4DA] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                  }`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {/* 세부 항목 */}
-            {targetCategory === 'leadership' && (
+          <div className="flex-1 overflow-y-auto p-3 space-y-4">
+            {/* 긍정적 리더십 유형 */}
+            <div>
+              <div className="flex items-center gap-1.5 mb-2">
+                <span className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0" />
+                <p className="text-xs font-bold text-blue-700">긍정적 리더십 유형</p>
+              </div>
               <div className="space-y-1.5">
-                {LEADERSHIP_TYPES.map(t => (
+                {POSITIVE_TYPES.map(t => (
                   <button key={t} onClick={() => toggleType(t)}
                     className={`w-full flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-xs font-medium transition-all ${
                       selectedTypes.includes(t) ? `${leadershipColor[t]} border-current` : 'border-gray-200 text-gray-500 hover:border-gray-300'
@@ -275,46 +211,33 @@ export default function NewNewsletterPage() {
                   </button>
                 ))}
               </div>
-            )}
-            {targetCategory === 'department' && (
-              <div className="space-y-1.5">
-                {departments.map(d => (
-                  <button key={d} onClick={() => toggleDept(d)}
-                    className={`w-full flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-xs font-medium transition-all ${
-                      selectedDepts.includes(d) ? 'border-[#55A4DA] bg-[#55A4DA]/5 text-[#55A4DA]' : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                    }`}>
-                    <Checkbox checked={selectedDepts.includes(d)} />
-                    {d}
-                  </button>
-                ))}
-              </div>
-            )}
-            {targetCategory === 'ability' && (
-              <div className="space-y-1.5">
-                {ABILITIES.map(a => (
-                  <button key={a} onClick={() => toggleAbility(a)}
-                    className={`w-full flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-xs font-medium transition-all ${
-                      selectedAbilities.includes(a) ? 'border-[#55A4DA] bg-[#55A4DA]/5 text-[#55A4DA]' : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                    }`}>
-                    <Checkbox checked={selectedAbilities.includes(a)} />
-                    {a}
-                  </button>
-                ))}
-              </div>
-            )}
+            </div>
 
-            {!targetCategory && (
-              <div className="flex items-center justify-center h-32 text-xs text-gray-400">
-                분류 기준을 선택하세요
+            {/* 부정적 리더십 유형 */}
+            <div>
+              <div className="flex items-center gap-1.5 mb-2">
+                <span className="w-2 h-2 rounded-full bg-red-400 flex-shrink-0" />
+                <p className="text-xs font-bold text-red-700">부정적 리더십 유형</p>
               </div>
-            )}
+              <div className="space-y-1.5">
+                {NEGATIVE_TYPES.map(t => (
+                  <button key={t} onClick={() => toggleType(t)}
+                    className={`w-full flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-xs font-medium transition-all ${
+                      selectedTypes.includes(t) ? `${leadershipColor[t]} border-current` : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                    }`}>
+                    <Checkbox checked={selectedTypes.includes(t)} />
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* ── 4. 리더 설정 ── */}
-        <div className={`flex-1 min-w-0 bg-white flex flex-col transition-opacity ${step3Done ? '' : 'opacity-40 pointer-events-none'}`}>
+        {/* ── 3. 리더 설정 ── */}
+        <div className={`flex-1 min-w-0 bg-white flex flex-col transition-opacity ${step2Done ? '' : 'opacity-40 pointer-events-none'}`}>
           <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-            <p className="text-xs font-bold text-gray-800">대상 리더 설정</p>
+            <p className="text-xs font-bold text-gray-800">리더 선택</p>
             {filteredLeaders.length > 0 && (
               <span className="text-xs font-semibold text-[#55A4DA]">{selectedLeaders.length} / {filteredLeaders.length}명</span>
             )}
