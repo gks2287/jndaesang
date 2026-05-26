@@ -126,20 +126,20 @@ export default function NewNewsletterPage() {
       {/* 스텝 흐름 인디케이터 */}
       <div className="bg-white border-b border-gray-200 px-8 py-3 flex items-center gap-2 flex-shrink-0">
         {[
-          { n: 1, label: '기업 선택', done: step1Done },
-          { n: 2, label: '유형 선택', done: step2Done },
-          { n: 3, label: '리더 선택', done: step3Done },
+          { n: 1, label: '기업 선택', done: step1Done, active: false },
+          { n: 2, label: '유형 선택', done: step2Done, active: step1Done && !step2Done },
+          { n: 3, label: '리더 선택', done: step3Done, active: step2Done && !step3Done },
         ].map((s, i) => (
           <div key={s.n} className="flex items-center gap-2">
             <div className="flex items-center gap-1.5">
               <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                s.done ? 'bg-[#55A4DA] text-white' : 'bg-gray-200 text-gray-400'
+                s.done || s.active ? 'bg-[#55A4DA] text-white' : 'bg-gray-200 text-gray-400'
               }`}>
                 {s.done ? (
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
                 ) : s.n}
               </span>
-              <span className={`text-xs font-semibold ${s.done ? 'text-[#55A4DA]' : 'text-gray-400'}`}>{s.label}</span>
+              <span className={`text-xs font-semibold ${s.done || s.active ? 'text-[#55A4DA]' : 'text-gray-400'}`}>{s.label}</span>
             </div>
             {i < 2 && (
               <svg className={`w-4 h-4 ${s.done ? 'text-[#55A4DA]/40' : 'text-gray-200'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
