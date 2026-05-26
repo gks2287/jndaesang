@@ -561,14 +561,14 @@ function ConfigureContent() {
           1단계: 스토리라인
       ════════════════════════════════ */}
       {wizardStep === 1 && (
-        <div className="flex-1 overflow-y-auto bg-[#F8FAFC]">
-          <div className="w-full px-8 py-10">
-            <div className="mb-8">
+        <div className="flex-1 overflow-hidden bg-[#F8FAFC] flex flex-col">
+          <div className="w-full px-8 py-6 flex flex-col flex-1 justify-center">
+            <div className="mb-4 flex-shrink-0">
               <h2 className="text-base font-bold text-gray-800 mb-1">뉴스레터 스토리라인</h2>
               <p className="text-xs text-gray-400">5단계 코칭 여정으로 리더의 변화를 이끕니다. 구조를 확인한 뒤 다음으로 진행하세요.</p>
             </div>
 
-            <div className="flex flex-col lg:flex-row items-stretch gap-0 mb-8">
+            <div className="flex flex-col lg:flex-row items-stretch gap-0">
               {customStoryline.map((s, i) => {
                 const color = STEP_COLORS[i % STEP_COLORS.length];
                 return (
@@ -600,33 +600,16 @@ function ConfigureContent() {
               })}
             </div>
 
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-              <div className="flex items-center gap-2 bg-[#55A4DA]/5 border border-[#55A4DA]/20 rounded-xl px-4 py-3 flex-1">
-                <svg className="w-4 h-4 text-[#55A4DA] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <div className="flex-shrink-0 pt-4 flex justify-end">
+              <button
+                onClick={openEditModal}
+                className="flex items-center gap-1.5 px-4 py-3 border border-gray-200 text-gray-600 text-sm font-semibold rounded-xl hover:bg-gray-50 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                 </svg>
-                <p className="text-xs text-[#2E7DB5]">이 스토리라인은 {targetCompanies[0]?.name ?? '해당 고객사'}의 모든 뉴스레터에 공통으로 적용됩니다.</p>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <button
-                  onClick={openEditModal}
-                  className="flex items-center gap-1.5 px-4 py-3 border border-gray-200 text-gray-600 text-sm font-semibold rounded-xl hover:bg-gray-50 transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                  편집
-                </button>
-                <button
-                  onClick={goNext}
-                  className="flex items-center gap-2 px-6 py-3 bg-[#55A4DA] hover:bg-[#3A8BC4] text-white text-sm font-bold rounded-xl transition-colors shadow-sm whitespace-nowrap"
-                >
-                  이 구조로 진행
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-              </div>
+                편집
+              </button>
             </div>
           </div>
         </div>
@@ -1307,38 +1290,6 @@ function ConfigureContent() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              <div className="bg-[#55A4DA]/5 border border-[#55A4DA]/20 rounded-xl p-4 space-y-3">
-                <div className="flex items-center gap-1.5">
-                  <svg className="w-3.5 h-3.5 text-[#55A4DA]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                  <p className="text-xs font-bold text-[#2E7DB5]">AI 보조 편집</p>
-                </div>
-                <p className="text-[11px] text-gray-500">뉴스레터 스토리라인을 어떻게 바꾸고 싶은지 입력하세요.</p>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={aiPrompt}
-                    onChange={e => setAiPrompt(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && !isAiRefining && refineWithAI()}
-                    placeholder="수정 요청을 입력하세요..."
-                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-xs text-gray-700 placeholder-gray-300 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition bg-white"
-                  />
-                  <button
-                    onClick={refineWithAI}
-                    disabled={!aiPrompt.trim() || isAiRefining}
-                    className={`px-3 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
-                      !aiPrompt.trim() || isAiRefining
-                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-[#55A4DA] hover:bg-[#3A8BC4] text-white'
-                    }`}
-                  >
-                    {isAiRefining ? '수정 중...' : 'AI 수정'}
-                  </button>
-                </div>
-                {aiRefineError && <p className="text-[11px] text-red-500">{aiRefineError}</p>}
-              </div>
-
               <div className="space-y-2.5">
                 {draftStoryline.map((s, idx) => {
                   const color = STEP_COLORS[idx % STEP_COLORS.length];
