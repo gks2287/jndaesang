@@ -47,8 +47,7 @@ interface PreviewTarget {
 }
 
 interface SendConfirmTarget {
-  company: CompanyData;
-  roundNums: number[];
+  selections: { company: CompanyData; roundNums: number[] }[];
 }
 
 // ── 목업 데이터 ──────────────────────────────────────────────────────
@@ -295,10 +294,11 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
   );
 }
 
-// ── 발송 확인 모달 (방식 A: 회차 묶음) ─────────────────────────────
+// ── 발송 확인 모달 ──────────────────────────────────────────────────
 function SendConfirmModal({ target, onConfirm, onClose }: {
   target: SendConfirmTarget; onConfirm: () => void; onClose: () => void;
 }) {
+  const totalCount = target.selections.reduce((s, sel) => s + sel.roundNums.length, 0);
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-5">
@@ -308,14 +308,21 @@ function SendConfirmModal({ target, onConfirm, onClose }: {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
           </div>
-          <div>
+          <div className="flex-1 min-w-0">
             <h3 className="text-sm font-bold text-gray-800">뉴스레터 발송</h3>
             <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
-              <span className="font-semibold text-gray-700">{target.company.companyName}</span> 전체 리더{' '}
-              <span className="font-semibold text-gray-700">{target.company.totalLeaders}명</span>에게<br />
-              선택한 <span className="font-semibold text-gray-700">{target.roundNums.length}개</span> 뉴스레터를 발송하시겠습니까?
+              선택한 <span className="font-semibold text-gray-700">{totalCount}개</span> 뉴스레터를 발송하시겠습니까?
             </p>
-            <p className="text-[11px] text-gray-400 mt-1">(각 리더십 유형별 맞춤 내용으로 발송됩니다)</p>
+            <ul className="mt-2.5 space-y-1.5">
+              {target.selections.map(({ company, roundNums }) => (
+                <li key={company.companyId} className="flex items-baseline gap-1.5 text-[11px]">
+                  <span className="font-semibold text-gray-700 flex-shrink-0">{company.companyName}</span>
+                  <span className="text-gray-400 flex-shrink-0">({company.totalLeaders}명)</span>
+                  <span className="text-gray-500">— {roundNums.join('·')}회차</span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-[11px] text-gray-400 mt-2.5">(각 기업·리더십 유형별 맞춤 내용으로 발송됩니다)</p>
           </div>
         </div>
         <div className="flex gap-2 justify-end">
@@ -455,11 +462,10 @@ function PolarityRow({ group, companyId, companyName, openKeys, onToggle, isComp
 }
 
 // ── 1단계: 기업 행 ───────────────────────────────────────────────────
-function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, activeTab, selectedRoundNums, onSelectRound, onSend }: {
+function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, activeTab, selectedRoundNums, onSelectRound }: {
   company: CompanyData; openKeys: Set<string>; onToggle: (k: string) => void;
   isCompleteTab: boolean; onPreview: (t: PreviewTarget) => void; activeTab: TabType;
   selectedRoundNums: Set<number>; onSelectRound: (roundNum: number, checked: boolean) => void;
-  onSend: () => void;
 }) {
   const key = `c${company.companyId}`;
   const isOpen = openKeys.has(key);
@@ -533,11 +539,11 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
             ))}
           </div>
 
-          {/* 발송 영역 (제작완료 탭에서만) */}
+          {/* 발송 회차 선택 (제작완료 탭에서만) */}
           {isCompleteTab && availableRounds.length > 0 && (
             <div className="border-t border-gray-200 px-5 py-4 bg-gray-50/30">
               <p className="text-xs font-semibold text-gray-400 mb-2.5">발송할 회차 선택</p>
-              <div className="space-y-2 mb-3">
+              <div className="space-y-2">
                 {availableRounds.map(({ roundNum, types }) => (
                   <label key={roundNum} className="flex items-center gap-2.5 cursor-pointer select-none group">
                     <input
@@ -552,22 +558,6 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
                     </span>
                   </label>
                 ))}
-              </div>
-              <div className="flex justify-end">
-                <button
-                  disabled={selectedRoundNums.size === 0}
-                  onClick={onSend}
-                  className={`flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg transition-colors ${
-                    selectedRoundNums.size > 0
-                      ? 'bg-[#55A4DA] hover:bg-[#3A8BC4] text-white shadow-sm'
-                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  }`}
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                  발송{selectedRoundNums.size > 0 ? ` (${selectedRoundNums.size})` : ''}
-                </button>
               </div>
             </div>
           )}
@@ -626,23 +616,30 @@ function NewslettersContent() {
     });
   }
 
-  function handleCompanySend(company: CompanyData) {
-    const roundNums = Array.from(selectedRoundsByCompany.get(company.companyId) ?? []).sort((a, b) => a - b);
-    setSendConfirmTarget({ company, roundNums });
+  const totalSelected = useMemo(() =>
+    Array.from(selectedRoundsByCompany.values()).reduce((s, rounds) => s + rounds.size, 0),
+    [selectedRoundsByCompany]
+  );
+
+  function handleGlobalSend() {
+    const selections = filteredCompanies
+      .map(c => ({
+        company: c,
+        roundNums: Array.from(selectedRoundsByCompany.get(c.companyId) ?? []).sort((a, b) => a - b),
+      }))
+      .filter(s => s.roundNums.length > 0);
+    if (selections.length === 0) return;
+    setSendConfirmTarget({ selections });
   }
 
   function handleSendConfirm() {
     if (!sendConfirmTarget) return;
-    console.log('발송:', {
-      company: sendConfirmTarget.company.companyName,
-      totalLeaders: sendConfirmTarget.company.totalLeaders,
-      roundNums: sendConfirmTarget.roundNums,
-    });
-    setSelectedRoundsByCompany(prev => {
-      const next = new Map(prev);
-      next.delete(sendConfirmTarget.company.companyId);
-      return next;
-    });
+    console.log('발송:', sendConfirmTarget.selections.map(s => ({
+      company: s.company.companyName,
+      totalLeaders: s.company.totalLeaders,
+      roundNums: s.roundNums,
+    })));
+    setSelectedRoundsByCompany(new Map());
     setSendConfirmTarget(null);
   }
 
@@ -719,12 +716,30 @@ function NewslettersContent() {
                 activeTab={activeTab}
                 selectedRoundNums={selectedRoundsByCompany.get(company.companyId) ?? new Set()}
                 onSelectRound={(roundNum, checked) => handleSelectRound(company.companyId, roundNum, checked)}
-                onSend={() => handleCompanySend(company)}
               />
             ))
           )}
         </div>
       </div>
+
+      {/* 하단 고정 발송 바 */}
+      {isCompleteTab && totalSelected > 0 && (
+        <div className="flex-shrink-0 border-t border-gray-200 px-8 py-3 bg-white flex items-center justify-between shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <span className="w-2 h-2 rounded-full bg-[#55A4DA] flex-shrink-0" />
+            <span className="font-semibold text-gray-800">{totalSelected}개</span> 선택됨
+          </div>
+          <button
+            onClick={handleGlobalSend}
+            className="flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-lg bg-[#55A4DA] hover:bg-[#3A8BC4] text-white shadow-sm transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            발송 ({totalSelected})
+          </button>
+        </div>
+      )}
 
       {previewTarget && <PreviewModal target={previewTarget} onClose={() => setPreviewTarget(null)} />}
       {sendConfirmTarget && (
