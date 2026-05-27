@@ -338,7 +338,7 @@ function SendConfirmModal({ target, onConfirm, onClose }: {
 function RoundRow({ round, companyName, polarity, typeName, count, isCompleteTab, isSelected, onSelect, onPreview }: {
   round: RoundData; companyName: string; polarity: Polarity; typeName: string; count: number;
   isCompleteTab: boolean; isSelected: boolean;
-  onSelect: (roundNum: number, checked: boolean) => void;
+  onSelect: (selectionId: string, checked: boolean) => void;
   onPreview: (t: PreviewTarget) => void;
 }) {
   const isDone = round.status === 'completed';
@@ -349,7 +349,7 @@ function RoundRow({ round, companyName, polarity, typeName, count, isCompleteTab
           type="checkbox"
           className="w-3.5 h-3.5 accent-[#55A4DA] cursor-pointer flex-shrink-0"
           checked={isSelected}
-          onChange={e => onSelect(round.round, e.target.checked)}
+          onChange={e => onSelect(`${typeName}-${round.round}`, e.target.checked)}
         />
       )}
       <span className="text-xs font-semibold text-gray-400 w-10 flex-shrink-0">{round.round}회차</span>
@@ -381,10 +381,10 @@ function RoundRow({ round, companyName, polarity, typeName, count, isCompleteTab
 }
 
 // ── 3단계: 리더십 유형 행 ────────────────────────────────────────────
-function TypeRow({ typeData, visibleRounds, companyId, companyName, polarity, openKeys, onToggle, isCompleteTab, selectedRoundNums, onSelectRound, onPreview }: {
+function TypeRow({ typeData, visibleRounds, companyId, companyName, polarity, openKeys, onToggle, isCompleteTab, selectedIds, onSelectRound, onPreview }: {
   typeData: TypeData; visibleRounds: RoundData[]; companyId: number; companyName: string; polarity: Polarity;
   openKeys: Set<string>; onToggle: (k: string) => void; isCompleteTab: boolean;
-  selectedRoundNums: Set<number>; onSelectRound: (roundNum: number, checked: boolean) => void;
+  selectedIds: Set<string>; onSelectRound: (selectionId: string, checked: boolean) => void;
   onPreview: (t: PreviewTarget) => void;
 }) {
   const key = `c${companyId}-${polarity}-${typeData.typeName}`;
@@ -406,7 +406,7 @@ function TypeRow({ typeData, visibleRounds, companyId, companyName, polarity, op
       {isOpen && visibleRounds.map(round => (
         <RoundRow key={round.id} round={round} companyName={companyName} polarity={polarity}
           typeName={typeData.typeName} count={typeData.count} isCompleteTab={isCompleteTab}
-          isSelected={selectedRoundNums.has(round.round)} onSelect={onSelectRound}
+          isSelected={selectedIds.has(`${typeData.typeName}-${round.round}`)} onSelect={onSelectRound}
           onPreview={onPreview} />
       ))}
     </div>
@@ -414,10 +414,10 @@ function TypeRow({ typeData, visibleRounds, companyId, companyName, polarity, op
 }
 
 // ── 2단계: 긍정/부정 행 ──────────────────────────────────────────────
-function PolarityRow({ group, companyId, companyName, openKeys, onToggle, isCompleteTab, selectedRoundNums, onSelectRound, onPreview, activeTab }: {
+function PolarityRow({ group, companyId, companyName, openKeys, onToggle, isCompleteTab, selectedIds, onSelectRound, onPreview, activeTab }: {
   group: PolarityGroup; companyId: number; companyName: string;
   openKeys: Set<string>; onToggle: (k: string) => void; isCompleteTab: boolean;
-  selectedRoundNums: Set<number>; onSelectRound: (roundNum: number, checked: boolean) => void;
+  selectedIds: Set<string>; onSelectRound: (selectionId: string, checked: boolean) => void;
   onPreview: (t: PreviewTarget) => void; activeTab: TabType;
 }) {
   const key = `c${companyId}-${group.polarity}`;
@@ -454,7 +454,7 @@ function PolarityRow({ group, companyId, companyName, openKeys, onToggle, isComp
         <TypeRow key={t.typeName} typeData={t} visibleRounds={t.visibleRounds}
           companyId={companyId} companyName={companyName} polarity={group.polarity}
           openKeys={openKeys} onToggle={onToggle} isCompleteTab={isCompleteTab}
-          selectedRoundNums={selectedRoundNums} onSelectRound={onSelectRound}
+          selectedIds={selectedIds} onSelectRound={onSelectRound}
           onPreview={onPreview} />
       ))}
     </div>
@@ -462,10 +462,11 @@ function PolarityRow({ group, companyId, companyName, openKeys, onToggle, isComp
 }
 
 // ── 1단계: 기업 행 ───────────────────────────────────────────────────
-function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, activeTab, selectedRoundNums, onSelectRound }: {
+function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, activeTab, selectedIds, onSelectRound, onSelectRoundBulk }: {
   company: CompanyData; openKeys: Set<string>; onToggle: (k: string) => void;
   isCompleteTab: boolean; onPreview: (t: PreviewTarget) => void; activeTab: TabType;
-  selectedRoundNums: Set<number>; onSelectRound: (roundNum: number, checked: boolean) => void;
+  selectedIds: Set<string>; onSelectRound: (selectionId: string, checked: boolean) => void;
+  onSelectRoundBulk: (selectionIds: string[], checked: boolean) => void;
 }) {
   const key = `c${company.companyId}`;
   const isOpen = openKeys.has(key);
@@ -485,6 +486,19 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
     allRounds.filter(r => r.status === 'completed').forEach(r => nums.add(r.round));
     return Array.from(nums).sort((a, b) => a - b);
   }, [allRounds]);
+
+  // 회차번호 → 해당 회차의 모든 "유형명-회차번호" selectionId 목록
+  const roundToSelectionIds = useMemo(() => {
+    const map = new Map<number, string[]>();
+    company.groups.forEach(g => g.types.forEach(t => {
+      t.rounds.filter(r => r.status === 'completed').forEach(r => {
+        const arr = map.get(r.round) ?? [];
+        arr.push(`${t.typeName}-${r.round}`);
+        map.set(r.round, arr);
+      });
+    }));
+    return map;
+  }, [company.groups]);
 
   if (!hasVisible) return null;
 
@@ -524,7 +538,7 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
             {company.groups.map(group => (
               <PolarityRow key={group.polarity} group={group} companyId={company.companyId}
                 companyName={company.companyName} openKeys={openKeys} onToggle={onToggle}
-                isCompleteTab={isCompleteTab} selectedRoundNums={selectedRoundNums}
+                isCompleteTab={isCompleteTab} selectedIds={selectedIds}
                 onSelectRound={onSelectRound} onPreview={onPreview} activeTab={activeTab} />
             ))}
           </div>
@@ -534,9 +548,10 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
             <div className="border-t border-gray-100 px-5 py-2.5 bg-gray-50/40 flex items-center gap-2 flex-wrap">
               <span className="text-xs text-gray-400 font-medium flex-shrink-0">회차별 전체선택:</span>
               {availableRoundNums.map(num => {
-                const isActive = selectedRoundNums.has(num);
+                const ids = roundToSelectionIds.get(num) ?? [];
+                const isActive = ids.length > 0 && ids.every(id => selectedIds.has(id));
                 return (
-                  <button key={num} onClick={() => onSelectRound(num, !isActive)}
+                  <button key={num} onClick={() => onSelectRoundBulk(ids, !isActive)}
                     className={`text-xs font-semibold px-2.5 py-1 rounded-lg border transition-colors ${
                       isActive
                         ? 'bg-[#55A4DA] border-[#55A4DA] text-white'
@@ -561,7 +576,7 @@ function NewslettersContent() {
   const [search, setSearch] = useState('');
   const [companyFilter, setCompanyFilter] = useState('');
   const [openKeys, setOpenKeys] = useState<Set<string>>(new Set());
-  const [selectedRoundsByCompany, setSelectedRoundsByCompany] = useState<Map<number, Set<number>>>(new Map());
+  const [selectedRoundsByCompany, setSelectedRoundsByCompany] = useState<Map<number, Set<string>>>(new Map());
   const [sendConfirmTarget, setSendConfirmTarget] = useState<SendConfirmTarget | null>(null);
   const [previewTarget, setPreviewTarget] = useState<PreviewTarget | null>(null);
 
@@ -593,12 +608,22 @@ function NewslettersContent() {
     setOpenKeys(prev => { const next = new Set(prev); next.has(k) ? next.delete(k) : next.add(k); return next; });
   }
 
-  function handleSelectRound(companyId: number, roundNum: number, checked: boolean) {
+  function handleSelectRound(companyId: number, selectionId: string, checked: boolean) {
     setSelectedRoundsByCompany(prev => {
       const next = new Map(prev);
-      const rounds = new Set(next.get(companyId) ?? []);
-      checked ? rounds.add(roundNum) : rounds.delete(roundNum);
-      next.set(companyId, rounds);
+      const ids = new Set(next.get(companyId) ?? []);
+      checked ? ids.add(selectionId) : ids.delete(selectionId);
+      next.set(companyId, ids);
+      return next;
+    });
+  }
+
+  function handleSelectRoundBulk(companyId: number, selectionIds: string[], checked: boolean) {
+    setSelectedRoundsByCompany(prev => {
+      const next = new Map(prev);
+      const ids = new Set(next.get(companyId) ?? []);
+      selectionIds.forEach(id => checked ? ids.add(id) : ids.delete(id));
+      next.set(companyId, ids);
       return next;
     });
   }
@@ -612,7 +637,10 @@ function NewslettersContent() {
     const selections = filteredCompanies
       .map(c => ({
         company: c,
-        roundNums: Array.from(selectedRoundsByCompany.get(c.companyId) ?? []).sort((a, b) => a - b),
+        roundNums: [...new Set(
+          Array.from(selectedRoundsByCompany.get(c.companyId) ?? [])
+            .map(id => Number(id.split('-').at(-1)))
+        )].sort((a, b) => a - b),
       }))
       .filter(s => s.roundNums.length > 0);
     if (selections.length === 0) return;
@@ -701,8 +729,9 @@ function NewslettersContent() {
               <CompanyRow key={company.companyId} company={company} openKeys={openKeys}
                 onToggle={toggleKey} isCompleteTab={isCompleteTab} onPreview={setPreviewTarget}
                 activeTab={activeTab}
-                selectedRoundNums={selectedRoundsByCompany.get(company.companyId) ?? new Set()}
-                onSelectRound={(roundNum, checked) => handleSelectRound(company.companyId, roundNum, checked)}
+                selectedIds={selectedRoundsByCompany.get(company.companyId) ?? new Set()}
+                onSelectRound={(selectionId, checked) => handleSelectRound(company.companyId, selectionId, checked)}
+                onSelectRoundBulk={(ids, checked) => handleSelectRoundBulk(company.companyId, ids, checked)}
               />
             ))
           )}
