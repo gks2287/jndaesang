@@ -847,7 +847,7 @@ function ConfigureContent() {
                     >
                       <span className="text-sm font-bold text-[#55A4DA] flex-shrink-0">1</span>
                       <p className="text-sm font-bold text-gray-800 flex-1 text-left">뉴스레터 유형</p>
-                      {isAllPositive ? (
+                      {isAllPositive || isMixed ? (
                         <span className="text-[11px] font-semibold text-gray-400 flex-shrink-0">일반형 자동 적용</span>
                       ) : selectedNewsletterType ? (
                         <span className="text-[11px] font-semibold text-[#55A4DA] flex-shrink-0">{selectedNewsletterType}</span>
@@ -861,9 +861,13 @@ function ConfigureContent() {
                     <div className={`grid transition-all duration-200 ${typeOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
                       <div className="overflow-hidden">
                         <div className="border-t border-gray-100 p-5">
-                          {isAllPositive ? (
+                          {isAllPositive || isMixed ? (
                             <div className="space-y-2">
-                              <p className="text-xs text-gray-400 mb-3">긍정적 리더십 유형은 일반형으로 발송됩니다.</p>
+                              <p className="text-xs text-gray-400 mb-3">
+                                {isAllPositive
+                                  ? '긍정적 리더십 유형은 일반형으로 발송됩니다.'
+                                  : '긍정적·부정적 리더십 유형이 혼합된 경우 일반형으로만 발송됩니다.'}
+                              </p>
                               <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border-2 border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed">
                                 <div className="w-5 h-5 rounded-full border-2 border-gray-300 flex items-center justify-center flex-shrink-0 bg-gray-200">
                                   <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -908,13 +912,13 @@ function ConfigureContent() {
                                   </button>
                                 );
                               })}
-                              {isMixed && selectedNewsletterType === '맞춤형' && (
-                                <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-3">
-                                  <svg className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              {selectedNewsletterType === '맞춤형' && (
+                                <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-xl px-3.5 py-3">
+                                  <svg className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                   </svg>
-                                  <p className="text-xs text-amber-700 leading-relaxed">
-                                    맞춤형은 부정적 리더십 유형에게만 적용됩니다. 긍정적 리더십 유형은 일반형으로 발송됩니다.
+                                  <p className="text-xs text-blue-700 leading-relaxed">
+                                    선택한 부정적 유형(독재형/방관형 등)별로 각각 다른 내용의 뉴스레터가 제작됩니다.
                                   </p>
                                 </div>
                               )}
