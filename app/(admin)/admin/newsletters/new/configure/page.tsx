@@ -865,17 +865,17 @@ function ConfigureContent() {
                             <div className="space-y-2">
                               <p className="text-xs text-gray-400 mb-3">
                                 {isAllPositive
-                                  ? '긍정적 리더십 유형은 일반형으로 발송됩니다.'
-                                  : '긍정적·부정적 리더십 유형이 혼합된 경우 일반형으로만 발송됩니다.'}
+                                  ? '긍정적 리더십 유형은 현재 일반형만 지원됩니다.'
+                                  : '긍정·부정 리더십 유형 혼합 시 일반형으로만 발송됩니다.'}
                               </p>
-                              <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border-2 border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed">
-                                <div className="w-5 h-5 rounded-full border-2 border-gray-300 flex items-center justify-center flex-shrink-0 bg-gray-200">
-                                  <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                              <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border-2 border-[#55A4DA] bg-[#55A4DA]/5 cursor-default">
+                                <div className="w-5 h-5 rounded-full border-2 border-[#55A4DA] bg-[#55A4DA] flex items-center justify-center flex-shrink-0">
+                                  <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                                   </svg>
                                 </div>
                                 <div>
-                                  <p className="text-sm font-semibold text-gray-500">일반형</p>
+                                  <p className="text-sm font-semibold text-[#2E7DB5]">일반형</p>
                                   <p className="text-[11px] text-gray-400">모든 리더에게 공통으로 발송되는 내용</p>
                                 </div>
                               </div>
@@ -918,7 +918,7 @@ function ConfigureContent() {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                   </svg>
                                   <p className="text-xs text-blue-700 leading-relaxed">
-                                    선택한 부정적 유형(독재형/방관형 등)별로 각각 다른 내용의 뉴스레터가 제작됩니다.
+                                    선택한 부정적 유형별로 각각 다른 내용이 제작됩니다.
                                   </p>
                                 </div>
                               )}
