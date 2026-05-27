@@ -655,13 +655,6 @@ function NewslettersContent() {
     if (tab === '제작 중' || tab === '제작완료') setActiveTab(tab as TabType);
   }, [searchParams]);
 
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('newsletter_draft_saved');
-      if (saved) setRecoveryDraft(JSON.parse(saved) as RecoveryDraftData);
-    } catch {}
-  }, []);
-
   function handleNewDraft() {
     localStorage.removeItem('newsletter_draft_saved');
     resetDraft();
