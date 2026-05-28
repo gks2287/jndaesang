@@ -166,6 +166,7 @@ function ConfigureContent() {
   const [contentPoolLoading, setContentPoolLoading] = useState(false);
   const [contentPoolQuery, setContentPoolQuery] = useState('');
   const [contentPoolCategoryFilter, setContentPoolCategoryFilter] = useState<ContentCategory | ''>('');
+  const [contentSuggestLoading, setContentSuggestLoading] = useState<boolean[]>([]);
 
   // ── 4단계: 발송 주기 ──
   const [deliveryInterval, setDeliveryInterval] = useState<DeliveryInterval | null>(null);
@@ -371,6 +372,42 @@ function ConfigureContent() {
         i !== roundIdx ? r : { ...r, contents: r.contents.filter(c => c.id !== itemId) }
       )
     );
+  }
+
+  async function suggestContentsForRound(roundIdx: number, topic: string) {
+    if (!topic.trim()) return;
+    setContentSuggestLoading(prev => { const n = [...prev]; n[roundIdx] = true; return n; });
+    try {
+      const res = await fetch('/api/contents/suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic,
+          leadershipType: leadershipTypes[0] ?? '',
+          storyStage: customStoryline[rounds[roundIdx]?.stepIndex ?? 0]?.title ?? '',
+          existingIds: rounds[roundIdx]?.contents.map(c => c.id) ?? [],
+        }),
+      });
+      if (!res.ok) return;
+      const data = await res.json() as { selectedIds: string[] };
+      if (!data.selectedIds?.length) return;
+      const items = await getContentList();
+      const selected = data.selectedIds
+        .map(id => items.find(item => item.id === id))
+        .filter((item): item is ContentPoolItem => !!item);
+      setRounds(prev =>
+        prev.map((r, i) =>
+          i !== roundIdx ? r : {
+            ...r,
+            contents: [...r.contents, ...selected.filter(s => !r.contents.some(c => c.id === s.id))],
+          }
+        )
+      );
+    } catch {
+      // silently fail
+    } finally {
+      setContentSuggestLoading(prev => { const n = [...prev]; n[roundIdx] = false; return n; });
+    }
   }
 
   // ── 네비게이션 ──
@@ -1056,7 +1093,12 @@ function ConfigureContent() {
                                 return (
                                   <button
                                     key={idx}
-                                    onClick={() => setRoundTopic(activeRoundIdx, topic.title)}
+                                    onClick={() => {
+                                      setRoundTopic(activeRoundIdx, topic.title);
+                                      if (!rounds[activeRoundIdx]?.contents.length) {
+                                        void suggestContentsForRound(activeRoundIdx, topic.title);
+                                      }
+                                    }}
                                     className={`w-full text-left flex items-start gap-3 px-4 py-3 rounded-xl border-2 transition-all ${
                                       isSelected ? 'border-[#55A4DA] bg-[#55A4DA]/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                                     }`}
@@ -1081,7 +1123,12 @@ function ConfigureContent() {
                               type="text"
                               value={r.topic}
                               onChange={e => setRoundTopic(activeRoundIdx, e.target.value)}
-                              placeholder="뉴스레터 주제를 입력하세요"
+                              onKeyDown={e => {
+                                if (e.key === 'Enter' && r.topic.trim()) {
+                                  void suggestContentsForRound(activeRoundIdx, r.topic.trim());
+                                }
+                              }}
+                              placeholder="뉴스레터 주제를 입력하세요 (Enter로 AI 콘텐츠 추천)"
                               className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition"
                             />
                           </div>
@@ -1119,7 +1166,7 @@ function ConfigureContent() {
                     <div className={`grid transition-all duration-200 ${openSections.has(3) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
                       <div className="overflow-hidden">
                         <div className="border-t border-gray-100 p-4">
-                          {r.contents.length === 0 ? (
+                          {r.contents.length === 0 && !contentSuggestLoading[activeRoundIdx] ? (
                             <button
                               onClick={openContentPool}
                               className="w-full py-5 border-2 border-dashed border-gray-200 rounded-xl text-xs text-gray-400 hover:border-[#55A4DA] hover:text-[#55A4DA] transition-colors flex flex-col items-center gap-1.5"
@@ -1155,6 +1202,15 @@ function ConfigureContent() {
                                   </button>
                                 </div>
                               ))}
+                              {contentSuggestLoading[activeRoundIdx] && (
+                                <div className="flex items-center gap-2 px-3 py-3 rounded-xl border border-dashed border-[#55A4DA]/40 bg-[#55A4DA]/5">
+                                  <svg className="w-3.5 h-3.5 animate-spin text-[#55A4DA] flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                                  </svg>
+                                  <p className="text-xs text-[#55A4DA] font-medium">AI가 콘텐츠를 선택하는 중...</p>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
