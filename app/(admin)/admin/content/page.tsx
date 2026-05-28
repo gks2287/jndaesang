@@ -21,6 +21,7 @@ type CuratedResult = {
   body: string;
   summary: string;
   sourceUrl: string;
+  thumbnailUrl?: string;
 };
 
 // ── 상수 ─────────────────────────────────────────────────────────
@@ -107,6 +108,10 @@ function ContentFormModal({
   const [parseError, setParseError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const [urlParsing, setUrlParsing] = useState(false);
+  const [urlParseError, setUrlParseError] = useState<string | null>(null);
+  const [urlParsed, setUrlParsed] = useState(false);
+  const urlAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     setParseError(null);
@@ -164,12 +169,54 @@ function ContentFormModal({
     setParseError(null);
   }
 
+  async function handleUrlParse(url: string) {
+    const trimmed = url.trim();
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return;
+    setUrlParseError(null);
+    setUrlParsed(false);
+    setUrlParsing(true);
+    const controller = new AbortController();
+    urlAbortRef.current = controller;
+    try {
+      const res = await fetch('/api/curate-content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sourceUrl: trimmed }),
+        signal: controller.signal,
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setUrlParseError(json.error ?? 'URL 분석에 실패했습니다. 직접 입력해주세요.');
+        return;
+      }
+      const data = json.data as CuratedResult;
+      setForm(prev => ({
+        ...prev,
+        title: data.title || prev.title,
+        category: data.category || prev.category,
+        duration: data.duration ? String(data.duration) : prev.duration,
+        author: data.author || prev.author,
+        tags: data.tags?.length ? data.tags : prev.tags,
+        thumbnail: data.thumbnailUrl || prev.thumbnail,
+        body: data.body || prev.body,
+      }));
+      setUrlParsed(true);
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') return;
+      setUrlParseError('AI 분석 중 오류가 발생했습니다. 직접 입력해주세요.');
+    } finally {
+      setUrlParsing(false);
+      urlAbortRef.current = null;
+    }
+  }
+
   const isValid =
     form.title.trim().length > 0 &&
     form.duration !== '' &&
     Number(form.duration) > 0 &&
     form.author.trim().length > 0 &&
-    form.body.trim().length > 0;
+    form.body.trim().length > 0 &&
+    !urlParsing;
 
   function patch<K extends keyof FormData>(key: K, value: FormData[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
@@ -335,14 +382,55 @@ function ContentFormModal({
           {/* 큐레이션: URL 입력 */}
           {form.type === 'curation' && (
             <div className="space-y-2">
-              <label className={labelCls}>원문 URL <span className="text-gray-300 font-normal">(선택)</span></label>
-              <input
-                className={inputCls}
-                value={sourceUrl}
-                onChange={e => setSourceUrl(e.target.value)}
-                placeholder="https://..."
-              />
-              {aiAutoFilled && (
+              <label className={labelCls}>원문 URL <span className="text-gray-300 font-normal">(선택 · URL 입력 후 포커스 아웃 시 AI 자동파싱)</span></label>
+              <div className="relative">
+                <input
+                  className={`${inputCls} pr-10 ${urlParsing ? 'bg-gray-50 text-gray-400' : ''}`}
+                  value={sourceUrl}
+                  disabled={urlParsing}
+                  onChange={e => {
+                    setSourceUrl(e.target.value);
+                    setUrlParsed(false);
+                    setUrlParseError(null);
+                  }}
+                  onBlur={e => handleUrlParse(e.target.value)}
+                  placeholder="https://..."
+                />
+                {urlParsing && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <svg className="w-4 h-4 text-[#55A4DA] animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                  </div>
+                )}
+              </div>
+              {urlParsing && (
+                <div className="flex items-center gap-2 text-xs text-[#55A4DA] bg-[#55A4DA]/5 border border-[#55A4DA]/20 rounded-lg px-3 py-2">
+                  <svg className="w-4 h-4 flex-shrink-0 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                  </svg>
+                  AI가 콘텐츠를 분석 중입니다...
+                </div>
+              )}
+              {urlParseError && (
+                <div className="flex items-start gap-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  {urlParseError}
+                </div>
+              )}
+              {urlParsed && (
+                <div className="flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                  <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  AI가 URL 콘텐츠를 분석했습니다. 내용을 확인하고 필요시 수정해주세요.
+                </div>
+              )}
+              {!urlParsed && aiAutoFilled && (
                 <div className="flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
                   <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
