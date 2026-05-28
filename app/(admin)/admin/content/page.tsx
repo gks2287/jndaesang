@@ -287,11 +287,11 @@ function ContentFormModal({
         </div>
 
         {/* 바디 (스크롤) */}
-        <div className="flex-1 min-h-0 relative">
+        <div className="flex-1 min-h-0 relative overflow-hidden">
         {urlParsing && (
           <div className="absolute inset-0 bg-white/60 z-10 cursor-not-allowed rounded-b-2xl" />
         )}
-        <div className="h-full overflow-y-auto p-6 pb-8 space-y-5">
+        <div className="absolute inset-0 overflow-y-auto p-6 pb-8 space-y-5">
 
           {/* J& 오리지널: 파일 업로드 영역 */}
           {form.type === 'original' && (
