@@ -6,14 +6,12 @@
 // 콘텐츠 풀은 원본 에셋 관리 관점이고, 위저드는 독자가 소비하는 방식 관점이기 때문에 의도적으로 분리.
 //
 // [뉴스레터 위저드와 통합 방향]
-// 1. app/api/content-pool/route.ts가 현재 별도 하드코딩 mock을 반환 중.
-//    → 추후 이 getContentList()를 호출하는 형태로 교체하면 단일 데이터 소스로 통일 가능.
+// 1. app/api/save-content/route.ts가 lib/mockData/contentPool.ts 파일을 직접 읽고 씁니다.
+//    → 이 파일의 함수들은 /api/save-content를 통해 파일에 영속적으로 저장합니다.
 // 2. 위저드 3단계 콘텐츠 카드에서 보여주는 ContentType 배지는
 //    아래 toWizardContentType() 매핑 함수(미구현)로 변환 권장.
 //    예: '아티클' → '글', '영상' → '영상'. 인포그래픽/카드뉴스가 필요하면 ContentCategory에 추가 후 매핑 확장.
 // 3. 통합 시 lib/content.ts의 ContentItem.readingTime ↔ ContentPoolItem.duration 필드 이름 통일 검토.
-
-import { MOCK_CONTENT_POOL } from '@/lib/mockData/contentPool';
 
 export type ContentSource = 'original' | 'curation';
 export type ContentCategory = '아티클' | '인터뷰' | '책 추천' | '성공 사례' | '카드뉴스' | '웹툰' | '영상';
@@ -37,13 +35,10 @@ export interface ContentListFilter {
   q?: string;
 }
 
-// 모듈 레벨 mutable store — 실제 API 교체 전까지 메모리에서 CRUD를 처리합니다.
-// 페이지 새로고침 시 MOCK_CONTENT_POOL로 초기화되는 것은 의도된 동작입니다.
-let _store: ContentPoolItem[] = [...MOCK_CONTENT_POOL];
-
 export async function getContentList(filter?: ContentListFilter): Promise<ContentPoolItem[]> {
-  // 실제 API 교체 시 fetch('/api/content-pool', { ... }) 형태로 변경
-  let items = _store;
+  const res = await fetch('/api/save-content', { cache: 'no-store' });
+  if (!res.ok) throw new Error('콘텐츠 목록을 불러오지 못했습니다.');
+  let items = (await res.json()) as ContentPoolItem[];
 
   if (filter?.type) items = items.filter(i => i.type === filter.type);
   if (filter?.category) items = items.filter(i => i.category === filter.category);
@@ -61,35 +56,52 @@ export async function getContentList(filter?: ContentListFilter): Promise<Conten
 }
 
 export async function getContentById(id: string): Promise<ContentPoolItem | null> {
-  return _store.find(i => i.id === id) ?? null;
+  const items = await getContentList();
+  return items.find(i => i.id === id) ?? null;
 }
 
 export async function addContent(
   item: Omit<ContentPoolItem, 'id' | 'createdAt'>,
 ): Promise<ContentPoolItem> {
-  // 실제 API 교체 시 fetch('/api/content-pool', { method: 'POST', body: ... }) 형태로 변경
-  const newItem: ContentPoolItem = {
-    ...item,
-    id: `content-${Date.now()}`,
-    createdAt: new Date().toISOString().slice(0, 10),
-  };
-  _store = [newItem, ..._store];
-  return newItem;
+  const res = await fetch('/api/save-content', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(item),
+  });
+  if (!res.ok) {
+    const err = await res.json() as { error?: string };
+    throw new Error(err.error ?? '저장에 실패했습니다.');
+  }
+  const data = await res.json() as { item: ContentPoolItem };
+  return data.item;
 }
 
 export async function updateContent(
   id: string,
   patch: Partial<Omit<ContentPoolItem, 'id' | 'createdAt'>>,
 ): Promise<ContentPoolItem> {
-  // 실제 API 교체 시 fetch(`/api/content-pool/${id}`, { method: 'PATCH', body: ... }) 형태로 변경
-  const target = _store.find(i => i.id === id);
-  if (!target) throw new Error(`Content not found: ${id}`);
-  const updated = { ...target, ...patch };
-  _store = _store.map(i => (i.id === id ? updated : i));
-  return updated;
+  const res = await fetch('/api/save-content', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, ...patch }),
+  });
+  if (!res.ok) {
+    const err = await res.json() as { error?: string };
+    throw new Error(err.error ?? '수정에 실패했습니다.');
+  }
+  // 서버가 저장한 최신 상태를 현재 patch 기반으로 재구성
+  const current = await getContentById(id);
+  return current ?? ({ id, ...patch } as ContentPoolItem);
 }
 
 export async function deleteContent(id: string): Promise<void> {
-  // 실제 API 교체 시 fetch(`/api/content-pool/${id}`, { method: 'DELETE' }) 형태로 변경
-  _store = _store.filter(i => i.id !== id);
+  const res = await fetch('/api/save-content', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+  if (!res.ok) {
+    const err = await res.json() as { error?: string };
+    throw new Error(err.error ?? '삭제에 실패했습니다.');
+  }
 }

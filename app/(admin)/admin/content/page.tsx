@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   getContentList,
   addContent,
@@ -65,7 +65,7 @@ function itemToForm(item: ContentPoolItem): FormData {
   };
 }
 
-// ── ContentFormModal ──────────────────────────────────────────────
+// ── ContentFormModal (중앙 모달) ──────────────────────────────────
 function ContentFormModal({
   mode,
   initialData,
@@ -87,29 +87,65 @@ function ContentFormModal({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [sourceUrl, setSourceUrl] = useState('');
   const [visible, setVisible] = useState(false);
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    setParseError(null);
+    setSelectedFile(null);
+    setParsing(false);
     requestAnimationFrame(() => setVisible(true));
   }, []);
 
   function handleClose() {
     setVisible(false);
-    setTimeout(onClose, 280);
+    setTimeout(onClose, 200);
   }
 
-  // TODO: API 키 발급 후 여기에 Claude API 파싱 로직 연결
-  // 파일 → base64 변환 후 Claude API에 전달
-  // 응답으로 받은 JSON으로 아래 폼 필드 자동 채우기
-  function handleFileParse(file: File) {
+  async function handleFileParse(file: File) {
     setSelectedFile(file);
+    setParseError(null);
+    setParsing(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/parse-content', {
+        method: 'POST',
+        body: fd,
+        signal: controller.signal,
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setParseError(json.error ?? '알 수 없는 오류가 발생했습니다.');
+        return;
+      }
+      setForm(prev => ({
+        ...prev,
+        title: json.title || prev.title,
+        category: json.category || prev.category,
+        duration: json.duration ? String(json.duration) : prev.duration,
+        author: json.author || prev.author,
+        tags: json.tags?.length ? json.tags : prev.tags,
+        thumbnail: json.thumbnail || prev.thumbnail,
+        body: json.body || prev.body,
+      }));
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') return;
+      setParseError('AI 분석 중 오류가 발생했습니다. 직접 입력해주세요.');
+    } finally {
+      setParsing(false);
+      abortRef.current = null;
+    }
   }
 
-  // TODO: API 키 발급 후 여기에 Claude API 파싱 로직 연결
-  // URL 전달 → Claude API가 내용 요약/파싱
-  // 응답으로 받은 JSON으로 아래 폼 필드 자동 채우기
-  function handleUrlParse(url: string) {
-    setSourceUrl(url);
-    patch('author', url);
+  function handleCancelParse() {
+    abortRef.current?.abort();
+    setParsing(false);
+    setParseError(null);
   }
 
   const isValid =
@@ -148,9 +184,7 @@ function ContentFormModal({
         duration: Number(form.duration),
         author: form.author.trim(),
         tags: form.tags,
-        thumbnail:
-          form.thumbnail.trim() ||
-          `https://picsum.photos/seed/${Date.now()}/400/225`,
+        thumbnail: form.thumbnail.trim() || `https://picsum.photos/seed/${Date.now()}/400/225`,
         body: form.body.trim(),
       });
     } finally {
@@ -164,17 +198,16 @@ function ContentFormModal({
   const requiredMark = <span className="text-red-400">*</span>;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      {/* 배경 오버레이 */}
-      <div className="absolute inset-0 bg-black/40" onClick={handleClose} />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* 오버레이 */}
+      <div className="absolute inset-0 bg-black/50" onClick={handleClose} />
 
-      {/* 슬라이드 패널 */}
+      {/* 모달 */}
       <div
-        className={`relative w-full max-w-xl bg-white h-full shadow-2xl flex flex-col transition-transform duration-300 ease-out ${
-          visible ? 'translate-x-0' : 'translate-x-full'
+        className={`relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh] transition-all duration-200 ease-out ${
+          visible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
         }`}
       >
-
         {/* 헤더 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
           <div>
@@ -196,8 +229,25 @@ function ContentFormModal({
           {/* J& 오리지널: 파일 업로드 영역 */}
           {form.type === 'original' && (
             <div className="space-y-2">
-              <label className={labelCls}>파일 업로드 <span className="text-gray-300 font-normal">(선택 · docx / pdf / txt)</span></label>
-              <label className="flex flex-col items-center justify-center w-full border-2 border-dashed border-gray-200 rounded-xl py-5 px-4 cursor-pointer hover:border-[#55A4DA]/50 hover:bg-[#55A4DA]/5 transition-colors group">
+              <label className={labelCls}>
+                파일 업로드{' '}
+                <span className="text-gray-300 font-normal">(선택 · docx / pdf / txt)</span>
+              </label>
+              <label
+                className={`flex flex-col items-center justify-center w-full border-2 border-dashed rounded-xl py-5 px-4 cursor-pointer transition-colors group ${
+                  isDragOver
+                    ? 'border-[#55A4DA] bg-[#55A4DA]/10'
+                    : 'border-gray-200 hover:border-[#55A4DA]/50 hover:bg-[#55A4DA]/5'
+                }`}
+                onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
+                onDragLeave={() => setIsDragOver(false)}
+                onDrop={e => {
+                  e.preventDefault();
+                  setIsDragOver(false);
+                  const file = e.dataTransfer.files[0];
+                  if (file) handleFileParse(file);
+                }}
+              >
                 <input
                   type="file"
                   accept=".docx,.pdf,.txt"
@@ -207,16 +257,31 @@ function ContentFormModal({
                     if (file) handleFileParse(file);
                   }}
                 />
-                {selectedFile ? (
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
-                    <svg className="w-5 h-5 text-[#55A4DA]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                {parsing ? (
+                  <div className="flex flex-col items-center gap-2">
+                    <svg className="w-6 h-6 text-[#55A4DA] animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                     </svg>
-                    <span className="font-medium truncate max-w-xs">{selectedFile.name}</span>
+                    <span className="text-xs font-semibold text-[#55A4DA]">AI 분석 중...</span>
                     <button
                       type="button"
-                      onClick={e => { e.preventDefault(); setSelectedFile(null); }}
-                      className="ml-1 text-gray-400 hover:text-red-400 transition-colors text-base leading-none"
+                      onClick={e => { e.preventDefault(); handleCancelParse(); }}
+                      className="text-[11px] text-gray-400 hover:text-red-400 underline transition-colors"
+                    >
+                      취소
+                    </button>
+                  </div>
+                ) : selectedFile ? (
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <svg className="w-5 h-5 text-[#55A4DA] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span className="font-medium truncate max-w-[220px]">{selectedFile.name}</span>
+                    <button
+                      type="button"
+                      onClick={e => { e.preventDefault(); setSelectedFile(null); setParseError(null); }}
+                      className="ml-1 text-gray-400 hover:text-red-400 transition-colors text-base leading-none flex-shrink-0"
                     >
                       ×
                     </button>
@@ -226,38 +291,44 @@ function ContentFormModal({
                     <svg className="w-8 h-8 text-gray-300 group-hover:text-[#55A4DA]/50 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                     </svg>
-                    <span className="text-xs text-gray-400">클릭하여 파일 선택</span>
+                    <span className="text-xs text-gray-400">드래그하거나 클릭하여 파일 선택</span>
                     <span className="text-[11px] text-gray-300">docx · pdf · txt</span>
                   </div>
                 )}
               </label>
-              {selectedFile && (
-                <p className="text-xs text-amber-500 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                  AI 자동 파싱은 준비 중입니다. 아래 필드를 직접 입력해주세요.
-                </p>
+
+              {selectedFile && !parsing && !parseError && form.title && (
+                <div className="flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                  <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  AI가 내용을 분석했습니다. 각 필드를 확인하고 필요시 수정해주세요.
+                </div>
+              )}
+              {parseError && (
+                <div className="flex items-start gap-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  {parseError} 아래 필드를 직접 입력해주세요.
+                </div>
               )}
             </div>
           )}
 
-          {/* 큐레이션: URL 입력 영역 */}
+          {/* 큐레이션: URL 입력 */}
           {form.type === 'curation' && (
             <div className="space-y-2">
               <label className={labelCls}>원문 URL <span className="text-gray-300 font-normal">(선택)</span></label>
-              <div className="flex gap-2">
-                <input
-                  className={inputCls}
-                  value={sourceUrl}
-                  onChange={e => handleUrlParse(e.target.value)}
-                  placeholder="https://..."
-                />
-              </div>
-              <p className="text-xs text-amber-500 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                AI 자동 파싱은 준비 중입니다. 아래 필드를 직접 입력해주세요.
-              </p>
+              <input
+                className={inputCls}
+                value={sourceUrl}
+                onChange={e => setSourceUrl(e.target.value)}
+                placeholder="https://..."
+              />
             </div>
           )}
 
-          {/* 구분선 */}
           {(form.type === 'original' || form.type === 'curation') && (
             <div className="border-t border-gray-100" />
           )}
@@ -310,9 +381,7 @@ function ContentFormModal({
                 onChange={e => patch('category', e.target.value as ContentCategory)}
                 className={inputCls}
               >
-                {CATEGORIES.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
+                {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
               </select>
             </div>
             <div>
@@ -340,10 +409,10 @@ function ContentFormModal({
             />
           </div>
 
-          {/* 태그 (칩 UI) */}
+          {/* 태그 */}
           <div>
             <label className={labelCls}>
-              태그 <span className="text-gray-300 font-normal">(선택 · Enter로 추가 · 주제도 태그로 관리)</span>
+              태그 <span className="text-gray-300 font-normal">(선택 · Enter로 추가)</span>
             </label>
             <div className="w-full border border-gray-200 rounded-xl p-2.5 focus-within:border-[#55A4DA] focus-within:ring-1 focus-within:ring-[#55A4DA]/30 transition bg-white min-h-[44px] flex flex-wrap gap-1.5 items-center">
               {form.tags.map(tag => (
@@ -354,9 +423,7 @@ function ContentFormModal({
                   #{tag}
                   <button
                     type="button"
-                    onClick={() =>
-                      setForm(prev => ({ ...prev, tags: prev.tags.filter(t => t !== tag) }))
-                    }
+                    onClick={() => setForm(prev => ({ ...prev, tags: prev.tags.filter(t => t !== tag) }))}
                     className="text-[#55A4DA]/60 hover:text-[#55A4DA] leading-none ml-0.5"
                   >
                     ×
@@ -429,6 +496,100 @@ function ContentFormModal({
   );
 }
 
+// ── PreviewPanel (우측 슬라이드인 A4 미리보기) ──────────────────────
+function PreviewPanel({ item, onClose }: { item: ContentPoolItem; onClose: () => void }) {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    requestAnimationFrame(() => setVisible(true));
+  }, []);
+
+  function handleClose() {
+    setVisible(false);
+    setTimeout(onClose, 280);
+  }
+
+  return (
+    <div
+      className={`fixed top-0 right-0 h-full z-40 w-[480px] flex flex-col bg-[#EFEFEF] shadow-2xl transition-transform duration-300 ease-out ${
+        visible ? 'translate-x-0' : 'translate-x-full'
+      }`}
+    >
+      {/* 헤더 */}
+      <div className="flex items-center justify-end px-4 py-3 bg-white border-b border-gray-200 flex-shrink-0">
+        <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      {/* A4 종이 미리보기 */}
+      <div className="flex-1 overflow-y-auto py-6 px-4">
+        <div
+          className="bg-white shadow-md rounded-sm p-8 mx-auto"
+          style={{ fontFamily: 'Georgia, "Batang", "Nanum Myeongjo", serif' }}
+        >
+          {/* 썸네일 */}
+          {item.thumbnail && (
+            <div className="mb-5">
+              <img
+                src={item.thumbnail}
+                alt={item.title}
+                className="w-full aspect-video object-cover rounded-sm"
+                onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            </div>
+          )}
+
+          {/* 분류 뱃지 */}
+          <div className="mb-3">
+            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${CATEGORY_COLOR[item.category]}`}>
+              {item.category}
+            </span>
+          </div>
+
+          {/* 제목 */}
+          <h1 className="text-xl font-bold text-gray-900 leading-snug mb-3">
+            {item.title}
+          </h1>
+
+          {/* 메타 */}
+          <p className="text-[11px] text-gray-400 mb-3 leading-relaxed" style={{ fontFamily: 'system-ui, sans-serif' }}>
+            {item.author}
+            <span className="mx-1.5">·</span>
+            {item.createdAt}
+            <span className="mx-1.5">·</span>
+            {item.duration}분 읽기
+          </p>
+
+          {/* 태그 */}
+          {item.tags.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-4" style={{ fontFamily: 'system-ui, sans-serif' }}>
+              {item.tags.map(tag => (
+                <span key={tag} className="text-[11px] text-[#55A4DA] font-medium">
+                  #{tag}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className="border-t border-gray-200 mb-5" />
+
+          {/* 본문 */}
+          <div className="text-sm text-gray-700 leading-[1.9] whitespace-pre-line">
+            {item.body || (
+              <span className="text-gray-400 italic" style={{ fontFamily: 'system-ui, sans-serif' }}>
+                본문 내용이 없습니다.
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── DeleteConfirmModal ────────────────────────────────────────────
 function DeleteConfirmModal({
   item,
@@ -491,10 +652,12 @@ function DeleteConfirmModal({
 // ── ContentCard ───────────────────────────────────────────────────
 function ContentCard({
   item,
+  onPreview,
   onEdit,
   onDelete,
 }: {
   item: ContentPoolItem;
+  onPreview: (item: ContentPoolItem) => void;
   onEdit: (item: ContentPoolItem) => void;
   onDelete: (item: ContentPoolItem) => void;
 }) {
@@ -504,7 +667,7 @@ function ContentCard({
   return (
     <div
       className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-lg hover:border-[#55A4DA]/40 transition-all overflow-hidden group cursor-pointer"
-      onClick={() => onEdit(item)}
+      onClick={() => onPreview(item)}
     >
       {/* 썸네일 */}
       <div className="relative aspect-video bg-gray-100 overflow-hidden">
@@ -512,26 +675,20 @@ function ContentCard({
           src={item.thumbnail}
           alt={item.title}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          onError={e => {
-            (e.target as HTMLImageElement).style.display = 'none';
-          }}
+          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
         />
-        {/* 분류 뱃지 */}
         <div className="absolute top-2.5 left-2.5">
-          <span
-            className={`inline-flex items-center px-2 py-1 rounded-lg text-[11px] font-bold shadow-sm ${CATEGORY_COLOR[item.category]}`}
-          >
+          <span className={`inline-flex items-center px-2 py-1 rounded-lg text-[11px] font-bold shadow-sm ${CATEGORY_COLOR[item.category]}`}>
             {item.category}
           </span>
         </div>
-        {/* 재생 시간 */}
         <div className="absolute bottom-2.5 right-2.5 bg-black/60 text-white text-[11px] font-semibold px-2 py-0.5 rounded-md">
           {item.duration}분
         </div>
-        {/* hover 액션 버튼 */}
+        {/* hover 액션 버튼 — stopPropagation으로 카드 클릭(미리보기)과 충돌 방지 */}
         <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity flex items-start justify-end p-2 gap-1.5">
           <button
-            onClick={(e) => { e.stopPropagation(); onEdit(item); }}
+            onClick={e => { e.stopPropagation(); onEdit(item); }}
             title="수정"
             className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow text-gray-600 hover:bg-[#55A4DA] hover:text-white transition-colors"
           >
@@ -540,7 +697,7 @@ function ContentCard({
             </svg>
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); onDelete(item); }}
+            onClick={e => { e.stopPropagation(); onDelete(item); }}
             title="삭제"
             className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow text-gray-600 hover:bg-red-500 hover:text-white transition-colors"
           >
@@ -590,6 +747,7 @@ export default function ContentPage() {
     sourceType?: ContentSource;
   } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ContentPoolItem | null>(null);
+  const [previewItem, setPreviewItem] = useState<ContentPoolItem | null>(null);
 
   const refresh = () => getContentList().then(setAllItems);
 
@@ -597,6 +755,22 @@ export default function ContentPage() {
     void refresh();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 상호 배타적 열기 헬퍼 — 미리보기↔수정모달 동시 열기 방지
+  function openCreate(sourceType: ContentSource) {
+    setPreviewItem(null);
+    setFormModal({ mode: 'create', sourceType });
+  }
+
+  function openEdit(item: ContentPoolItem) {
+    setPreviewItem(null);
+    setFormModal({ mode: 'edit', data: item });
+  }
+
+  function openPreview(item: ContentPoolItem) {
+    setFormModal(null);
+    setPreviewItem(item);
+  }
 
   const countByType = useMemo(
     () => ({
@@ -651,7 +825,7 @@ export default function ContentPage() {
           <span className="text-gray-800 font-bold">콘텐츠 풀</span>
         </div>
         <button
-          onClick={() => setFormModal({ mode: 'create', sourceType: activeTab })}
+          onClick={() => openCreate(activeTab)}
           className="flex items-center gap-2 bg-[#55A4DA] text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-[#3A8BC4] transition-colors shadow-sm"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -663,7 +837,6 @@ export default function ContentPage() {
 
       {/* ── 탭 + 필터 ── */}
       <div className="bg-white border-b border-gray-200 px-8 flex-shrink-0">
-        {/* 탭 */}
         <div className="flex gap-6 border-b border-gray-100">
           {SOURCES.map(tab => (
             <button
@@ -693,9 +866,7 @@ export default function ContentPage() {
           ))}
         </div>
 
-        {/* 필터 영역 */}
         <div className="py-3 space-y-2">
-          {/* 검색창 */}
           <div className="relative">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -708,8 +879,6 @@ export default function ContentPage() {
               className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-xs text-gray-700 placeholder-gray-300 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition bg-white"
             />
           </div>
-
-          {/* 분류 필터 — 가로 스크롤 */}
           <div className="flex gap-1.5 overflow-x-auto pb-0.5">
             {CATEGORIES.map(cat => (
               <button
@@ -748,7 +917,8 @@ export default function ContentPage() {
                 <ContentCard
                   key={item.id}
                   item={item}
-                  onEdit={item => setFormModal({ mode: 'edit', data: item })}
+                  onPreview={openPreview}
+                  onEdit={openEdit}
                   onDelete={setDeleteTarget}
                 />
               ))}
@@ -757,9 +927,18 @@ export default function ContentPage() {
         )}
       </div>
 
-      {/* ── 등록/수정 모달 ── */}
+      {/* ── 미리보기 패널 (z-40, 오버레이 없음) ── */}
+      {previewItem && (
+        <PreviewPanel
+          item={previewItem}
+          onClose={() => setPreviewItem(null)}
+        />
+      )}
+
+      {/* ── 등록/수정 모달 (z-50, 오버레이 있음) ── */}
       {formModal && (
         <ContentFormModal
+          key={formModal.mode === 'edit' ? (formModal.data?.id ?? 'edit') : 'create'}
           mode={formModal.mode}
           initialData={formModal.data}
           sourceType={formModal.sourceType}
