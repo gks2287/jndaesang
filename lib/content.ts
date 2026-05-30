@@ -9,6 +9,10 @@ export interface Round {
   contents: ContentPoolItem[];
   interactions: ('quiz' | 'scenario' | 'selfcheck' | 'reflection' | 'dodont')[];
   surveys: ('always' | 'periodic')[];
+  newsletterType: '일반형' | '맞춤형';
+  customTypes: string[];
+  customLeaderIds: number[];
+  generalLeaderIds: number[];
 }
 
 export interface ContentItem {

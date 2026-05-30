@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useNewsletterStore } from '@/store/newsletterStore';
 import { useCompanyStore } from '@/store/companyStore';
 import { DEFAULT_STORYLINE, STEP_COLORS, type StorylineStep } from '@/lib/storyline';
@@ -10,7 +10,7 @@ import { LEADERSHIP_COLOR } from '@/lib/constants/leadershipColors';
 import { type Round } from '@/lib/content';
 import { getContentList, type ContentPoolItem, type ContentCategory } from '@/lib/api/contentPool';
 import { useNewNewsletterDraftStore, type TopicSuggestion as DraftTopicSuggestion } from '@/store/newNewsletterDraftStore';
-import { useParticipantStore } from '@/store/participantStore';
+import { useParticipantStore, NEGATIVE_TYPES } from '@/store/participantStore';
 
 type DeliveryInterval = 'weekly' | 'biweekly' | 'monthly' | 'bimonthly' | 'quarterly' | 'semiannual';
 type WizardStep = 1 | 2 | 3 | 4;
@@ -95,6 +95,10 @@ function makeRoundsFromDistribution(dist: { stepIndex: number; count: number }[]
       contents: [],
       interactions: [],
       surveys: [],
+      newsletterType: '일반형' as const,
+      customTypes: [],
+      customLeaderIds: [],
+      generalLeaderIds: [],
     }))
   );
 }
@@ -134,27 +138,21 @@ function calcTotalDuration(startDate: string, interval: DeliveryInterval, count:
 
 function ConfigureContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const addNewsletter = useNewsletterStore(s => s.addNewsletter);
   const companies = useCompanyStore(s => s.companies);
 
-  const kind = searchParams.get('kind') ?? '일반형';
-  const companyIdsParam = searchParams.get('companyIds') ?? '';
-  const typesParam = searchParams.get('types') ?? '';
-  const deptsParam = searchParams.get('depts') ?? '';
-  const leadersCount = Number(searchParams.get('leaders') ?? 0);
-
-  const companyIdList = companyIdsParam
-    ? companyIdsParam.split(',').map(Number).filter(Boolean)
-    : [];
-  const targetCompanies = companies.filter(c => companyIdList.includes(c.id));
-  const leadershipTypes = typesParam ? typesParam.split(',').filter(Boolean) : [];
-  const isAllPositive = leadershipTypes.length > 0 && leadershipTypes.every(t => POSITIVE_LEADERSHIP_TYPES.has(t));
-  const isMixed = leadershipTypes.some(t => POSITIVE_LEADERSHIP_TYPES.has(t)) && leadershipTypes.some(t => !POSITIVE_LEADERSHIP_TYPES.has(t));
-
   const configDraft = useNewNewsletterDraftStore();
   const allParticipants = useParticipantStore(s => s.participants);
-  const selectedParticipants = allParticipants.filter(p => configDraft.selectedLeaders.includes(p.id));
+
+  const targetCompanies = companies.filter(c => configDraft.companyIds.includes(c.id));
+  const leadershipTypes: string[] = [];
+  const isAllPositive = false;
+  const isMixed = false;
+
+  const selectedParticipants = allParticipants.filter(p => configDraft.companyIds?.includes(p.companyId) ?? false);
+
+  const [showCompanyModal, setShowCompanyModal] = useState(configDraft.companyIds.length === 0);
+  const [modalCompanySearch, setModalCompanySearch] = useState('');
 
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
@@ -200,7 +198,6 @@ function ConfigureContent() {
   const [openSections, setOpenSections] = useState<Set<number>>(new Set([2]));
 
   // 뉴스레터 유형 선택 (0번 섹션, 뉴스레터 전체 적용)
-  const [selectedNewsletterType, setSelectedNewsletterType] = useState<'일반형' | '맞춤형' | null>(null);
   const [typeOpen, setTypeOpen] = useState(true);
 
   // 콘텐츠 풀
@@ -374,7 +371,7 @@ function ConfigureContent() {
         body: JSON.stringify({
           leadershipTypes,
           companyName: targetCompanies[0]?.name ?? '',
-          kind,
+          kind: '일반형',
           stepTitle: currentRound ? customStoryline[currentRound.stepIndex]?.title : '',
           roundIndex: roundIdx + 1,
         }),
@@ -491,6 +488,7 @@ function ConfigureContent() {
 
   // ── 네비게이션 ──
   function canGoNext(): boolean {
+    if (wizardStep === 1) return configDraft.companyIds.length > 0;
     if (wizardStep === 2) return distSum === totalRounds && totalRounds >= customStoryline.length;
     if (wizardStep === 3) return true;
     return true;
@@ -515,7 +513,7 @@ function ConfigureContent() {
     const company = targetCompanies[0];
     const leadershipType = leadershipTypes.length > 0
       ? leadershipTypes[0]
-      : deptsParam ? '부서별' : '미지정';
+      : '미지정';
     const autoTitle = `${company?.name ?? '미지정'} ${leadershipType} 리더십 코칭`.trim();
     addNewsletter({
       title: autoTitle,
@@ -550,7 +548,7 @@ function ConfigureContent() {
     const company = targetCompanies[0];
     const leadershipType = leadershipTypes.length > 0
       ? leadershipTypes[0]
-      : deptsParam ? '부서별' : '미지정';
+      : '미지정';
     addNewsletter({
       title: `${company?.name ?? '미지정'} ${leadershipType} 리더십 코칭`.trim(),
       companyId: company?.id ?? 0,
@@ -587,7 +585,7 @@ function ConfigureContent() {
     if (!deliveryInterval || !startDate) return;
     const schedDates = calcScheduleDates(startDate, deliveryInterval, rounds.length);
     console.log('[뉴스레터 생성 완료]', {
-      meta: { kind, targetCompanies, leadershipTypes, leadersCount },
+      meta: { targetCompanies, leadershipTypes },
       storyline: customStoryline,
       totalRounds,
       roundDistribution,
@@ -684,7 +682,7 @@ function ConfigureContent() {
         )}
         <div className="w-px h-4 bg-gray-200" />
         <span className="text-gray-500">
-          {kind} · 대상 리더 <span className="font-semibold text-gray-700">{leadersCount}명</span>
+          대상 리더 <span className="font-semibold text-gray-700">{selectedParticipants.length}명</span>
         </span>
       </div>
 
@@ -735,50 +733,49 @@ function ConfigureContent() {
               <h2 className="text-base font-bold text-gray-800 mb-1">뉴스레터 스토리라인</h2>
               <p className="text-xs text-gray-400">5단계 코칭 여정으로 리더의 변화를 이끕니다. 구조를 확인한 뒤 다음으로 진행하세요.</p>
             </div>
-
-            <div className="flex flex-col lg:flex-row items-stretch gap-0">
-              {customStoryline.map((s, i) => {
-                const color = STEP_COLORS[i % STEP_COLORS.length];
-                return (
-                  <div key={s.step} className="flex flex-col lg:flex-row items-stretch flex-1 min-w-0">
-                    <div className={`flex-1 rounded-2xl border-2 ${color.border} ${color.cardBg} p-5 flex flex-col gap-3`}>
-                      <div className="flex items-center gap-2.5">
-                        <div className={`w-8 h-8 rounded-full ${color.badge} flex items-center justify-center flex-shrink-0`}>
-                          <span className="text-white text-xs font-bold">{s.step}</span>
+              <div className="flex flex-col lg:flex-row items-stretch gap-0">
+                {customStoryline.map((s, i) => {
+                  const color = STEP_COLORS[i % STEP_COLORS.length];
+                  return (
+                    <div key={s.step} className="flex flex-col lg:flex-row items-stretch flex-1 min-w-0">
+                      <div className={`flex-1 rounded-2xl border-2 ${color.border} ${color.cardBg} p-5 flex flex-col gap-3`}>
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-8 h-8 rounded-full ${color.badge} flex items-center justify-center flex-shrink-0`}>
+                            <span className="text-white text-xs font-bold">{s.step}</span>
+                          </div>
+                          <div>
+                            <p className={`text-sm font-bold leading-tight ${color.titleColor}`}>{s.title}</p>
+                            <p className={`text-[11px] font-semibold ${color.subtitleColor}`}>{s.subtitle}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className={`text-sm font-bold leading-tight ${color.titleColor}`}>{s.title}</p>
-                          <p className={`text-[11px] font-semibold ${color.subtitleColor}`}>{s.subtitle}</p>
-                        </div>
+                        <p className="text-xs text-gray-600 leading-relaxed flex-1">{s.description}</p>
                       </div>
-                      <p className="text-xs text-gray-600 leading-relaxed flex-1">{s.description}</p>
+                      {i < customStoryline.length - 1 && (
+                        <div className="flex items-center justify-center lg:px-2 py-2 lg:py-0 flex-shrink-0">
+                          <svg className="w-4 h-4 text-gray-300 lg:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                          <svg className="w-4 h-4 text-gray-300 hidden lg:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </div>
+                      )}
                     </div>
-                    {i < customStoryline.length - 1 && (
-                      <div className="flex items-center justify-center lg:px-2 py-2 lg:py-0 flex-shrink-0">
-                        <svg className="w-4 h-4 text-gray-300 lg:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                        <svg className="w-4 h-4 text-gray-300 hidden lg:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+              <div className="pt-4 flex justify-end">
+                <button
+                  onClick={openEditModal}
+                  className="flex items-center gap-1.5 px-4 py-3 border border-gray-200 text-gray-600 text-sm font-semibold rounded-xl hover:bg-gray-50 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  편집
+                </button>
+              </div>
 
-            <div className="flex-shrink-0 pt-4 flex justify-end">
-              <button
-                onClick={openEditModal}
-                className="flex items-center gap-1.5 px-4 py-3 border border-gray-200 text-gray-600 text-sm font-semibold rounded-xl hover:bg-gray-50 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-                편집
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -1021,10 +1018,13 @@ function ConfigureContent() {
                     >
                       <span className="text-sm font-bold text-[#55A4DA] flex-shrink-0">1</span>
                       <p className="text-sm font-bold text-gray-800 flex-1 text-left">뉴스레터 유형</p>
-                      {isAllPositive || isMixed ? (
-                        <span className="text-[11px] font-semibold text-gray-400 flex-shrink-0">일반형 자동 적용</span>
-                      ) : selectedNewsletterType ? (
-                        <span className="text-[11px] font-semibold text-[#55A4DA] flex-shrink-0">{selectedNewsletterType}</span>
+                      {rounds[activeRoundIdx]?.newsletterType ? (
+                        <span className="text-[11px] font-semibold text-[#55A4DA] flex-shrink-0">
+                          {rounds[activeRoundIdx].newsletterType}
+                          {rounds[activeRoundIdx].newsletterType === '맞춤형' && rounds[activeRoundIdx].customTypes.length > 0
+                            ? ` · ${rounds[activeRoundIdx].customTypes.join(', ')}`
+                            : ''}
+                        </span>
                       ) : (
                         <span className="text-[11px] text-red-400 flex-shrink-0">필수</span>
                       )}
@@ -1034,68 +1034,114 @@ function ConfigureContent() {
                     </button>
                     <div className={`grid transition-all duration-200 ${typeOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
                       <div className="overflow-hidden">
-                        <div className="border-t border-gray-100 p-5">
-                          {isAllPositive || isMixed ? (
-                            <div className="space-y-2">
-                              <p className="text-xs text-gray-400 mb-3">
-                                {isAllPositive
-                                  ? '긍정적 리더십 유형은 현재 일반형만 지원됩니다.'
-                                  : '긍정·부정 리더십 유형 혼합 시 일반형으로만 발송됩니다.'}
-                              </p>
-                              <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl border-2 border-[#55A4DA] bg-[#55A4DA]/5 cursor-default">
-                                <div className="w-5 h-5 rounded-full border-2 border-[#55A4DA] bg-[#55A4DA] flex items-center justify-center flex-shrink-0">
-                                  <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                  </svg>
+                        <div className="border-t border-gray-100 p-5 space-y-2">
+                          <p className="text-xs text-gray-400 mb-3">이 회차의 발송 유형을 선택하세요.</p>
+                          {([
+                            { val: '일반형' as const, desc: '선택된 기업의 모든 리더에게 공통으로 발송' },
+                            { val: '맞춤형' as const, desc: '특정 리더십 유형에게만 맞춤화된 내용 발송' },
+                          ]).map(({ val, desc }) => {
+                            const checked = rounds[activeRoundIdx]?.newsletterType === val;
+                            return (
+                              <button
+                                key={val}
+                                onClick={() => {
+                                  if (val === '일반형') {
+                                    setRounds(prev => prev.map((r, i) => i !== activeRoundIdx ? r : {
+                                      ...r,
+                                      newsletterType: '일반형',
+                                      customTypes: [],
+                                      customLeaderIds: [],
+                                      generalLeaderIds: selectedParticipants.map(p => p.id),
+                                    }));
+                                  } else {
+                                    setRounds(prev => prev.map((r, i) => i !== activeRoundIdx ? r : {
+                                      ...r,
+                                      newsletterType: '맞춤형',
+                                      customTypes: r.customTypes,
+                                    }));
+                                  }
+                                }}
+                                className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border-2 transition-all text-left ${
+                                  checked ? 'border-[#55A4DA] bg-[#55A4DA]/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                }`}
+                              >
+                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                                  checked ? 'border-[#55A4DA] bg-[#55A4DA]' : 'border-gray-300'
+                                }`}>
+                                  {checked && (
+                                    <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
                                 </div>
                                 <div>
-                                  <p className="text-sm font-semibold text-[#2E7DB5]">일반형</p>
-                                  <p className="text-[11px] text-gray-400">모든 리더에게 공통으로 발송되는 내용</p>
+                                  <p className={`text-sm font-semibold ${checked ? 'text-[#2E7DB5]' : 'text-gray-700'}`}>{val}</p>
+                                  <p className="text-[11px] text-gray-400">{desc}</p>
                                 </div>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="space-y-2">
-                              <p className="text-xs text-gray-400 mb-3">이 뉴스레터의 발송 유형을 선택하세요.</p>
-                              {([
-                                { val: '일반형' as const, desc: '모든 리더에게 공통으로 발송되는 내용' },
-                                { val: '맞춤형' as const, desc: '해당 리더십 유형에게만 맞춤화된 내용' },
-                              ]).map(({ val, desc }) => {
-                                const checked = selectedNewsletterType === val;
+                              </button>
+                            );
+                          })}
+
+                          {/* 맞춤형 선택 시 부정 유형 선택 UI */}
+                          {rounds[activeRoundIdx]?.newsletterType === '맞춤형' && (
+                            <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+                              <p className="text-xs font-semibold text-gray-600 mb-2">맞춤형 대상 유형 선택 <span className="text-gray-400 font-normal">(1개)</span></p>
+                              {NEGATIVE_TYPES.map(type => {
+                                const count = selectedParticipants.filter(p => p.leadershipType === type).length;
+                                const isChecked = rounds[activeRoundIdx]?.customTypes.includes(type) ?? false;
                                 return (
                                   <button
-                                    key={val}
-                                    onClick={() => setSelectedNewsletterType(val)}
-                                    className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border-2 transition-all text-left ${
-                                      checked ? 'border-[#55A4DA] bg-[#55A4DA]/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                    key={type}
+                                    onClick={() => {
+                                      setRounds(prev => prev.map((r, i) => {
+                                        if (i !== activeRoundIdx) return r;
+                                        const next = isChecked
+                                          ? r.customTypes.filter(t => t !== type)
+                                          : [...r.customTypes, type];
+                                        const customLeaderIds = selectedParticipants.filter(p => next.includes(p.leadershipType)).map(p => p.id);
+                                        const generalLeaderIds = selectedParticipants.filter(p => !next.includes(p.leadershipType)).map(p => p.id);
+                                        return { ...r, customTypes: next, customLeaderIds, generalLeaderIds };
+                                      }));
+                                    }}
+                                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl border-2 text-left transition-all ${
+                                      isChecked ? 'border-[#55A4DA] bg-[#55A4DA]/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                                     }`}
                                   >
-                                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                                      checked ? 'border-[#55A4DA] bg-[#55A4DA]' : 'border-gray-300'
+                                    <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                                      isChecked ? 'border-[#55A4DA] bg-[#55A4DA]' : 'border-gray-300'
                                     }`}>
-                                      {checked && (
-                                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      {isChecked && (
+                                        <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                                         </svg>
                                       )}
                                     </div>
-                                    <div>
-                                      <p className={`text-sm font-semibold ${checked ? 'text-[#2E7DB5]' : 'text-gray-700'}`}>{val}</p>
-                                      <p className="text-[11px] text-gray-400">{desc}</p>
-                                    </div>
+                                    <span className={`text-sm font-semibold flex-1 ${isChecked ? 'text-[#2E7DB5]' : 'text-gray-700'}`}>{type}</span>
+                                    <span className="text-[11px] text-gray-400 flex-shrink-0">{count}명</span>
                                   </button>
                                 );
                               })}
-                              {selectedNewsletterType === '맞춤형' && (
-                                <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-xl px-3.5 py-3">
-                                  <svg className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                  </svg>
-                                  <p className="text-xs text-blue-700 leading-relaxed">
-                                    선택한 부정적 유형별로 각각 다른 내용이 제작됩니다.
-                                  </p>
-                                </div>
-                              )}
+
+                              {/* 수신자 요약 */}
+                              {rounds[activeRoundIdx]?.customTypes.length > 0 && (() => {
+                                const r = rounds[activeRoundIdx];
+                                const customCount = r.customLeaderIds.length;
+                                const generalCount = r.generalLeaderIds.length;
+                                const customSummary = r.customTypes.map(t => {
+                                  const n = selectedParticipants.filter(p => p.leadershipType === t).length;
+                                  return `${t} ${n}명`;
+                                }).join(' + ');
+                                return (
+                                  <div className="mt-2 px-3.5 py-2.5 bg-gray-50 rounded-xl border border-gray-200">
+                                    <p className="text-xs text-gray-700 leading-relaxed">
+                                      <span className="font-semibold text-[#2E7DB5]">{customSummary}</span>
+                                      <span className="text-gray-400"> (맞춤형, 총 {customCount}명) + 나머지 </span>
+                                      <span className="font-semibold text-gray-700">{generalCount}명</span>
+                                      <span className="text-gray-400"> (일반형)</span>
+                                    </p>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           )}
                         </div>
@@ -1979,6 +2025,15 @@ function ConfigureContent() {
                                         {date && (
                                           <span className="text-[11px] text-gray-400">📅 {formatKoreanDate(date)}</span>
                                         )}
+                                        {r.newsletterType === '맞춤형' && r.customTypes.length > 0 ? (
+                                          <span className="text-[11px] text-amber-600 font-semibold">
+                                            {r.customTypes.join('+')} {r.customLeaderIds.length}명(맞춤) + {r.generalLeaderIds.length}명(일반)
+                                          </span>
+                                        ) : (
+                                          <span className="text-[11px] text-gray-400">
+                                            전체 {selectedParticipants.length}명 수신
+                                          </span>
+                                        )}
                                       </div>
                                     </div>
                                   );
@@ -2458,6 +2513,89 @@ function ConfigureContent() {
           </div>
         );
       })()}
+
+      {/* ── 기업 선택 모달 ── */}
+      {showCompanyModal && (
+        <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-6">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[80vh]">
+            {/* 헤더 */}
+            <div className="px-6 py-5 border-b border-gray-200 flex-shrink-0">
+              <h2 className="text-base font-bold text-gray-800">대상 기업 선택</h2>
+              <p className="text-xs text-gray-400 mt-1">뉴스레터를 발송할 기업을 선택해주세요.</p>
+            </div>
+            {/* 검색 */}
+            <div className="px-6 pt-4 pb-3 flex-shrink-0">
+              <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5">
+                <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="기업명 검색"
+                  value={modalCompanySearch}
+                  onChange={e => setModalCompanySearch(e.target.value)}
+                  className="flex-1 bg-transparent text-sm text-gray-700 placeholder-gray-400 outline-none"
+                  autoFocus
+                />
+              </div>
+            </div>
+            {/* 기업 그리드 */}
+            <div className="flex-1 overflow-y-auto px-6 pb-4">
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                {companies
+                  .filter(c => !modalCompanySearch.trim() || c.name.includes(modalCompanySearch.trim()))
+                  .map(c => {
+                    const selected = configDraft.companyIds[0] === c.id;
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => configDraft.setDraft({ companyIds: selected ? [] : [c.id] })}
+                        className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl border-2 text-left transition-all ${
+                          selected
+                            ? 'border-[#55A4DA] bg-[#55A4DA]/5 shadow-sm'
+                            : 'border-gray-200 hover:border-[#55A4DA]/40 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className={`w-10 h-10 rounded-xl ${c.color} flex items-center justify-center flex-shrink-0`}>
+                          <span className="text-white text-xs font-bold">{c.initials}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-semibold truncate ${selected ? 'text-[#2E7DB5]' : 'text-gray-800'}`}>{c.name}</p>
+                          <p className="text-[11px] text-gray-400 truncate">{c.industry}</p>
+                        </div>
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                          selected ? 'border-[#55A4DA] bg-[#55A4DA]' : 'border-gray-300'
+                        }`}>
+                          {selected && (
+                            <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+              </div>
+            </div>
+            {/* 푸터 */}
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end flex-shrink-0">
+              <button
+                onClick={() => {
+                  if (configDraft.companyIds.length > 0) setShowCompanyModal(false);
+                }}
+                disabled={configDraft.companyIds.length === 0}
+                className={`px-6 py-2.5 text-sm font-bold rounded-xl transition-colors ${
+                  configDraft.companyIds.length > 0
+                    ? 'bg-[#55A4DA] hover:bg-[#3A8BC4] text-white shadow-sm'
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                시작하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── 임시저장 토스트 ── */}
       {showCancelConfirm && (

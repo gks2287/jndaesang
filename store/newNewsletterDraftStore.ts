@@ -3,8 +3,6 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { DEFAULT_STORYLINE, type StorylineStep } from '@/lib/storyline';
 import { makeStepContents, type StepContent, type Round } from '@/lib/content';
 
-type NewsletterKind = '일반형' | '맞춤형';
-type TargetCategory = 'leadership' | 'department' | 'ability';
 export type WizardStep = 1 | 2 | 3 | 4;
 type DeliverySchedule = '주 1회' | '격주' | '월 1회';
 
@@ -15,14 +13,7 @@ export interface TopicSuggestion {
 }
 
 interface NewNewsletterDraft {
-  // new 페이지
-  kind: NewsletterKind | null;
   companyIds: number[];
-  targetCategory: TargetCategory | null;
-  selectedTypes: string[];
-  selectedDepts: string[];
-  selectedAbilities: string[];
-  selectedLeaders: number[];
 
   // configure 페이지
   wizardStep: WizardStep;
@@ -39,13 +30,7 @@ interface NewNewsletterDraft {
 }
 
 const DEFAULT_DRAFT: NewNewsletterDraft = {
-  kind: null,
   companyIds: [],
-  targetCategory: null,
-  selectedTypes: [],
-  selectedDepts: [],
-  selectedAbilities: [],
-  selectedLeaders: [],
   wizardStep: 1,
   customStoryline: DEFAULT_STORYLINE,
   suggestions: [],

@@ -1,12 +1,21 @@
 import { create } from 'zustand';
 
 export type LeadershipType =
+  | '코칭형'
+  | '민주형'
+  | '서번트형'
+  | '비전형'
+  | '관계중심형'
   | '독재형'
   | '방관형'
-  | '성과압박형'
   | '불통형'
-  | '불명확형'
-  | '감정기복형';
+  | '성과압박형'
+  | '감정기복형'
+  | '완벽주의형'
+  | '우유부단형';
+
+export const POSITIVE_TYPES: LeadershipType[] = ['코칭형', '민주형', '서번트형', '비전형', '관계중심형'];
+export const NEGATIVE_TYPES: LeadershipType[] = ['독재형', '방관형', '불통형', '성과압박형', '감정기복형', '완벽주의형', '우유부단형'];
 
 export type DeliveryStatus = '발송완료' | '열람' | '미발송' | '완료';
 
@@ -38,7 +47,7 @@ const MOCK: Participant[] = [
 
   // 현대모비스 (id: 2) — 2026
   { id: 201, companyId: 2, year: 2026, name: '강서연', department: '부품개발팀', position: '부장', email: 'kang.sy@mobis.com', leadershipType: '독재형', assessmentRound: 2, deliveryStatus: '완료', lastOpenedAt: '2026-05-07', stepCurrent: 5, stepTotal: 5 },
-  { id: 202, companyId: 2, year: 2026, name: '윤재혁', department: '구매팀', position: '차장', email: 'yoon.jh@mobis.com', leadershipType: '불명확형', assessmentRound: 1, deliveryStatus: '열람', lastOpenedAt: '2026-05-08', stepCurrent: 3, stepTotal: 5 },
+  { id: 202, companyId: 2, year: 2026, name: '윤재혁', department: '구매팀', position: '차장', email: 'yoon.jh@mobis.com', leadershipType: '우유부단형', assessmentRound: 1, deliveryStatus: '열람', lastOpenedAt: '2026-05-08', stepCurrent: 3, stepTotal: 5 },
   { id: 203, companyId: 2, year: 2026, name: '임소희', department: '생산팀', position: '과장', email: 'lim.sh@mobis.com', leadershipType: '성과압박형', assessmentRound: 1, deliveryStatus: '발송완료', lastOpenedAt: null, stepCurrent: 1, stepTotal: 5 },
 
   // SK하이닉스 (id: 3) — 2026
@@ -52,7 +61,7 @@ const MOCK: Participant[] = [
 
   // 삼성SDI (id: 5) — 2026
   { id: 501, companyId: 5, year: 2026, name: '백승호', department: '배터리개발팀', position: '부장', email: 'baek.sh@samsungsdi.com', leadershipType: '독재형', assessmentRound: 2, deliveryStatus: '미발송', lastOpenedAt: null, stepCurrent: 0, stepTotal: 5 },
-  { id: 502, companyId: 5, year: 2026, name: '남지현', department: '전자재료팀', position: '차장', email: 'nam.jh@samsungsdi.com', leadershipType: '불명확형', assessmentRound: 1, deliveryStatus: '미발송', lastOpenedAt: null, stepCurrent: 0, stepTotal: 5 },
+  { id: 502, companyId: 5, year: 2026, name: '남지현', department: '전자재료팀', position: '차장', email: 'nam.jh@samsungsdi.com', leadershipType: '우유부단형', assessmentRound: 1, deliveryStatus: '미발송', lastOpenedAt: null, stepCurrent: 0, stepTotal: 5 },
 
   // KT&G (id: 6) — 2026
   { id: 601, companyId: 6, year: 2026, name: '홍기태', department: '마케팅팀', position: '부장', email: 'hong.kt@ktng.com', leadershipType: '감정기복형', assessmentRound: 2, deliveryStatus: '열람', lastOpenedAt: '2026-05-09', stepCurrent: 3, stepTotal: 5 },
