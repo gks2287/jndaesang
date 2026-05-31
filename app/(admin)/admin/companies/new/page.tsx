@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useCompanyStore, CoachingStatus } from '@/store/companyStore';
 
 const INDUSTRIES = ['화학/소재', '자동차 부품', '반도체', '철강', '배터리/전자', '소비재', '화학', '에너지', '금융', 'IT/소프트웨어', '유통/물류', '제약/바이오', '건설/부동산', '기타'];
-const STATUS_OPTIONS = ['준비 중', '코칭 진행 중', '코칭 완료', '미시작'];
+const STATUS_OPTIONS = ['진행 전', '진행 중', '진행 완료'];
 
 function getInitials(name: string) {
   const trimmed = name.trim();
@@ -26,7 +26,7 @@ export default function NewCompanyPage() {
     hrEmail: '',
     startDate: '',
     endDate: '',
-    status: '준비 중',
+    status: '진행 전',
     note: '',
   });
   const [files, setFiles] = useState<File[]>([]);

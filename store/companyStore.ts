@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type CoachingStatus = '진단 중' | '진단 완료' | '진단 시작 전';
+export type CoachingStatus = '진행 중' | '진행 완료' | '진행 전';
 
 export interface Company {
   id: number;
@@ -23,14 +23,14 @@ const COLORS = [
 ];
 
 const INITIAL: Company[] = [
-  { id: 1, name: 'LG화학', initials: 'LG', industry: '화학/소재', participantCount: 24, status: '진단 중', hrName: '', hrEmail: '', startDate: '2026-03-01', endDate: '2026-08-31', note: '', color: 'bg-[#55A4DA]' },
-  { id: 2, name: '현대모비스', initials: 'HM', industry: '자동차 부품', participantCount: 15, status: '진단 중', hrName: '', hrEmail: '', startDate: '2026-04-01', endDate: '2026-09-30', note: '', color: 'bg-[#4A90C4]' },
-  { id: 3, name: 'SK하이닉스', initials: 'SK', industry: '반도체', participantCount: 32, status: '진단 완료', hrName: '', hrEmail: '', startDate: '2026-02-01', endDate: '2026-07-31', note: '', color: 'bg-[#5B9BD5]' },
-  { id: 4, name: '포스코', initials: 'PS', industry: '철강', participantCount: 20, status: '진단 완료', hrName: '', hrEmail: '', startDate: '2025-09-01', endDate: '2026-02-28', note: '', color: 'bg-[#3A7BBF]' },
-  { id: 5, name: '삼성SDI', initials: 'SD', industry: '배터리/전자', participantCount: 12, status: '진단 시작 전', hrName: '', hrEmail: '', startDate: '2026-06-01', endDate: '2026-11-30', note: '', color: 'bg-[#6AAED6]' },
-  { id: 6, name: 'KT&G', initials: 'KT', industry: '소비재', participantCount: 18, status: '진단 중', hrName: '', hrEmail: '', startDate: '2026-03-15', endDate: '2026-09-15', note: '', color: 'bg-[#4B8FBF]' },
-  { id: 7, name: '롯데케미칼', initials: 'LC', industry: '화학', participantCount: 9, status: '진단 시작 전', hrName: '', hrEmail: '', startDate: '2026-05-01', endDate: '2026-10-31', note: '', color: 'bg-[#7DB3D0]' },
-  { id: 8, name: '두산에너빌리티', initials: 'DE', industry: '에너지', participantCount: 11, status: '진단 시작 전', hrName: '', hrEmail: '', startDate: '2026-07-01', endDate: '2026-12-31', note: '', color: 'bg-[#5CA0C8]' },
+  { id: 1, name: 'LG화학', initials: 'LG', industry: '화학/소재', participantCount: 24, status: '진행 중', hrName: '', hrEmail: '', startDate: '2026-03-01', endDate: '2026-08-31', note: '', color: 'bg-[#55A4DA]' },
+  { id: 2, name: '현대모비스', initials: 'HM', industry: '자동차 부품', participantCount: 15, status: '진행 중', hrName: '', hrEmail: '', startDate: '2026-04-01', endDate: '2026-09-30', note: '', color: 'bg-[#4A90C4]' },
+  { id: 3, name: 'SK하이닉스', initials: 'SK', industry: '반도체', participantCount: 32, status: '진행 완료', hrName: '', hrEmail: '', startDate: '2026-02-01', endDate: '2026-07-31', note: '', color: 'bg-[#5B9BD5]' },
+  { id: 4, name: '포스코', initials: 'PS', industry: '철강', participantCount: 20, status: '진행 완료', hrName: '', hrEmail: '', startDate: '2025-09-01', endDate: '2026-02-28', note: '', color: 'bg-[#3A7BBF]' },
+  { id: 5, name: '삼성SDI', initials: 'SD', industry: '배터리/전자', participantCount: 12, status: '진행 전', hrName: '', hrEmail: '', startDate: '2026-06-01', endDate: '2026-11-30', note: '', color: 'bg-[#6AAED6]' },
+  { id: 6, name: 'KT&G', initials: 'KT', industry: '소비재', participantCount: 18, status: '진행 중', hrName: '', hrEmail: '', startDate: '2026-03-15', endDate: '2026-09-15', note: '', color: 'bg-[#4B8FBF]' },
+  { id: 7, name: '롯데케미칼', initials: 'LC', industry: '화학', participantCount: 9, status: '진행 전', hrName: '', hrEmail: '', startDate: '2026-05-01', endDate: '2026-10-31', note: '', color: 'bg-[#7DB3D0]' },
+  { id: 8, name: '두산에너빌리티', initials: 'DE', industry: '에너지', participantCount: 11, status: '진행 전', hrName: '', hrEmail: '', startDate: '2026-07-01', endDate: '2026-12-31', note: '', color: 'bg-[#5CA0C8]' },
 ];
 
 interface CompanyStore {

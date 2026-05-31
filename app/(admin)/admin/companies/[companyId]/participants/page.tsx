@@ -176,10 +176,10 @@ export default function ParticipantsPage() {
             <div className="flex items-center gap-2 mb-0.5">
               <h2 className="text-base font-bold text-gray-800">{company.name}</h2>
               <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${
-                company.status === '코칭 진행 중' ? 'bg-blue-50 text-blue-600' :
-                company.status === '코칭 완료'   ? 'bg-emerald-50 text-emerald-600' :
-                company.status === '준비 중'     ? 'bg-yellow-50 text-yellow-600' :
-                                                   'bg-gray-100 text-gray-400'
+                company.status === '진행 중'   ? 'bg-blue-50 text-blue-600' :
+                company.status === '진행 완료' ? 'bg-emerald-50 text-emerald-600' :
+                company.status === '진행 전'   ? 'bg-yellow-50 text-yellow-600' :
+                                                 'bg-gray-100 text-gray-400'
               }`}>
                 {company.status}
               </span>

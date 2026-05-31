@@ -17,14 +17,14 @@ const LEADERSHIP_COLORS: Record<LeadershipType, string> = {
 };
 
 const statusDot: Record<string, string> = {
-  '진단 중':      'bg-[#55A4DA]',
-  '진단 완료':    'bg-emerald-400',
-  '진단 시작 전': 'bg-gray-300',
+  '진행 중':   'bg-[#55A4DA]',
+  '진행 완료': 'bg-emerald-400',
+  '진행 전':   'bg-gray-300',
 };
 const statusText: Record<string, string> = {
-  '진단 중':      'text-[#2E7DB5]',
-  '진단 완료':    'text-emerald-600',
-  '진단 시작 전': 'text-gray-400',
+  '진행 중':   'text-[#2E7DB5]',
+  '진행 완료': 'text-emerald-600',
+  '진행 전':   'text-gray-400',
 };
 
 function DonutChart({ segments, total }: {
@@ -59,8 +59,13 @@ function DonutChart({ segments, total }: {
   );
 }
 
+const STATUS_TOGGLES = ['진행 전', '진행 중', '진행 완료'] as const;
+type StatusToggle = typeof STATUS_TOGGLES[number];
+
 export default function AnalyticsPage() {
   const [activeYear, setActiveYear] = useState('2026');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusToggle | null>(null);
   const companies = useCompanyStore(s => s.companies);
   const participants = useParticipantStore(s => s.participants);
 
@@ -118,15 +123,76 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
+      {/* 검색 + 상태 필터 */}
+      <div className="bg-white border-b border-gray-200 px-8 py-3 flex items-center justify-end gap-3 flex-shrink-0">
+        <div className="flex items-center gap-1.5">
+          {STATUS_TOGGLES.map(s => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(prev => prev === s ? null : s)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${
+                statusFilter === s
+                  ? s === '진행 중'   ? 'bg-[#55A4DA] border-[#55A4DA] text-white'
+                  : s === '진행 완료' ? 'bg-emerald-500 border-emerald-500 text-white'
+                                      : 'bg-gray-400 border-gray-400 text-white'
+                  : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                statusFilter === s ? 'bg-white/70'
+                : s === '진행 중'   ? 'bg-[#55A4DA]'
+                : s === '진행 완료' ? 'bg-emerald-400'
+                                    : 'bg-gray-300'
+              }`} />
+              {s}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5">
+          <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="기업명 검색"
+            className="bg-transparent text-sm text-gray-600 placeholder-gray-400 outline-none w-32"
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')} className="text-gray-300 hover:text-gray-500 transition-colors">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* 본문 */}
       <div className="flex-1 overflow-y-auto px-8 py-6">
-        {companyStats.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-gray-300">
-            <p className="text-sm">{activeYear}년 기업 데이터가 없습니다.</p>
-          </div>
-        ) : (
+        {(() => {
+          const filtered = companyStats.filter(({ company }) => {
+            const matchSearch = company.name.includes(searchQuery.trim());
+            const matchStatus = statusFilter === null || company.status === statusFilter;
+            return matchSearch && matchStatus;
+          });
+
+          if (filteredCompanies.length === 0) return (
+            <div className="flex flex-col items-center justify-center h-64 text-gray-300">
+              <p className="text-sm">{activeYear}년 기업 데이터가 없습니다.</p>
+            </div>
+          );
+
+          if (filtered.length === 0) return (
+            <div className="flex flex-col items-center justify-center h-64 text-gray-300">
+              <p className="text-sm">검색 결과가 없습니다.</p>
+            </div>
+          );
+
+          return (
           <div className="grid grid-cols-3 gap-6">
-            {companyStats.map(({ company, total, openRate, completionRate, leadershipDist }) => (
+            {filtered.map(({ company, total, openRate, completionRate, leadershipDist }) => (
               <Link
                 key={company.id}
                 href={`/admin/analytics/${company.id}`}
@@ -189,7 +255,8 @@ export default function AnalyticsPage() {
               </Link>
             ))}
           </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );

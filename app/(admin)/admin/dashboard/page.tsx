@@ -5,26 +5,22 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCompanyStore } from '@/store/companyStore';
 
-const STATUS_TABS = ['전체', '진단 중', '진단 완료', '진단 준비'] as const;
+const STATUS_TABS = ['전체', '진행 전', '진행 중', '진행 완료'] as const;
 type StatusTab = typeof STATUS_TABS[number];
 
-const statusMap: Record<string, string> = {
-  '진단 시작 전': '진단 준비',
-};
-const reverseStatusMap: Record<string, string> = {
-  '진단 준비': '진단 시작 전',
-};
+const statusMap: Record<string, string> = {};
+const reverseStatusMap: Record<string, string> = {};
 
 const statusDot: Record<string, string> = {
-  '진단 중': 'bg-[#55A4DA]',
-  '진단 완료': 'bg-emerald-400',
-  '진단 준비': 'bg-gray-300',
+  '진행 중': 'bg-[#55A4DA]',
+  '진행 완료': 'bg-emerald-400',
+  '진행 전': 'bg-gray-300',
 };
 
 const statusText: Record<string, string> = {
-  '진단 중': 'text-[#2E7DB5]',
-  '진단 완료': 'text-emerald-600',
-  '진단 준비': 'text-gray-400',
+  '진행 중': 'text-[#2E7DB5]',
+  '진행 완료': 'text-emerald-600',
+  '진행 전': 'text-gray-400',
 };
 
 export default function DashboardPage() {

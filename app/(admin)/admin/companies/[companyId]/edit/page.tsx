@@ -10,7 +10,7 @@ import { useDiagnosisHistoryStore } from '@/store/diagnosisHistoryStore';
 
 const LEADERSHIP_TYPES: LeadershipType[] = ['독재형', '방관형', '성과압박형', '불통형', '불명확형', '감정기복형'];
 const EMPTY_HISTORY: LeadershipInfoVersion[] = [];
-const COACHING_STATUSES: CoachingStatus[] = ['코칭 진행 중', '코칭 완료', '준비 중', '미시작'];
+const COACHING_STATUSES: CoachingStatus[] = ['진행 중', '진행 완료', '진행 전'];
 
 const leadershipColor: Record<LeadershipType, string> = {
   '독재형':    'bg-red-100 text-red-600',
@@ -54,7 +54,7 @@ export default function CompanyEditPage() {
   const [companyForm, setCompanyForm] = useState({
     name: company?.name ?? '',
     industry: company?.industry ?? '',
-    status: company?.status ?? '준비 중' as CoachingStatus,
+    status: company?.status ?? '진행 전' as CoachingStatus,
     hrName: company?.hrName ?? '',
     hrEmail: company?.hrEmail ?? '',
     startDate: company?.startDate ?? '',

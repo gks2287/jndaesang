@@ -1,9 +1,10 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useCompanyStore } from '@/store/companyStore';
 import { useParticipantStore, type LeadershipType, type Participant } from '@/store/participantStore';
+import * as XLSX from 'xlsx';
 
 const LEADERSHIP_COLORS: Record<LeadershipType, string> = {
   '독재형':    '#2E7DB5',
@@ -15,14 +16,14 @@ const LEADERSHIP_COLORS: Record<LeadershipType, string> = {
 };
 
 const statusDot: Record<string, string> = {
-  '진단 중':      'bg-[#55A4DA]',
-  '진단 완료':    'bg-emerald-400',
-  '진단 시작 전': 'bg-gray-300',
+  '진행 중':   'bg-[#55A4DA]',
+  '진행 완료': 'bg-emerald-400',
+  '진행 전':   'bg-gray-300',
 };
 const statusText: Record<string, string> = {
-  '진단 중':      'text-[#2E7DB5]',
-  '진단 완료':    'text-emerald-600',
-  '진단 시작 전': 'text-gray-400',
+  '진행 중':   'text-[#2E7DB5]',
+  '진행 완료': 'text-emerald-600',
+  '진행 전':   'text-gray-400',
 };
 const deliveryBadge: Record<string, string> = {
   '완료':    'bg-emerald-50 text-emerald-600',
@@ -135,6 +136,9 @@ export default function CompanyDetailPage() {
   const years = useMemo(() => [...new Set(members.map(p => p.year))].sort((a, b) => b - a), [members]);
   const [activeYear, setActiveYear] = useState<number>(() => years[0] ?? new Date().getFullYear());
   const [activeLeadership, setActiveLeadership] = useState<LeadershipType | null>(null);
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  const downloadRef = useRef<HTMLDivElement>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
 
   const yearMembers = useMemo(() => members.filter(p => p.year === activeYear), [members, activeYear]);
 
@@ -158,6 +162,54 @@ export default function CompanyDetailPage() {
     })),
     [yearMembers],
   );
+
+  const handleDownloadExcel = () => {
+    const rows = yearMembers.map(p => {
+      const opened = p.deliveryStatus === '열람' || p.deliveryStatus === '완료';
+      const participationRate = p.stepTotal > 0 ? Math.round((p.stepCurrent / p.stepTotal) * 100) : 0;
+      return {
+        이름: p.name,
+        부서: p.department,
+        직급: p.position,
+        리더십유형: p.leadershipType,
+        발송상태: p.deliveryStatus,
+        진행단계: `${p.stepCurrent}/${p.stepTotal}`,
+        열람률: opened ? '100%' : '0%',
+        최근열람: p.lastOpenedAt ?? '-',
+        참여율: `${participationRate}%`,
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '직책자현황');
+    XLSX.writeFile(wb, `${company?.name ?? 'analytics'}_${activeYear}.xlsx`);
+    setDownloadOpen(false);
+  };
+
+  const handleDownloadPng = async () => {
+    setDownloadOpen(false);
+    const { default: html2canvas } = await import('html2canvas');
+    const el = pageRef.current;
+    if (!el) return;
+
+    const prevOverflow = el.style.overflow;
+    const prevHeight = el.style.height;
+    const prevMaxHeight = el.style.maxHeight;
+    el.style.overflow = 'visible';
+    el.style.height = el.scrollHeight + 'px';
+    el.style.maxHeight = 'none';
+
+    const canvas = await html2canvas(el, { scale: 2, useCORS: true, logging: false });
+
+    el.style.overflow = prevOverflow;
+    el.style.height = prevHeight;
+    el.style.maxHeight = prevMaxHeight;
+
+    const link = document.createElement('a');
+    link.download = `${company?.name ?? 'analytics'}_${activeYear}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  };
 
   if (!company) {
     return (
@@ -187,7 +239,7 @@ export default function CompanyDetailPage() {
       </div>
 
       {/* 본문 */}
-      <div className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
+      <div ref={pageRef} className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
 
         {/* 기업 정보 카드 */}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 flex items-start gap-6">
@@ -241,6 +293,59 @@ export default function CompanyDetailPage() {
                 <option key={type} value={type}>{type}</option>
               ))}
             </select>
+
+            {/* 다운로드 버튼 */}
+            <div ref={downloadRef} className="relative">
+              <button
+                onClick={() => setDownloadOpen(prev => !prev)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 bg-white border border-gray-200 hover:border-[#55A4DA] hover:text-[#55A4DA] transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                다운로드
+                <svg className={`w-3.5 h-3.5 transition-transform ${downloadOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {downloadOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setDownloadOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1.5 z-20 bg-white border border-gray-200 rounded-xl shadow-lg py-1.5 w-44 overflow-hidden">
+                    <button
+                      onClick={handleDownloadExcel}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      <span className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                        <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      </span>
+                      <div className="text-left">
+                        <p className="font-medium text-gray-800">엑셀 다운로드</p>
+                        <p className="text-[11px] text-gray-400">.xlsx 형식</p>
+                      </div>
+                    </button>
+                    <div className="mx-4 my-1 border-t border-gray-100" />
+                    <button
+                      onClick={handleDownloadPng}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      <span className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                        <svg className="w-4 h-4 text-[#55A4DA]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                      </span>
+                      <div className="text-left">
+                        <p className="font-medium text-gray-800">이미지 다운로드</p>
+                        <p className="text-[11px] text-gray-400">.png 형식</p>
+                      </div>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
