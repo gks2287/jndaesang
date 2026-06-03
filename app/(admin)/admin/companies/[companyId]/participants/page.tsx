@@ -7,7 +7,6 @@ import { useCompanyStore } from '@/store/companyStore';
 import { useParticipantStore, type DeliveryStatus, type LeadershipType, type Participant } from '@/store/participantStore';
 import { useMemo } from 'react';
 
-const STATUS_TABS = ['전체', '발송완료', '미발송'];
 
 const deliveryBadge: Record<DeliveryStatus, { bg: string; text: string; dot: string }> = {
   '열람':     { bg: 'bg-blue-50',   text: 'text-blue-600',   dot: 'bg-blue-400' },
@@ -72,8 +71,7 @@ export default function ParticipantsPage() {
     [allParticipants, selectedYear],
   );
 
-  const [activeTab, setActiveTab] = useState('전체');
-  const [search, setSearch] = useState('');
+const [search, setSearch] = useState('');
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ count: number; error?: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -103,7 +101,6 @@ export default function ParticipantsPage() {
   }
 
   const filtered = participants
-    .filter(p => activeTab === '전체' || p.deliveryStatus === activeTab)
     .filter(p =>
       p.name.includes(search) ||
       p.position.includes(search) ||
@@ -147,11 +144,7 @@ export default function ParticipantsPage() {
       {/* 상단 토퍼 */}
       <div className="bg-white border-b border-gray-200 px-8 h-[65px] flex items-center justify-between">
         <div className="flex items-center gap-2 text-[15px] text-gray-800">
-          <Link href="/admin/dashboard" className="text-gray-400 font-medium hover:text-gray-600 transition-colors">
-            진단 대상
-          </Link>
-          <span className="text-gray-300">›</span>
-          <span className="font-bold">{company.name}</span>
+          <span className="font-bold text-gray-800">{company.name}</span>
         </div>
 
         <Link
@@ -186,117 +179,40 @@ export default function ParticipantsPage() {
             </div>
             <p className="text-xs text-gray-400">{company.industry} · 대상 리더 {company.participantCount}명</p>
           </div>
-          <div className="ml-auto flex items-center gap-2">
-            {years.length > 0 && years.map(y => (
-              <button
-                key={y}
-                onClick={() => { setActiveYear(y); setActiveTab('전체'); }}
-                className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                  y === selectedYear
-                    ? 'bg-[#55A4DA] text-white'
-                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                }`}
-              >
-                {y}년
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* 탭 */}
         <div className="flex items-end justify-between border-b border-gray-200 mb-5">
           <div className="flex gap-6">
-          {STATUS_TABS.map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`pb-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
-                activeTab === tab
-                  ? 'border-[#55A4DA] text-[#55A4DA]'
-                  : 'border-transparent text-gray-400 hover:text-gray-600'
-              }`}
-            >
-              {tab}
-              {tab !== '전체' && (
-                <span className="ml-1.5 text-xs text-gray-400">
-                  {participants.filter(p => p.deliveryStatus === tab).length}
-                </span>
-              )}
-            </button>
-          ))}
+            {years.length > 0 ? years.map(y => (
+              <button
+                key={y}
+                onClick={() => setActiveYear(y)}
+                className={`pb-3 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                  y === selectedYear
+                    ? 'border-[#55A4DA] text-[#55A4DA]'
+                    : 'border-transparent text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                {y}년
+              </button>
+            )) : (
+              <span className="pb-3 text-sm text-gray-300">등록된 연도 없음</span>
+            )}
           </div>
 
-          {/* 검색 + 직책자 추가 */}
-          <div className="flex items-center gap-3 pb-2">
-            <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5">
-              <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="text"
-                placeholder="이름, 직책, 유형 검색"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="bg-transparent text-sm text-gray-600 placeholder-gray-400 outline-none w-32"
-              />
-            </div>
-            <div className="relative">
-              <button
-                onClick={() => setAddMenuOpen(prev => !prev)}
-                className="flex items-center gap-2 bg-[#55A4DA] hover:bg-[#3A8BC4] text-white text-sm font-semibold px-3.5 py-1.5 rounded-lg transition-colors"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                직책자 추가
-                <svg className={`w-3.5 h-3.5 transition-transform ${addMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              {addMenuOpen && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setAddMenuOpen(false)} />
-                  <div className="absolute right-0 mt-2 w-52 bg-white border border-gray-100 rounded-2xl shadow-xl z-20 overflow-hidden p-1.5">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".xlsx,.xls,.csv"
-                      className="hidden"
-                      onChange={handleFileUpload}
-                    />
-                    <button
-                      onClick={() => { setAddMenuOpen(false); fileInputRef.current?.click(); }}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-700 hover:bg-[#55A4DA]/8 hover:text-[#2E7DB5] transition-colors group"
-                    >
-                      <span className="w-8 h-8 rounded-lg bg-gray-100 group-hover:bg-[#55A4DA]/15 flex items-center justify-center transition-colors flex-shrink-0">
-                        <svg className="w-4 h-4 text-gray-500 group-hover:text-[#55A4DA]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                      </span>
-                      <div className="text-left">
-                        <p className="text-sm font-semibold">파일로 추가</p>
-                        <p className="text-[11px] text-gray-400 font-normal">엑셀·CSV 일괄 업로드</p>
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => setAddMenuOpen(false)}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-700 hover:bg-[#55A4DA]/8 hover:text-[#2E7DB5] transition-colors group"
-                    >
-                      <span className="w-8 h-8 rounded-lg bg-gray-100 group-hover:bg-[#55A4DA]/15 flex items-center justify-center transition-colors flex-shrink-0">
-                        <svg className="w-4 h-4 text-gray-500 group-hover:text-[#55A4DA]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                        </svg>
-                      </span>
-                      <div className="text-left">
-                        <p className="text-sm font-semibold">개별 추가</p>
-                        <p className="text-[11px] text-gray-400 font-normal">직접 정보 입력</p>
-                      </div>
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
+          {/* 검색 */}
+          <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 mb-2">
+            <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              placeholder="이름, 직책, 유형 검색"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="bg-transparent text-sm text-gray-600 placeholder-gray-400 outline-none w-32"
+            />
           </div>
         </div>
 
@@ -333,24 +249,12 @@ export default function ParticipantsPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
                 </svg>
               </div>
-              {/* 발송 회차 필터 */}
-              <div className="relative">
-                <select className="appearance-none text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg pl-3 pr-7 py-1.5 outline-none cursor-pointer hover:border-[#55A4DA]/60 focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/20 transition-all shadow-sm">
-                  <option value="">발송 회차</option>
-                  <option>1회차</option>
-                  <option>2회차</option>
-                  <option>3회차</option>
-                </select>
-                <svg className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
             </div>
           </div>
 
           {/* 컬럼 헤더 */}
-          <div className="grid grid-cols-[2.5fr_1fr_1fr_1fr_1fr_1fr_80px] px-6 py-2.5 bg-gray-50 border-b border-gray-200">
-            {['이름', '부서', '직책', '리더십 유형', '발송 현황', '발송 회차', ''].map(h => (
+          <div className="grid grid-cols-[2.5fr_1fr_1fr_1fr] px-6 py-2.5 bg-gray-50 border-b border-gray-200">
+            {['이름', '부서', '직책', '리더십 유형'].map(h => (
               <p key={h} className="text-xs font-semibold text-gray-400 tracking-wider uppercase">{h}</p>
             ))}
           </div>
@@ -363,14 +267,13 @@ export default function ParticipantsPage() {
               </div>
             ) : (
               filtered.map(p => {
-                const badge = deliveryBadge[p.deliveryStatus];
                 const leaderColor = leadershipColor[p.leadershipType];
 
                 return (
                   <Link
                     key={p.id}
                     href={`/admin/companies/${companyId}/participants/${p.id}`}
-                    className="grid grid-cols-[2.5fr_1fr_1fr_1fr_1fr_1fr_80px] px-6 py-4 items-center hover:bg-blue-50/40 transition-colors cursor-pointer"
+                    className="grid grid-cols-[2.5fr_1fr_1fr_1fr] px-6 py-4 items-center hover:bg-blue-50/40 transition-colors cursor-pointer"
                   >
                     {/* 이름 */}
                     <div className="flex items-center gap-3">
@@ -393,30 +296,6 @@ export default function ParticipantsPage() {
                     <span className={`inline-flex w-fit text-xs font-semibold px-2.5 py-1 rounded-full ${leaderColor}`}>
                       {p.leadershipType}
                     </span>
-
-                    {/* 발송 현황 */}
-                    <div className="flex items-center gap-1.5">
-                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${badge.dot}`} />
-                      <span className={`text-sm font-medium ${badge.text}`}>{p.deliveryStatus}</span>
-                    </div>
-
-                    {/* 발송 회차 */}
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 bg-gray-100 rounded-full h-1.5 max-w-[48px]">
-                        <div
-                          className="bg-[#55A4DA] h-1.5 rounded-full transition-all"
-                          style={{ width: `${(p.assessmentRound / 3) * 100}%` }}
-                        />
-                      </div>
-                      <span className="text-xs text-gray-400 whitespace-nowrap">{p.assessmentRound}/3</span>
-                    </div>
-
-                    {/* 액션 */}
-                    <div className="flex items-center justify-end gap-1">
-                      <span className="text-xs text-[#55A4DA] font-medium px-2 py-1 rounded bg-blue-50/0 group-hover:bg-blue-50 transition-colors">
-                        상세 →
-                      </span>
-                    </div>
                   </Link>
                 );
               })

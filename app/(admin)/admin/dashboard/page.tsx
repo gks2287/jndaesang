@@ -39,8 +39,6 @@ export default function DashboardPage() {
       {/* ── 상단 토퍼 ── */}
       <div className="bg-white border-b border-gray-200 px-8 h-[65px] flex items-center justify-between">
         <div className="flex items-center gap-2 text-[15px] text-gray-800">
-          <span className="text-gray-400 font-medium">리더십 코칭 관리</span>
-          <span className="text-gray-300">›</span>
           <span className="font-bold">진단 대상</span>
         </div>
         <div className="flex items-center gap-3">

@@ -955,12 +955,8 @@ export default function ContentPage() {
 
       {/* ── 상단 토퍼 ── */}
       <div className="bg-white border-b border-gray-200 px-8 py-3.5 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-2 text-[15px] text-gray-400 font-semibold">
-          <span>리더십 코칭 관리</span>
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-          <span className="text-gray-800 font-bold">콘텐츠 풀</span>
+        <div className="flex items-center gap-2 text-[15px] text-gray-800 font-semibold">
+          <span className="font-bold">콘텐츠 풀</span>
         </div>
         <div className="flex items-center gap-2">
           <button

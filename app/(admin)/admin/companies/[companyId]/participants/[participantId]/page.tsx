@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react';
 import { useCompanyStore } from '@/store/companyStore';
 import { useParticipantStore, type LeadershipType, type DeliveryStatus } from '@/store/participantStore';
 import { useDiagnosisHistoryStore } from '@/store/diagnosisHistoryStore';
+import { DEFAULT_STORYLINE, STEP_COLORS } from '@/lib/storyline';
 
 const leadershipColor: Record<LeadershipType, string> = {
   '코칭형':    'bg-emerald-100 text-emerald-700',
@@ -71,6 +72,17 @@ const logIcon = {
   survey:   { bg: 'bg-gray-200',   icon: 'text-gray-600' },
 };
 
+// 각 로그가 속한 회차(step) 계산 — 열람 로그의 "Step N" 기준으로 그룹핑
+const LOG_ROUNDS: number[] = (() => {
+  let cur = 0;
+  return MOCK_LOGS.map(log => {
+    const m = log.detail.match(/Step (\d+)/);
+    if (m) cur = Number(m[1]);
+    return cur;
+  });
+})();
+const AVAILABLE_ROUNDS = [...new Set(LOG_ROUNDS)].filter(r => r > 0).sort((a, b) => a - b);
+
 export default function ParticipantDetailPage() {
   const params = useParams();
   const companyId = Number(params.companyId);
@@ -97,6 +109,7 @@ export default function ParticipantDetailPage() {
   const leaderInfo = leadershipDesc[participant.leadershipType];
   const progressPct = Math.round((participant.stepCurrent / participant.stepTotal) * 100);
   const [expandedLog, setExpandedLog] = useState<number | null>(null);
+  const [activeRound, setActiveRound] = useState<number | null>(null);
 
   // 실제 데이터에 맞게 스텝 완료 수 계산
   const completedSteps = MOCK_STEPS.filter(s => s.completed).length;
@@ -107,7 +120,7 @@ export default function ParticipantDetailPage() {
       {/* 상단 토퍼 */}
       <div className="bg-white border-b border-gray-200 px-8 h-[65px] flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2 text-[15px] text-gray-400 font-semibold">
-          <Link href="/admin/dashboard" className="hover:text-gray-600 transition-colors">리더목록</Link>
+          <Link href="/admin/dashboard" className="hover:text-gray-600 transition-colors">진단대상</Link>
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
@@ -220,64 +233,71 @@ export default function ParticipantDetailPage() {
               <h2 className="text-sm font-bold text-gray-800">뉴스레터 스토리라인</h2>
               <div className="flex items-center gap-2">
                 <div className="w-24 bg-gray-100 rounded-full h-1.5">
-                  <div
-                    className="bg-[#55A4DA] h-1.5 rounded-full transition-all"
-                    style={{ width: `${progressPct}%` }}
-                  />
+                  <div className="bg-[#55A4DA] h-1.5 rounded-full transition-all" style={{ width: `${progressPct}%` }} />
                 </div>
                 <span className="text-xs font-semibold text-[#55A4DA]">{progressPct}%</span>
               </div>
             </div>
 
-            <div className="space-y-2">
-              {MOCK_STEPS.map((s) => {
-                const isDone = s.completed;
-                const isSent = !!s.sentAt && !isDone;
-                const isPending = !s.sentAt;
+            <div className="flex flex-col lg:flex-row items-stretch gap-0">
+              {DEFAULT_STORYLINE.map((s, i) => {
+                const color = STEP_COLORS[i % STEP_COLORS.length];
+                const mock = MOCK_STEPS[i];
+                const isDone = mock?.completed ?? false;
+                const isSent = !!mock?.sentAt && !isDone;
 
                 return (
-                  <div
-                    key={s.step}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
-                      isDone ? 'bg-emerald-50' : isSent ? 'bg-yellow-50' : 'bg-gray-50'
-                    }`}
-                  >
-                    {/* 스텝 번호 뱃지 */}
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold ${
-                      isDone ? 'bg-emerald-500 text-white' :
-                      isSent ? 'bg-yellow-400 text-white' :
-                      'bg-gray-200 text-gray-400'
-                    }`}>
-                      {isDone ? (
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : s.step}
+                  <div key={s.step} className="flex flex-col lg:flex-row items-stretch flex-1 min-w-0">
+                    <div className={`flex-1 rounded-2xl border-2 ${color.border} ${color.cardBg} p-4 flex flex-col gap-2.5 relative`}>
+                      {/* 상태 뱃지 */}
+                      <div className="absolute top-3 right-3">
+                        {isDone ? (
+                          <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full">
+                            완료 · {mock.interactionRate}%
+                          </span>
+                        ) : isSent ? (
+                          <span className="text-[10px] font-bold text-yellow-600 bg-yellow-100 px-2 py-0.5 rounded-full">발송완료</span>
+                        ) : (
+                          <span className="text-[10px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">미발송</span>
+                        )}
+                      </div>
+
+                      {/* 스텝 번호 + 타이틀 */}
+                      <div className="flex items-center gap-2.5 pr-16">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${isDone ? 'bg-emerald-500' : color.badge}`}>
+                          {isDone ? (
+                            <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                            </svg>
+                          ) : (
+                            <span className="text-white text-xs font-bold">{s.step}</span>
+                          )}
+                        </div>
+                        <div>
+                          <p className={`text-sm font-bold leading-tight ${color.titleColor}`}>{s.title}</p>
+                          <p className={`text-[11px] font-semibold ${color.subtitleColor}`}>{s.subtitle}</p>
+                        </div>
+                      </div>
+
+                      {/* 설명 */}
+                      <p className="text-xs text-gray-500 leading-relaxed flex-1">{s.description}</p>
+
+                      {/* 발송일 */}
+                      {mock?.sentAt && (
+                        <p className="text-[10px] text-gray-300">{mock.sentAt} 발송</p>
+                      )}
                     </div>
 
-                    {/* 제목 */}
-                    <p className={`text-xs font-medium flex-1 min-w-0 truncate ${
-                      isDone ? 'text-emerald-700' : isSent ? 'text-yellow-700' : 'text-gray-400'
-                    }`}>
-                      {s.title}
-                    </p>
-
-                    {/* 인터랙션 */}
-                    {isDone && (
-                      <span className="text-xs font-semibold text-emerald-600 flex-shrink-0">
-                        인터랙션 {s.interactionRate}%
-                      </span>
-                    )}
-                    {isSent && (
-                      <span className="text-xs font-semibold text-yellow-600 flex-shrink-0">발송완료</span>
-                    )}
-                    {isPending && (
-                      <span className="text-xs text-gray-300 flex-shrink-0">미발송</span>
-                    )}
-
-                    {/* 발송일 */}
-                    {s.sentAt && (
-                      <span className="text-xs text-gray-300 flex-shrink-0 w-20 text-right">{s.sentAt}</span>
+                    {/* 화살표 */}
+                    {i < DEFAULT_STORYLINE.length - 1 && (
+                      <div className="flex items-center justify-center lg:px-2 py-2 lg:py-0 flex-shrink-0">
+                        <svg className="w-4 h-4 text-gray-300 lg:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                        <svg className="w-4 h-4 text-gray-300 hidden lg:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
                     )}
                   </div>
                 );
@@ -288,22 +308,65 @@ export default function ParticipantDetailPage() {
 
         {/* ── 하단: 활동 로그 ── */}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-bold text-gray-800">활동 로그</h2>
-            <span className="text-xs text-gray-400">{MOCK_LOGS.length}건</span>
+            <span className="text-xs text-gray-400">
+              {activeRound === null ? MOCK_LOGS.length : MOCK_LOGS.filter((_, i) => LOG_ROUNDS[i] === activeRound).length}건
+            </span>
+          </div>
+
+          {/* 회차 탭 */}
+          <div className="flex gap-1 mb-4 flex-wrap">
+            <button
+              onClick={() => { setActiveRound(null); setExpandedLog(null); }}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                activeRound === null
+                  ? 'bg-[#55A4DA] text-white'
+                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              }`}
+            >
+              전체
+            </button>
+            {AVAILABLE_ROUNDS.map(round => {
+              const step = MOCK_STEPS.find(s => s.step === round);
+              const rate = step?.interactionRate ?? 0;
+              const isActive = activeRound === round;
+              return (
+                <button
+                  key={round}
+                  onClick={() => { setActiveRound(round); setExpandedLog(null); }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                    isActive
+                      ? 'bg-[#55A4DA] text-white'
+                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  }`}
+                >
+                  {round}회차
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                    isActive
+                      ? 'bg-white/20 text-white'
+                      : rate > 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-200 text-gray-400'
+                  }`}>
+                    {rate}%
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           <div className="space-y-2">
-            {MOCK_LOGS.map((log, i) => {
+            {(activeRound === null ? MOCK_LOGS : MOCK_LOGS.filter((_, i) => LOG_ROUNDS[i] === activeRound))
+            .map((log, i) => {
+              const origIdx = activeRound === null ? i : MOCK_LOGS.indexOf(log);
               const style = logIcon[log.type as keyof typeof logIcon];
               const isInteract = log.type === 'interact' && log.response;
               const isSurvey = log.type === 'survey' && log.response;
               const isExpandable = isInteract || isSurvey;
-              const isExpanded = expandedLog === i;
+              const isExpanded = expandedLog === origIdx;
               return (
-                <div key={i}
+                <div key={origIdx}
                   className={`px-3 py-2.5 rounded-xl transition-colors ${isInteract ? 'cursor-pointer hover:bg-purple-50/60' : isSurvey ? 'cursor-pointer hover:bg-gray-100/60' : 'hover:bg-gray-50'}`}
-                  onClick={() => isExpandable && setExpandedLog(isExpanded ? null : i)}
+                  onClick={() => isExpandable && setExpandedLog(isExpanded ? null : origIdx)}
                 >
                   <div className="flex items-start gap-3">
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${style.bg}`}>

@@ -54,7 +54,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* ── 사이드바 ── */}
       <aside className="w-[84px] flex-shrink-0 bg-[#F4F6FA] border-r border-gray-200 flex flex-col items-center py-4 gap-1">
         {/* 로고 */}
-        <Link href="/admin/analytics" className="mb-4 px-2">
+        <Link href="/admin/dashboard" className="mb-4 px-2">
           <Image src="/logo-jc.png" alt="J& Company" width={60} height={40} className="object-contain" />
         </Link>
 

@@ -217,14 +217,8 @@ export default function CompanyEditPage() {
 
       {/* 상단 토퍼 */}
       <div className="bg-white border-b border-gray-200 px-8 h-[65px] flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-2 text-[15px] text-gray-400 font-semibold">
-          <Link href="/admin/dashboard" className="hover:text-gray-600 transition-colors">리더십 코칭 관리</Link>
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-          <Link href="/admin/dashboard" className="hover:text-gray-600 transition-colors">고객사 현황</Link>
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-          <Link href={`/admin/companies/${companyId}/participants`} className="hover:text-gray-600 transition-colors">{company.name}</Link>
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-          <span className="text-gray-800 font-bold">기업 정보 편집</span>
+        <div className="flex items-center gap-2 text-[15px] text-gray-800 font-semibold">
+          <span className="font-bold">기업 정보 편집</span>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => router.back()} className="text-sm font-medium text-gray-500 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors">취소</button>
@@ -240,7 +234,7 @@ export default function CompanyEditPage() {
           <h2 className="text-sm font-bold text-gray-800 mb-5">기업 기본 정보</h2>
           <div className="grid grid-cols-2 gap-x-8 gap-y-4">
             <Field label="기업명"><input value={companyForm.name} onChange={e => setCompanyForm(f => ({ ...f, name: e.target.value }))} className={inputCls} /></Field>
-            <Field label="업종"><input value={companyForm.industry} onChange={e => setCompanyForm(f => ({ ...f, industry: e.target.value }))} className={inputCls} /></Field>
+            <Field label="산업군"><input value={companyForm.industry} onChange={e => setCompanyForm(f => ({ ...f, industry: e.target.value }))} className={inputCls} /></Field>
             <Field label="코칭 상태">
               <select value={companyForm.status} onChange={e => setCompanyForm(f => ({ ...f, status: e.target.value as CoachingStatus }))} className={inputCls}>
                 {COACHING_STATUSES.map(s => <option key={s}>{s}</option>)}
