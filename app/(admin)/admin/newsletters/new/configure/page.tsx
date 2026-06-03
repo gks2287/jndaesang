@@ -644,8 +644,9 @@ function ConfigureContent() {
   }
 
   function goPrev() {
-    if (wizardStep > 1) setWizardStep(prev => (prev - 1) as WizardStep);
-    else router.push('/admin/newsletters/new');
+    if (wizardStep > 1) { setWizardStep(prev => (prev - 1) as WizardStep); return; }
+    // Step 1: 기업 선택 화면으로 복귀 + 기존 작업 내용(스토리라인/rounds 등) 초기화
+    configDraft.resetDraft();
   }
 
   function handleSave(status: '제작 중' | '제작완료') {
@@ -2744,17 +2745,15 @@ function ConfigureContent() {
 
       {/* ── 하단 네비게이션 ── */}
       {configDraft.companyIds.length > 0 && <div className="bg-white border-t border-gray-200 px-8 py-3.5 flex items-center justify-between flex-shrink-0">
-        {wizardStep > 1 ? (
-          <button
-            onClick={goPrev}
-            className="flex items-center gap-1.5 text-sm font-medium px-4 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            이전
-          </button>
-        ) : <div />}
+        <button
+          onClick={goPrev}
+          className="flex items-center gap-1.5 text-sm font-medium px-4 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          {wizardStep === 1 ? '기업 선택' : '이전'}
+        </button>
 
         {wizardStep < 5 && (
           <div className="relative group">
