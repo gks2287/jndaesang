@@ -6,13 +6,14 @@ import { useRouter } from 'next/navigation';
 import { useNewsletterStore } from '@/store/newsletterStore';
 import { useCompanyStore } from '@/store/companyStore';
 import { DEFAULT_STORYLINE, STEP_COLORS, type StorylineStep } from '@/lib/storyline';
+import { LEADERSHIP_COLOR } from '@/lib/constants/leadershipColors';
 import { type Round } from '@/lib/content';
 import { getContentList, type ContentPoolItem, type ContentCategory } from '@/lib/api/contentPool';
 import { useNewNewsletterDraftStore, type TopicSuggestion as DraftTopicSuggestion } from '@/store/newNewsletterDraftStore';
 import { useParticipantStore, POSITIVE_TYPES, NEGATIVE_TYPES } from '@/store/participantStore';
 
 type DeliveryInterval = 'weekly' | 'biweekly' | 'monthly' | 'bimonthly' | 'quarterly' | 'semiannual';
-type WizardStep = 1 | 2 | 3 | 4;
+type WizardStep = 1 | 2 | 3 | 4 | 5;
 type TopicSuggestion = DraftTopicSuggestion;
 
 type GeneratedNewsletterSection = {
@@ -69,8 +70,9 @@ const DELIVERY_INTERVAL_OPTIONS: Array<{ value: DeliveryInterval; label: string;
 const WIZARD_STEPS: Array<{ n: WizardStep; label: string }> = [
   { n: 1, label: '스토리라인' },
   { n: 2, label: '회차 설계' },
-  { n: 3, label: '콘텐츠 구성' },
-  { n: 4, label: '발송 주기' },
+  { n: 3, label: '유형 배분' },
+  { n: 4, label: '콘텐츠 구성' },
+  { n: 5, label: '발송 주기' },
 ];
 
 const POSITIVE_LEADERSHIP_TYPES = new Set(['코칭형', '민주형', '서번트형', '비전형', '관계중심형']);
@@ -95,6 +97,7 @@ function makeRoundsFromDistribution(dist: { stepIndex: number; count: number }[]
       interactions: [],
       surveys: [],
       newsletterType: '일반형' as const,
+      generalTypes: [],
       customTypes: [],
       customLeaderIds: [],
       generalLeaderIds: [],
@@ -155,6 +158,7 @@ function ConfigureContent() {
   const negativeParticipants = selectedParticipants.filter(p => NEGATIVE_TYPES.includes(p.leadershipType));
 
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [companySearch, setCompanySearch] = useState('');
 
   function handleCancel() {
     localStorage.removeItem('newsletter_draft_saved');
@@ -164,7 +168,7 @@ function ConfigureContent() {
 
   // ── 위저드 단계 ──
   const [wizardStep, setWizardStep] = useState<WizardStep>(
-    Math.min(configDraft.wizardStep, 4) as WizardStep
+    Math.min(configDraft.wizardStep, 5) as WizardStep
   );
 
   // ── 1단계: 스토리라인 편집 ──
@@ -185,7 +189,11 @@ function ConfigureContent() {
       : configDraft.customStoryline.map((_, i) => ({ stepIndex: i, count: 1 }))
   );
 
-  // ── 3단계: 콘텐츠 구성 (회차별 통합) ──
+  // ── 3단계: 리더십 유형 배분 ──
+  const [distributionRoundIdx, setDistributionRoundIdx] = useState(0);
+  const [dragOverTarget, setDragOverTarget] = useState<'general' | 'custom' | null>(null);
+
+  // ── 4단계: 콘텐츠 구성 (회차별 통합) ──
   const [rounds, setRounds] = useState<Round[]>(configDraft.rounds);
   const [activeRoundIdx, setActiveRoundIdx] = useState(0);
 
@@ -238,6 +246,15 @@ function ConfigureContent() {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wizardStep, customStoryline, suggestions, rounds, totalRounds, roundDistribution]);
+
+  // Step 4 진입/회차 전환 시 주제가 없으면 AI 자동 추천
+  useEffect(() => {
+    if (wizardStep !== 4) return;
+    const r = rounds[activeRoundIdx];
+    if (!r || r.topic.trim()) return;
+    void fetchTopicsForRound(activeRoundIdx, false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wizardStep, activeRoundIdx]);
 
   // 회차 전환 시 아코디언 초기화
   useEffect(() => {
@@ -592,17 +609,12 @@ function ConfigureContent() {
     if (wizardStep === 1) return configDraft.companyIds.length > 0;
     if (wizardStep === 2) return distSum === totalRounds && totalRounds >= customStoryline.length;
     if (wizardStep === 3) return true;
-    // TODO: 나중에 아래 조건으로 복원
-    // if (wizardStep === 3) return rounds.every(r =>
-    //   r.newsletterType === '맞춤형'
-    //     ? r.customTopic.trim().length > 0 && r.topic.trim().length > 0
-    //     : r.topic.trim().length > 0
-    // );
+    if (wizardStep === 4) return true;
     return true;
   }
 
   function goNext() {
-    if (wizardStep >= 4 || !canGoNext()) return;
+    if (wizardStep >= 5 || !canGoNext()) return;
     if (wizardStep === 2) {
       const newBase = makeRoundsFromDistribution(roundDistribution);
       const newTotal = newBase.length;
@@ -612,6 +624,27 @@ function ConfigureContent() {
         const extras = newBase.slice(prev.length);
         return [...prev, ...extras];
       });
+      setActiveRoundIdx(0);
+      setSuggestions([]);
+      setDistributionRoundIdx(0);
+    }
+    if (wizardStep === 3) {
+      // generalTypes 기반으로 각 round의 customTypes/leaderIds 자동 세팅
+      setRounds(prev => prev.map(r => {
+        const negInGeneral = r.generalTypes ?? [];
+        const newCustomTypes = NEGATIVE_TYPES.filter(t =>
+          !negInGeneral.includes(t) && negativeParticipants.some(p => p.leadershipType === t)
+        );
+        const newCustomLeaderIds = selectedParticipants.filter(p => newCustomTypes.includes(p.leadershipType)).map(p => p.id);
+        const newGeneralLeaderIds = selectedParticipants.filter(p => !newCustomTypes.includes(p.leadershipType)).map(p => p.id);
+        return {
+          ...r,
+          customTypes: newCustomTypes,
+          customLeaderIds: newCustomLeaderIds,
+          generalLeaderIds: newGeneralLeaderIds,
+          newsletterType: newCustomTypes.length > 0 ? '맞춤형' as const : '일반형' as const,
+        };
+      }));
       setActiveRoundIdx(0);
       setSuggestions([]);
     }
@@ -727,68 +760,119 @@ function ConfigureContent() {
     <div className="flex flex-col h-full overflow-hidden">
 
       {/* ── 상단 토퍼 ── */}
-      <div className="bg-surface border-b border-border-light px-8 py-3.5 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-2 text-[15px] text-text-secondary font-semibold">
-          <Link href="/admin/newsletters" className="hover:text-text-primary hover:underline transition-colors">
+      <div className="bg-white border-b border-gray-200 px-8 py-3.5 flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center gap-2 text-[15px] text-gray-400 font-semibold">
+          <Link href="/admin/newsletters" className="hover:text-gray-700 hover:underline transition-colors">
             뉴스레터 제작
           </Link>
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
-          <Link href="/admin/newsletters/new" className="hover:text-text-primary hover:underline transition-colors">
+          <Link href="/admin/newsletters/new" className="hover:text-gray-700 hover:underline transition-colors">
             대상 설정
           </Link>
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
-          <span className="text-text-primary font-bold">콘텐츠 구성</span>
+          <span className="text-gray-800 font-bold">콘텐츠 구성</span>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowCancelConfirm(true)}
-            className="text-sm font-medium text-text-secondary px-4 py-1.5 rounded-lg hover:bg-surface-hover transition-colors"
+            className="text-sm font-medium text-gray-400 px-4 py-1.5 rounded-lg hover:bg-gray-50 transition-colors"
           >
             나가기
           </button>
           <button
             onClick={handleSaveInPlace}
-            className="text-sm font-medium border border-brand text-brand px-4 py-1.5 rounded-lg hover:bg-brand-50 transition-colors"
+            className="text-sm font-medium border border-[#55A4DA] text-[#55A4DA] px-4 py-1.5 rounded-lg hover:bg-[#55A4DA]/5 transition-colors"
           >
             저장
           </button>
           <button
             onClick={handleDraftSave}
-            className="text-sm font-medium bg-brand hover:bg-brand-dark text-text-onBrand px-4 py-1.5 rounded-lg transition-colors"
+            className="text-sm font-medium bg-[#55A4DA] hover:bg-[#3A8BC4] text-white px-4 py-1.5 rounded-lg transition-colors"
           >
             임시저장
           </button>
         </div>
       </div>
 
-      {/* ── 기업 선택 바 ── */}
-      <div className="bg-surface border-b border-border-light px-8 py-2.5 flex items-center gap-4 flex-shrink-0">
-        <span className="text-xs text-text-secondary flex-shrink-0">대상 기업</span>
-        <select
-          value={configDraft.companyIds[0] ?? ''}
-          onChange={e => {
-            const id = Number(e.target.value);
-            configDraft.setDraft({ companyIds: id ? [id] : [] });
-          }}
-          className="text-sm font-semibold text-text-primary border border-border-light rounded-lg px-3 py-1 bg-surface focus:outline-none focus:border-brand min-w-[160px]"
-        >
-          <option value="">기업을 선택해주세요</option>
-          {companies.map(c => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
-        <div className="w-px h-4 bg-border-light" />
-        <span className="text-xs text-text-secondary">
-          대상 리더 <span className="font-semibold text-text-primary">{selectedParticipants.length}명</span>
-        </span>
-      </div>
+      {/* ── 기업 선택: 미선택 시 전체 화면 ── */}
+      {configDraft.companyIds.length === 0 && (() => {
+        const filtered = companies.filter(c => !companySearch.trim() || c.name.includes(companySearch.trim()));
+        return (
+          <div className="flex-1 overflow-y-auto bg-[#F8FAFC] flex flex-col items-center justify-center p-8">
+            <div className="w-full max-w-3xl">
+              <div className="text-center mb-8">
+                <h2 className="text-2xl font-bold text-gray-800 mb-2">어떤 기업의 뉴스레터를 제작하시겠습니까?</h2>
+                <p className="text-sm text-gray-400">기업을 선택하면 바로 시작됩니다.</p>
+              </div>
+              <div className="relative mb-6">
+                <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="기업명 검색"
+                  value={companySearch}
+                  onChange={e => setCompanySearch(e.target.value)}
+                  className="w-full pl-11 pr-4 py-3 border border-gray-200 rounded-xl bg-white text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition"
+                  autoFocus
+                />
+              </div>
+              {filtered.length === 0 ? (
+                <p className="text-center text-sm text-gray-400 py-10">검색 결과가 없습니다.</p>
+              ) : (
+                <div className="grid grid-cols-4 gap-4">
+                  {filtered.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => {
+                        configDraft.setDraft({ companyIds: [c.id] });
+                        setCompanySearch('');
+                      }}
+                      className="flex flex-col items-center gap-3 p-6 bg-white border-2 border-gray-200 rounded-2xl hover:border-[#55A4DA] hover:shadow-md transition-all group text-center"
+                    >
+                      <div className={`w-14 h-14 rounded-2xl ${c.color} flex items-center justify-center flex-shrink-0`}>
+                        <span className="text-white text-base font-bold">{c.initials}</span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800 group-hover:text-[#2E7DB5] transition-colors">{c.name}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">{c.industry}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── 기업 정보 바 (선택 후) ── */}
+      {configDraft.companyIds.length > 0 && (
+        <div className="bg-white border-b border-gray-200 px-8 py-2 flex items-center gap-3 flex-shrink-0">
+          <span className="text-xs text-gray-400">대상 기업</span>
+          <span className="text-sm font-semibold text-gray-800">{targetCompanies[0]?.name ?? '—'}</span>
+          <button
+            onClick={() => {
+              configDraft.setDraft({ companyIds: [], wizardStep: 1, rounds: [] });
+              setWizardStep(1);
+            }}
+            className="text-xs font-medium text-[#55A4DA] hover:text-[#2E7DB5] transition-colors"
+          >
+            변경
+          </button>
+          <div className="w-px h-4 bg-gray-200" />
+          <span className="text-xs text-gray-500">
+            대상 리더 <span className="font-semibold text-gray-700">{selectedParticipants.length}명</span>
+          </span>
+        </div>
+      )}
 
       {/* ── 스테퍼 ── */}
-      <div className="bg-surface border-b border-border-light px-8 py-4 flex items-center justify-center flex-shrink-0">
+      {configDraft.companyIds.length > 0 && <div className="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-center flex-shrink-0">
         <div className="flex items-center">
           {WIZARD_STEPS.map((s, i) => {
             const isDone = s.n < wizardStep;
@@ -798,10 +882,10 @@ function ConfigureContent() {
                 <div className="flex flex-col items-center gap-1.5">
                   <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
                     isDone
-                      ? 'bg-brand text-text-onBrand'
+                      ? 'bg-[#55A4DA] text-white'
                       : isActive
-                      ? 'bg-brand text-text-onBrand ring-4 ring-brand/20'
-                      : 'bg-surface-subtle text-text-secondary'
+                      ? 'bg-[#55A4DA] text-white ring-4 ring-[#55A4DA]/20'
+                      : 'bg-gray-100 text-gray-400'
                   }`}>
                     {isDone ? (
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -810,29 +894,29 @@ function ConfigureContent() {
                     ) : s.n}
                   </div>
                   <span className={`text-[10px] font-semibold whitespace-nowrap ${
-                    isActive ? 'text-brand' : isDone ? 'text-brand/70' : 'text-text-secondary'
+                    isActive ? 'text-[#55A4DA]' : isDone ? 'text-[#55A4DA]/70' : 'text-gray-400'
                   }`}>
                     {s.label}
                   </span>
                 </div>
                 {i < WIZARD_STEPS.length - 1 && (
-                  <div className={`w-16 h-px mx-3 mb-4 transition-colors ${isDone ? 'bg-brand' : 'bg-border-light'}`} />
+                  <div className={`w-16 h-px mx-3 mb-4 transition-colors ${isDone ? 'bg-[#55A4DA]' : 'bg-gray-200'}`} />
                 )}
               </div>
             );
           })}
         </div>
-      </div>
+      </div>}
 
       {/* ════════════════════════════════
           1단계: 스토리라인
       ════════════════════════════════ */}
-      {wizardStep === 1 && (
+      {wizardStep === 1 && configDraft.companyIds.length > 0 && (
         <div className="flex-1 overflow-hidden bg-[#F8FAFC] flex flex-col">
           <div className="w-full px-8 py-6 flex flex-col flex-1 justify-center">
             <div className="mb-4 flex-shrink-0">
-              <h2 className="text-base font-bold text-text-primary mb-1">뉴스레터 스토리라인</h2>
-              <p className="text-xs text-text-secondary">5단계 코칭 여정으로 리더의 변화를 이끕니다. 구조를 확인한 뒤 다음으로 진행하세요.</p>
+              <h2 className="text-base font-bold text-gray-800 mb-1">뉴스레터 스토리라인</h2>
+              <p className="text-xs text-gray-400">5단계 코칭 여정으로 리더의 변화를 이끕니다. 구조를 확인한 뒤 다음으로 진행하세요.</p>
             </div>
               <div className="flex flex-col lg:flex-row items-stretch gap-0">
                 {customStoryline.map((s, i) => {
@@ -849,14 +933,14 @@ function ConfigureContent() {
                             <p className={`text-[11px] font-semibold ${color.subtitleColor}`}>{s.subtitle}</p>
                           </div>
                         </div>
-                        <p className="text-xs text-text-secondary leading-relaxed flex-1">{s.description}</p>
+                        <p className="text-xs text-gray-600 leading-relaxed flex-1">{s.description}</p>
                       </div>
                       {i < customStoryline.length - 1 && (
                         <div className="flex items-center justify-center lg:px-2 py-2 lg:py-0 flex-shrink-0">
-                          <svg className="w-4 h-4 text-icon lg:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-4 h-4 text-gray-300 lg:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                           </svg>
-                          <svg className="w-4 h-4 text-icon hidden lg:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-4 h-4 text-gray-300 hidden lg:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                           </svg>
                         </div>
@@ -868,7 +952,7 @@ function ConfigureContent() {
               <div className="pt-4 flex justify-end">
                 <button
                   onClick={openEditModal}
-                  className="flex items-center gap-1.5 px-4 py-3 border border-border-light text-text-secondary text-sm font-semibold rounded-xl hover:bg-surface-hover transition-colors"
+                  className="flex items-center gap-1.5 px-4 py-3 border border-gray-200 text-gray-600 text-sm font-semibold rounded-xl hover:bg-gray-50 transition-colors"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -890,46 +974,46 @@ function ConfigureContent() {
 
             {/* 헤더 */}
             <div className="flex-shrink-0">
-              <h2 className="text-base font-bold text-text-primary mb-1">회차 설계</h2>
-              <p className="text-xs text-text-secondary">총 발송 회차를 설정하고, 각 단계별 회차 수를 배분하세요. 단계당 최소 1회차가 필요합니다.</p>
+              <h2 className="text-base font-bold text-gray-800 mb-1">회차 설계</h2>
+              <p className="text-xs text-gray-400">총 발송 회차를 설정하고, 각 단계별 회차 수를 배분하세요. 단계당 최소 1회차가 필요합니다.</p>
             </div>
 
             {/* 좌우 패널 */}
             <div className="flex gap-4 flex-1 min-h-0">
 
               {/* 좌측: 총 회차 + 단계별 배분 */}
-              <div className="flex-1 bg-surface rounded-2xl border border-border-light shadow-sm flex flex-col overflow-hidden">
+              <div className="flex-1 bg-white rounded-2xl border border-gray-200 shadow-sm flex flex-col overflow-hidden">
 
                 {/* 총 발송 회차 */}
-                <div className="px-6 py-5 border-b border-border-light flex-shrink-0">
-                  <p className="text-xs font-bold text-text-secondary uppercase tracking-wider mb-4">총 발송 회차</p>
+                <div className="px-6 py-5 border-b border-gray-100 flex-shrink-0">
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">총 발송 회차</p>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-5">
                       <button
                         onClick={() => handleTotalRoundsChange(totalRounds - 1)}
                         disabled={totalRounds <= customStoryline.length}
-                        className="w-9 h-9 rounded-xl border-2 border-border-light flex items-center justify-center text-text-secondary hover:border-brand hover:text-brand disabled:opacity-30 disabled:cursor-not-allowed transition-all font-bold text-lg"
+                        className="w-9 h-9 rounded-xl border-2 border-gray-200 flex items-center justify-center text-gray-500 hover:border-[#55A4DA] hover:text-[#55A4DA] disabled:opacity-30 disabled:cursor-not-allowed transition-all font-bold text-lg"
                       >
                         −
                       </button>
                       <div className="text-center">
-                        <span className="text-4xl font-black text-text-primary">{totalRounds}</span>
-                        <p className="text-xs text-text-secondary mt-0.5">회차</p>
+                        <span className="text-4xl font-black text-gray-800">{totalRounds}</span>
+                        <p className="text-xs text-gray-400 mt-0.5">회차</p>
                       </div>
                       <button
                         onClick={() => handleTotalRoundsChange(totalRounds + 1)}
-                        className="w-9 h-9 rounded-xl border-2 border-border-light flex items-center justify-center text-text-secondary hover:border-brand hover:text-brand transition-all font-bold text-lg"
+                        className="w-9 h-9 rounded-xl border-2 border-gray-200 flex items-center justify-center text-gray-500 hover:border-[#55A4DA] hover:text-[#55A4DA] transition-all font-bold text-lg"
                       >
                         +
                       </button>
                     </div>
-                    <p className="text-[11px] text-text-secondary">최소 {customStoryline.length}회차</p>
+                    <p className="text-[11px] text-gray-400">최소 {customStoryline.length}회차</p>
                   </div>
                 </div>
 
                 {/* 단계별 배분 */}
                 <div className="flex-1 px-6 py-5 flex flex-col min-h-0">
-                  <p className="text-xs font-bold text-text-secondary uppercase tracking-wider mb-4 flex-shrink-0">단계별 회차 배분</p>
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4 flex-shrink-0">단계별 회차 배분</p>
                   <div className="flex-1 space-y-2.5 overflow-y-auto">
                     {customStoryline.map((s, i) => {
                       const color = STEP_COLORS[i % STEP_COLORS.length];
@@ -942,31 +1026,31 @@ function ConfigureContent() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className={`text-sm font-semibold truncate ${color.titleColor}`}>{s.title}</p>
-                            {s.subtitle && <p className="text-[10px] text-text-secondary truncate">{s.subtitle}</p>}
+                            {s.subtitle && <p className="text-[10px] text-gray-400 truncate">{s.subtitle}</p>}
                           </div>
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <button
                               onClick={() => adjustCount(i, -1)}
                               disabled={count <= 1}
-                              className="w-7 h-7 rounded-lg border border-border-light flex items-center justify-center text-text-secondary hover:border-brand hover:text-brand disabled:opacity-30 disabled:cursor-not-allowed transition-all text-sm font-bold"
+                              className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:border-[#55A4DA] hover:text-[#55A4DA] disabled:opacity-30 disabled:cursor-not-allowed transition-all text-sm font-bold"
                             >
                               −
                             </button>
-                            <span className="w-7 text-center text-sm font-bold text-text-primary">{count}</span>
+                            <span className="w-7 text-center text-sm font-bold text-gray-700">{count}</span>
                             <button
                               onClick={() => adjustCount(i, 1)}
-                              className="w-7 h-7 rounded-lg border border-border-light flex items-center justify-center text-text-secondary hover:border-brand hover:text-brand transition-all text-sm font-bold"
+                              className="w-7 h-7 rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 hover:border-[#55A4DA] hover:text-[#55A4DA] transition-all text-sm font-bold"
                             >
                               +
                             </button>
-                            <span className="text-xs text-text-secondary w-6">회차</span>
+                            <span className="text-xs text-gray-400 w-6">회차</span>
                           </div>
                         </div>
                       );
                     })}
                   </div>
-                  <div className="mt-4 pt-3 border-t border-border-light flex items-center justify-between flex-shrink-0">
-                    <span className="text-xs text-text-secondary">합계</span>
+                  <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between flex-shrink-0">
+                    <span className="text-xs text-gray-500">합계</span>
                     <div className={`flex items-center gap-1.5 text-sm font-bold ${
                       distSum === totalRounds ? 'text-emerald-600' : 'text-red-500'
                     }`}>
@@ -992,26 +1076,26 @@ function ConfigureContent() {
               </div>
 
               {/* 우측: 회차 미리보기 */}
-              <div className="flex-1 bg-surface rounded-2xl border border-border-light shadow-sm flex flex-col overflow-hidden">
-                <div className="px-5 py-3.5 border-b border-border-light flex-shrink-0 flex items-center justify-between">
-                  <p className="text-xs font-bold text-text-secondary uppercase tracking-wider">회차 미리보기</p>
+              <div className="flex-1 bg-white rounded-2xl border border-gray-200 shadow-sm flex flex-col overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-gray-100 flex-shrink-0 flex items-center justify-between">
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">회차 미리보기</p>
                   {distSum === totalRounds && (
-                    <span className="text-[11px] text-text-secondary">총 {totalRounds}회차</span>
+                    <span className="text-[11px] text-gray-400">총 {totalRounds}회차</span>
                   )}
                 </div>
                 {distSum === totalRounds ? (
                   <div className="flex-1 overflow-y-auto">
-                    <div className="divide-y divide-border-light">
+                    <div className="divide-y divide-gray-50">
                       {makeRoundsFromDistribution(roundDistribution).map((r, idx) => {
                         const s = customStoryline[r.stepIndex];
                         const color = STEP_COLORS[r.stepIndex % STEP_COLORS.length];
                         return (
                           <div key={idx} className="flex items-center gap-3 px-5 py-2.5">
-                            <span className="text-xs text-text-secondary w-12 flex-shrink-0">{idx + 1}회차</span>
+                            <span className="text-xs text-gray-400 w-12 flex-shrink-0">{idx + 1}회차</span>
                             <div className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${color.badge} text-white flex-shrink-0`}>
                               {s?.step}단계
                             </div>
-                            <span className="text-xs text-text-secondary truncate">{s?.title}</span>
+                            <span className="text-xs text-gray-600 truncate">{s?.title}</span>
                           </div>
                         );
                       })}
@@ -1019,7 +1103,7 @@ function ConfigureContent() {
                   </div>
                 ) : (
                   <div className="flex-1 flex items-center justify-center">
-                    <p className="text-xs text-icon">배분을 완료하면 미리보기가 표시됩니다.</p>
+                    <p className="text-xs text-gray-300">배분을 완료하면 미리보기가 표시됩니다.</p>
                   </div>
                 )}
               </div>
@@ -1030,15 +1114,190 @@ function ConfigureContent() {
       )}
 
       {/* ════════════════════════════════
-          3단계: 콘텐츠 구성 (회차별 통합)
+          3단계: 리더십 유형 배분
       ════════════════════════════════ */}
       {wizardStep === 3 && (
+        <div className="flex-1 overflow-y-auto bg-[#F8FAFC]">
+          <div className="w-full px-8 py-6 space-y-5">
+            <div>
+              <h2 className="text-base font-bold text-gray-800 mb-1">리더십 유형 배분</h2>
+              <p className="text-xs text-gray-400">회차별로 맞춤형/일반형 대상 리더를 설정합니다. 부정 리더는 유형 단위로 드래그해 이동할 수 있습니다.</p>
+            </div>
+
+            {/* 회차 탭 */}
+            {rounds.length > 0 && (
+              <div className="flex gap-2 flex-wrap">
+                {rounds.map((r, idx) => {
+                  const s = customStoryline[r.stepIndex];
+                  const isActive = idx === distributionRoundIdx;
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => setDistributionRoundIdx(idx)}
+                      className={`px-4 py-2 rounded-xl text-xs font-semibold border-2 transition-all ${
+                        isActive ? 'border-[#55A4DA] bg-[#55A4DA]/5 text-[#2E7DB5]' : 'border-gray-200 text-gray-500 hover:border-gray-300 bg-white'
+                      }`}
+                    >
+                      {idx + 1}회차
+                      {s && <span className="ml-1.5 font-normal text-gray-400">{s.title}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* 배분 카드 */}
+            {rounds[distributionRoundIdx] !== undefined && (() => {
+              const r = rounds[distributionRoundIdx];
+              const negInGeneral = r.generalTypes ?? [];
+              const negTypes = NEGATIVE_TYPES.filter(t => negativeParticipants.some(p => p.leadershipType === t));
+              const negInCustom = negTypes.filter(t => !negInGeneral.includes(t));
+              const negInGeneralFiltered = negInGeneral.filter(t => negativeParticipants.some(p => p.leadershipType === t));
+
+              const generalCount = positiveParticipants.length + negInGeneralFiltered.reduce((sum, t) => sum + negativeParticipants.filter(p => p.leadershipType === t).length, 0);
+              const customCount = negInCustom.reduce((sum, t) => sum + negativeParticipants.filter(p => p.leadershipType === t).length, 0);
+
+              function moveToGeneral(type: string) {
+                setRounds(prev => prev.map((round, i) => i !== distributionRoundIdx ? round : {
+                  ...round,
+                  generalTypes: round.generalTypes?.includes(type) ? round.generalTypes : [...(round.generalTypes ?? []), type],
+                }));
+              }
+
+              function moveToCustom(type: string) {
+                setRounds(prev => prev.map((round, i) => i !== distributionRoundIdx ? round : {
+                  ...round,
+                  generalTypes: (round.generalTypes ?? []).filter(t => t !== type),
+                }));
+              }
+
+              const TypeGroupCard = ({ type, onDragStart }: { type: string; onDragStart: (e: React.DragEvent) => void }) => {
+                const members = negativeParticipants.filter(p => p.leadershipType === type);
+                return (
+                  <div
+                    draggable
+                    onDragStart={onDragStart}
+                    className="flex items-center gap-2.5 px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl cursor-grab active:cursor-grabbing hover:border-[#55A4DA]/50 hover:shadow-sm transition-all select-none shadow-sm"
+                  >
+                    <div className="w-2 h-2 rounded-full bg-[#55A4DA] flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-gray-900">{type}</p>
+                      <p className="text-[10px] text-gray-600">{members.map(p => p.name).join(', ')}</p>
+                    </div>
+                    <span className="text-[10px] font-semibold text-gray-700 flex-shrink-0">{members.length}명</span>
+                    <svg className="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                    </svg>
+                  </div>
+                );
+              };
+
+              return (
+                <div className="grid grid-cols-2 gap-4">
+                  {/* 일반형 카드 */}
+                  <div
+                    onDragOver={e => { e.preventDefault(); setDragOverTarget('general'); }}
+                    onDragLeave={() => setDragOverTarget(null)}
+                    onDrop={e => {
+                      e.preventDefault();
+                      const type = e.dataTransfer.getData('leadershipType');
+                      if (type) moveToGeneral(type);
+                      setDragOverTarget(null);
+                    }}
+                    className={`rounded-2xl border-2 transition-all ${dragOverTarget === 'general' ? 'border-blue-400 bg-blue-50/30' : 'border-gray-200 bg-white'}`}
+                  >
+                    <div className="px-5 py-3.5 border-b border-gray-100 flex items-center gap-2">
+                      <p className="text-sm font-bold text-gray-800 flex-1">일반형</p>
+                      <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{generalCount}명</span>
+                    </div>
+                    <div className="p-4 space-y-2 min-h-[180px]">
+                      {positiveParticipants.length > 0 && (
+                        <>
+                          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">긍정 리더 (고정)</p>
+                          {positiveParticipants.map(p => (
+                            <div key={p.id} className="flex items-center gap-2.5 px-3.5 py-2 bg-emerald-50 border border-emerald-100 rounded-xl opacity-70">
+                              <div className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
+                              <span className="text-xs font-semibold text-gray-700 flex-1">{p.name}</span>
+                              <span className="text-[10px] text-emerald-600">{p.leadershipType}</span>
+                            </div>
+                          ))}
+                        </>
+                      )}
+                      {negInGeneralFiltered.length > 0 && (
+                        <>
+                          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mt-3 mb-1.5">이동된 부정 리더</p>
+                          {negInGeneralFiltered.map(type => (
+                            <TypeGroupCard
+                              key={type}
+                              type={type}
+                              onDragStart={e => e.dataTransfer.setData('leadershipType', type)}
+                            />
+                          ))}
+                        </>
+                      )}
+                      {positiveParticipants.length === 0 && negInGeneralFiltered.length === 0 && (
+                        <div className="flex items-center justify-center h-24 text-xs text-gray-300">
+                          유형을 드래그해 이동하세요
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 맞춤형 카드 */}
+                  <div
+                    onDragOver={e => { e.preventDefault(); setDragOverTarget('custom'); }}
+                    onDragLeave={() => setDragOverTarget(null)}
+                    onDrop={e => {
+                      e.preventDefault();
+                      const type = e.dataTransfer.getData('leadershipType');
+                      if (type) moveToCustom(type);
+                      setDragOverTarget(null);
+                    }}
+                    className={`rounded-2xl border-2 transition-all ${dragOverTarget === 'custom' ? 'border-[#55A4DA] bg-[#55A4DA]/5' : 'border-gray-200 bg-white'}`}
+                  >
+                    <div className="px-5 py-3.5 border-b border-gray-100 flex items-center gap-2">
+                      <p className="text-sm font-bold text-gray-800 flex-1">맞춤형</p>
+                      <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{customCount}명</span>
+                    </div>
+                    <div className="p-4 space-y-2 min-h-[180px]">
+                      {negInCustom.length > 0 ? (
+                        negInCustom.map(type => (
+                          <TypeGroupCard
+                            key={type}
+                            type={type}
+                            onDragStart={e => e.dataTransfer.setData('leadershipType', type)}
+                          />
+                        ))
+                      ) : (
+                        <div className="flex items-center justify-center h-24 text-xs text-gray-300">
+                          모든 부정 리더가 일반형으로 이동됐습니다
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {rounds.length === 0 && (
+              <div className="flex items-center justify-center h-40 text-gray-400 text-sm">
+                2단계에서 회차를 먼저 설계해주세요.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ════════════════════════════════
+          4단계: 콘텐츠 구성 (회차별 통합)
+      ════════════════════════════════ */}
+      {wizardStep === 4 && (
         <div className="flex-1 overflow-hidden bg-[#F8FAFC] flex">
 
           {/* 왼쪽: 회차 목록 (w-72, 독립 스크롤) */}
-          <div className="w-72 flex-shrink-0 bg-surface border-r border-border-light flex flex-col overflow-hidden">
-            <div className="px-4 py-3.5 border-b border-border-light">
-              <p className="text-[11px] font-bold text-text-secondary uppercase tracking-wider">회차 목록</p>
+          <div className="w-72 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
+            <div className="px-4 py-3.5 border-b border-gray-100">
+              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">회차 목록</p>
             </div>
             <div className="flex-1 overflow-y-auto py-1">
               {rounds.map((r, idx) => {
@@ -1053,14 +1312,14 @@ function ConfigureContent() {
                     key={idx}
                     onClick={() => switchRound(idx)}
                     className={`w-full text-left px-4 py-2 transition-colors ${
-                      isActive ? 'bg-brand-50 border-r-2 border-brand' : 'hover:bg-surface-hover'
+                      isActive ? 'bg-[#55A4DA]/5 border-r-2 border-[#55A4DA]' : 'hover:bg-gray-50'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2 mb-0.5">
                       <div className="flex items-center gap-2 min-w-0">
                         {isActive ? (
-                          <div className="w-4 h-4 rounded-full border-2 border-brand flex items-center justify-center flex-shrink-0">
-                            <div className="w-1.5 h-1.5 rounded-full bg-brand" />
+                          <div className="w-4 h-4 rounded-full border-2 border-[#55A4DA] flex items-center justify-center flex-shrink-0">
+                            <div className="w-1.5 h-1.5 rounded-full bg-[#55A4DA]" />
                           </div>
                         ) : isDone ? (
                           <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
@@ -1069,9 +1328,9 @@ function ConfigureContent() {
                             </svg>
                           </div>
                         ) : (
-                          <div className="w-4 h-4 rounded-full border-2 border-icon flex-shrink-0" />
+                          <div className="w-4 h-4 rounded-full border-2 border-gray-300 flex-shrink-0" />
                         )}
-                        <span className={`text-xs font-semibold ${isActive ? 'text-brand' : 'text-text-primary'}`}>
+                        <span className={`text-xs font-semibold ${isActive ? 'text-[#55A4DA]' : 'text-gray-700'}`}>
                           {idx + 1}회차
                         </span>
                       </div>
@@ -1079,7 +1338,7 @@ function ConfigureContent() {
                         {s?.title}
                       </div>
                     </div>
-                    <p className={`text-[11px] truncate pl-6 ${isDone ? 'text-text-secondary' : 'text-icon'}`}>
+                    <p className={`text-[11px] truncate pl-6 ${isDone ? 'text-gray-500' : 'text-gray-300'}`}>
                       {isDone
                         ? r.newsletterType === '맞춤형'
                           ? `${r.customTopic} / ${r.topic}`
@@ -1095,7 +1354,7 @@ function ConfigureContent() {
           {/* 오른쪽: 아코디언 패널 (독립 스크롤) */}
           <div className="flex-1 overflow-y-auto px-6 py-4">
             {rounds.length === 0 ? (
-              <div className="flex items-center justify-center h-full text-text-secondary text-sm">
+              <div className="flex items-center justify-center h-full text-gray-400 text-sm">
                 2단계에서 회차를 먼저 설계해주세요.
               </div>
             ) : (() => {
@@ -1113,20 +1372,20 @@ function ConfigureContent() {
                     </div>
                     <div>
                       <p className={`text-sm font-bold ${color.titleColor}`}>{activeRoundIdx + 1}회차 구성</p>
-                      <p className="text-[11px] text-text-secondary">{s?.title} · {s?.subtitle}</p>
+                      <p className="text-[11px] text-gray-400">{s?.title} · {s?.subtitle}</p>
                     </div>
                   </div>
 
                   {/* ⓪ 뉴스레터 유형 선택 */}
-                  <div className="bg-surface rounded-2xl border border-border-light shadow-sm overflow-hidden">
+                  <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
                     <button
                       onClick={() => setTypeOpen(prev => !prev)}
-                      className="w-full px-5 py-3 flex items-center gap-2 hover:bg-surface-hover transition-colors"
+                      className="w-full px-5 py-3 flex items-center gap-2 hover:bg-gray-50 transition-colors"
                     >
-                      <span className="text-sm font-bold text-brand flex-shrink-0">1</span>
-                      <p className="text-sm font-bold text-text-primary flex-1 text-left">뉴스레터 유형</p>
+                      <span className="text-sm font-bold text-[#55A4DA] flex-shrink-0">1</span>
+                      <p className="text-sm font-bold text-gray-800 flex-1 text-left">뉴스레터 유형</p>
                       {rounds[activeRoundIdx]?.newsletterType ? (
-                        <span className="text-[11px] font-semibold text-brand flex-shrink-0">
+                        <span className="text-[11px] font-semibold text-[#55A4DA] flex-shrink-0">
                           {rounds[activeRoundIdx].newsletterType}
                           {rounds[activeRoundIdx].newsletterType === '맞춤형' && rounds[activeRoundIdx].customTypes.length > 0
                             ? ` · ${rounds[activeRoundIdx].customTypes.join(', ')}`
@@ -1135,14 +1394,14 @@ function ConfigureContent() {
                       ) : (
                         <span className="text-[11px] text-red-400 flex-shrink-0">필수</span>
                       )}
-                      <svg className={`w-3.5 h-3.5 text-text-secondary flex-shrink-0 ml-1 transition-transform duration-200 ${typeOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className={`w-3.5 h-3.5 text-gray-400 flex-shrink-0 ml-1 transition-transform duration-200 ${typeOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
                     </button>
                     <div className={`grid transition-all duration-200 ${typeOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
                       <div className="overflow-hidden">
-                        <div className="border-t border-border-light p-5 space-y-2">
-                          <p className="text-xs text-text-secondary mb-3">이 회차의 발송 유형을 선택하세요.</p>
+                        <div className="border-t border-gray-100 p-5 space-y-2">
+                          <p className="text-xs text-gray-400 mb-3">이 회차의 발송 유형을 선택하세요.</p>
                           {([
                             { val: '일반형' as const, desc: '선택된 기업의 모든 리더에게 공통으로 발송' },
                             { val: '맞춤형' as const, desc: '특정 리더십 유형에게만 맞춤화된 내용 발송' },
@@ -1169,21 +1428,21 @@ function ConfigureContent() {
                                   }
                                 }}
                                 className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border-2 transition-all text-left ${
-                                  checked ? 'border-brand bg-brand-50' : 'border-border-light hover:border-border hover:bg-surface-hover'
+                                  checked ? 'border-[#55A4DA] bg-[#55A4DA]/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                                 }`}
                               >
                                 <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                                  checked ? 'border-brand bg-brand' : 'border-border'
+                                  checked ? 'border-[#55A4DA] bg-[#55A4DA]' : 'border-gray-300'
                                 }`}>
                                   {checked && (
-                                    <svg className="w-3 h-3 text-text-onBrand" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                                     </svg>
                                   )}
                                 </div>
                                 <div>
-                                  <p className={`text-sm font-semibold ${checked ? 'text-brand-dark' : 'text-text-primary'}`}>{val}</p>
-                                  <p className="text-[11px] text-text-secondary">{desc}</p>
+                                  <p className={`text-sm font-semibold ${checked ? 'text-[#2E7DB5]' : 'text-gray-700'}`}>{val}</p>
+                                  <p className="text-[11px] text-gray-400">{desc}</p>
                                 </div>
                               </button>
                             );
@@ -1191,8 +1450,8 @@ function ConfigureContent() {
 
                           {/* 맞춤형 선택 시 부정 유형 선택 UI */}
                           {rounds[activeRoundIdx]?.newsletterType === '맞춤형' && (
-                            <div className="mt-3 pt-3 border-t border-border-light space-y-2">
-                              <p className="text-xs font-semibold text-text-secondary mb-2">맞춤형 대상 유형 선택 <span className="text-text-secondary font-normal">(1개)</span></p>
+                            <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+                              <p className="text-xs font-semibold text-gray-600 mb-2">맞춤형 대상 유형 선택 <span className="text-gray-400 font-normal">(1개)</span></p>
                               {NEGATIVE_TYPES.map(type => {
                                 const count = negativeParticipants.filter(p => p.leadershipType === type).length;
                                 const isChecked = rounds[activeRoundIdx]?.customTypes.includes(type) ?? false;
@@ -1211,20 +1470,20 @@ function ConfigureContent() {
                                       }));
                                     }}
                                     className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl border-2 text-left transition-all ${
-                                      isChecked ? 'border-brand bg-brand-50' : 'border-border-light hover:border-border hover:bg-surface-hover'
+                                      isChecked ? 'border-[#55A4DA] bg-[#55A4DA]/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                                     }`}
                                   >
                                     <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                                      isChecked ? 'border-brand bg-brand' : 'border-border'
+                                      isChecked ? 'border-[#55A4DA] bg-[#55A4DA]' : 'border-gray-300'
                                     }`}>
                                       {isChecked && (
-                                        <svg className="w-2.5 h-2.5 text-text-onBrand" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                                         </svg>
                                       )}
                                     </div>
-                                    <span className={`text-sm font-semibold flex-1 ${isChecked ? 'text-brand-dark' : 'text-text-primary'}`}>{type}</span>
-                                    <span className="text-[11px] text-text-secondary flex-shrink-0">{count}명</span>
+                                    <span className={`text-sm font-semibold flex-1 ${isChecked ? 'text-[#2E7DB5]' : 'text-gray-700'}`}>{type}</span>
+                                    <span className="text-[11px] text-gray-400 flex-shrink-0">{count}명</span>
                                   </button>
                                 );
                               })}
@@ -1240,17 +1499,17 @@ function ConfigureContent() {
                                   return `${t} ${n}명`;
                                 }).join(' + ');
                                 return (
-                                  <div className="mt-2 px-3.5 py-2.5 bg-surface-subtle rounded-xl border border-border-light space-y-1">
-                                    <p className="text-xs text-text-primary leading-relaxed">
-                                      <span className="font-semibold text-brand-dark">{customSummary}</span>
-                                      <span className="text-text-secondary"> → 맞춤형 ({customCount}명)</span>
+                                  <div className="mt-2 px-3.5 py-2.5 bg-gray-50 rounded-xl border border-gray-200 space-y-1">
+                                    <p className="text-xs text-gray-700 leading-relaxed">
+                                      <span className="font-semibold text-[#2E7DB5]">{customSummary}</span>
+                                      <span className="text-gray-400"> → 맞춤형 ({customCount}명)</span>
                                     </p>
-                                    <p className="text-xs text-text-primary leading-relaxed">
-                                      <span className="font-semibold text-text-primary">나머지 {generalCount}명</span>
+                                    <p className="text-xs text-gray-700 leading-relaxed">
+                                      <span className="font-semibold text-gray-700">나머지 {generalCount}명</span>
                                       {positiveCount > 0 && (
-                                        <span className="text-text-secondary"> · 긍정 리더 {positiveCount}명 포함</span>
+                                        <span className="text-gray-400"> · 긍정 리더 {positiveCount}명 포함</span>
                                       )}
-                                      <span className="text-text-secondary"> → 일반형</span>
+                                      <span className="text-gray-400"> → 일반형</span>
                                     </p>
                                   </div>
                                 );
@@ -1264,29 +1523,28 @@ function ConfigureContent() {
 
                   {/* 맞춤형 섹션 */}
                   {r.newsletterType === '맞춤형' && r.customTypes.length > 0 && (
-                    <div className="bg-brand-50 rounded-2xl border border-brand/30 overflow-hidden">
-                      <button onClick={() => setCustomPanelOpen(prev => !prev)} className="w-full px-5 py-3 flex items-center gap-2 hover:bg-brand-50/60 transition-colors">
-                        <span className="text-sm">🎯</span>
-                        <p className="text-sm font-bold text-brand-dark flex-1 text-left">맞춤형 · {r.customTypes.join('+')} <span className="font-normal text-brand/70">({r.customLeaderIds.length}명)</span></p>
-                        <svg className={`w-3.5 h-3.5 text-brand flex-shrink-0 transition-transform duration-200 ${customPanelOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                    <div className="bg-[#55A4DA]/5 rounded-2xl border border-[#55A4DA]/30 overflow-hidden">
+                      <button onClick={() => setCustomPanelOpen(prev => !prev)} className="w-full px-5 py-3 flex items-center gap-2 hover:bg-[#55A4DA]/10 transition-colors">
+                        <p className="text-sm font-bold text-[#2E7DB5] flex-1 text-left">맞춤형 · {r.customTypes.join('+')} <span className="font-normal text-[#55A4DA]/70">({r.customLeaderIds.length}명)</span></p>
+                        <svg className={`w-3.5 h-3.5 text-[#55A4DA] flex-shrink-0 transition-transform duration-200 ${customPanelOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                       </button>
                       <div className={`grid transition-all duration-200 ${customPanelOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
                         <div className="overflow-hidden">
                           <div className="px-3 pb-3 space-y-2">
                             {/* 주제 선정 - 맞춤형 */}
-                            <div className="bg-surface rounded-2xl border border-border-light shadow-sm overflow-hidden">
-                              <button onClick={() => toggleCustomSection(2)} className="w-full px-5 py-3 flex items-center gap-2 hover:bg-surface-hover transition-colors">
-                                <span className="text-sm font-bold text-brand flex-shrink-0">2</span>
-                                <p className="text-sm font-bold text-text-primary flex-1 text-left">주제 선정</p>
-                                {r.customTopic.trim() ? (<svg className="w-4 h-4 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>) : (<span className="text-[11px] text-text-secondary flex-shrink-0">필수</span>)}
-                                <svg className={`w-3.5 h-3.5 text-text-secondary flex-shrink-0 ml-1 transition-transform duration-200 ${customOpenSections.has(2) ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                              <button onClick={() => toggleCustomSection(2)} className="w-full px-5 py-3 flex items-center gap-2 hover:bg-gray-50 transition-colors">
+                                <span className="text-sm font-bold text-[#55A4DA] flex-shrink-0">2</span>
+                                <p className="text-sm font-bold text-gray-800 flex-1 text-left">주제 선정</p>
+                                {r.customTopic.trim() ? (<svg className="w-4 h-4 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>) : (<span className="text-[11px] text-gray-400 flex-shrink-0">필수</span>)}
+                                <svg className={`w-3.5 h-3.5 text-gray-400 flex-shrink-0 ml-1 transition-transform duration-200 ${customOpenSections.has(2) ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                               </button>
                               <div className={`grid transition-all duration-200 ${customOpenSections.has(2) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
                                 <div className="overflow-hidden">
-                                  <div className="border-t border-border-light p-5 space-y-4">
+                                  <div className="border-t border-gray-100 p-5 space-y-4">
                                     <div className="flex items-center justify-between">
-                                      <p className="text-xs text-text-secondary">이 회차 · 단계에 맞는 주제를 AI가 추천합니다.</p>
-                                      <button onClick={() => fetchTopicsForRound(activeRoundIdx, true)} disabled={isLoadingTopics} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex-shrink-0 ml-3 ${isLoadingTopics ? 'bg-surface-subtle text-text-secondary cursor-not-allowed' : 'bg-brand hover:bg-brand-dark text-text-onBrand shadow-sm'}`}>
+                                      <p className="text-xs text-gray-500">이 회차 · 단계에 맞는 주제를 AI가 추천합니다.</p>
+                                      <button onClick={() => fetchTopicsForRound(activeRoundIdx, true)} disabled={isLoadingTopics} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex-shrink-0 ml-3 ${isLoadingTopics ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-[#55A4DA] hover:bg-[#3A8BC4] text-white shadow-sm'}`}>
                                         {isLoadingTopics ? (<><svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>생성 중...</>) : (<><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>{suggestions.length > 0 && suggestionsTarget === 'custom' ? '다시 추천' : 'AI 추천받기'}</>)}
                                       </button>
                                     </div>
@@ -1302,49 +1560,49 @@ function ConfigureContent() {
                                         {suggestions.map((topic, idx) => {
                                           const isSelected = r.customTopic === topic.title;
                                           return (
-                                            <button key={idx} onClick={() => { setRoundCustomTopic(activeRoundIdx, topic.title); if (!rounds[activeRoundIdx]?.customContents.length) void suggestCustomContentsForRound(activeRoundIdx, topic.title); }} className={`w-full text-left flex items-start gap-3 px-4 py-3 rounded-xl border-2 transition-all ${isSelected ? 'border-brand bg-brand/5' : 'border-border-light hover:border-border hover:bg-surface-hover'}`}>
-                                              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-colors ${isSelected ? 'border-brand bg-brand' : 'border-border'}`}>{isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}</div>
-                                              <div className="flex-1 min-w-0"><p className={`text-sm font-semibold leading-snug ${isSelected ? 'text-brand-dark' : 'text-text-primary'}`}>{topic.title}</p><p className="text-xs text-text-secondary mt-0.5 leading-relaxed">{topic.description}</p></div>
+                                            <button key={idx} onClick={() => { setRoundCustomTopic(activeRoundIdx, topic.title); if (!rounds[activeRoundIdx]?.customContents.length) void suggestCustomContentsForRound(activeRoundIdx, topic.title); }} className={`w-full text-left flex items-start gap-3 px-4 py-3 rounded-xl border-2 transition-all ${isSelected ? 'border-[#55A4DA] bg-[#55A4DA]/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}>
+                                              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-colors ${isSelected ? 'border-[#55A4DA] bg-[#55A4DA]' : 'border-gray-300'}`}>{isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}</div>
+                                              <div className="flex-1 min-w-0"><p className={`text-sm font-semibold leading-snug ${isSelected ? 'text-[#2E7DB5]' : 'text-gray-800'}`}>{topic.title}</p><p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{topic.description}</p></div>
                                             </button>
                                           );
                                         })}
                                       </div>
                                     )}
                                     <div>
-                                      <p className="text-[11px] text-text-secondary mb-1.5">직접 입력 또는 추천 주제 수정</p>
-                                      <input type="text" value={r.customTopic} onChange={e => setRoundCustomTopic(activeRoundIdx, e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && r.customTopic.trim()) void suggestCustomContentsForRound(activeRoundIdx, r.customTopic.trim()); }} placeholder="맞춤형 뉴스레터 주제를 입력하세요 (Enter로 AI 콘텐츠 추천)" className="w-full px-4 py-2.5 border border-border-light rounded-xl text-sm text-text-primary placeholder-placeholder focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/30 transition" />
+                                      <p className="text-[11px] text-gray-400 mb-1.5">직접 입력 또는 추천 주제 수정</p>
+                                      <input type="text" value={r.customTopic} onChange={e => setRoundCustomTopic(activeRoundIdx, e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && r.customTopic.trim()) void suggestCustomContentsForRound(activeRoundIdx, r.customTopic.trim()); }} placeholder="맞춤형 뉴스레터 주제를 입력하세요 (Enter로 AI 콘텐츠 추천)" className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition" />
                                     </div>
                                   </div>
                                 </div>
                               </div>
                             </div>
                             {/* 콘텐츠 선택 - 맞춤형 */}
-                            <div className="bg-surface rounded-2xl border border-border-light shadow-sm overflow-hidden">
-                              <div onClick={() => toggleCustomSection(3)} className="px-5 py-3 flex items-center gap-2 hover:bg-surface-hover transition-colors cursor-pointer">
-                                <span className="text-sm font-bold text-brand flex-shrink-0">3</span>
-                                <p className="text-sm font-bold text-text-primary flex-1">콘텐츠 선택</p>
-                                {r.customContents.length > 0 ? (<span className="text-[11px] font-semibold text-brand flex-shrink-0">{r.customContents.length}개 선택됨</span>) : (<span className="text-[11px] text-text-secondary flex-shrink-0">선택사항</span>)}
-                                <button onClick={e => { e.stopPropagation(); openContentPool(true); }} className="flex items-center gap-1 px-2.5 py-1 bg-brand hover:bg-brand-dark text-text-onBrand text-xs font-bold rounded-lg transition-colors ml-2 flex-shrink-0"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>콘텐츠 풀</button>
-                                <svg className={`w-3.5 h-3.5 text-text-secondary flex-shrink-0 ml-1 transition-transform duration-200 ${customOpenSections.has(3) ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                              <div onClick={() => toggleCustomSection(3)} className="px-5 py-3 flex items-center gap-2 hover:bg-gray-50 transition-colors cursor-pointer">
+                                <span className="text-sm font-bold text-[#55A4DA] flex-shrink-0">3</span>
+                                <p className="text-sm font-bold text-gray-800 flex-1">콘텐츠 선택</p>
+                                {r.customContents.length > 0 ? (<span className="text-[11px] font-semibold text-[#55A4DA] flex-shrink-0">{r.customContents.length}개 선택됨</span>) : (<span className="text-[11px] text-gray-400 flex-shrink-0">선택사항</span>)}
+                                <button onClick={e => { e.stopPropagation(); openContentPool(true); }} className="flex items-center gap-1 px-2.5 py-1 bg-[#55A4DA] hover:bg-[#3A8BC4] text-white text-xs font-bold rounded-lg transition-colors ml-2 flex-shrink-0"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>콘텐츠 풀</button>
+                                <svg className={`w-3.5 h-3.5 text-gray-400 flex-shrink-0 ml-1 transition-transform duration-200 ${customOpenSections.has(3) ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                               </div>
                               <div className={`grid transition-all duration-200 ${customOpenSections.has(3) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
                                 <div className="overflow-hidden">
-                                  <div className="border-t border-border-light p-4">
+                                  <div className="border-t border-gray-100 p-4">
                                     {r.customContents.length === 0 && !contentSuggestLoading[activeRoundIdx] ? (
-                                      <button onClick={() => openContentPool(true)} className="w-full py-5 border-2 border-dashed border-border-light rounded-xl text-xs text-text-secondary hover:border-brand hover:text-brand transition-colors flex flex-col items-center gap-1.5"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" /></svg>콘텐츠 풀에서 선택하세요</button>
+                                      <button onClick={() => openContentPool(true)} className="w-full py-5 border-2 border-dashed border-gray-200 rounded-xl text-xs text-gray-400 hover:border-[#55A4DA] hover:text-[#55A4DA] transition-colors flex flex-col items-center gap-1.5"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" /></svg>콘텐츠 풀에서 선택하세요</button>
                                     ) : (
                                       <div className="space-y-2">
                                         {r.customContents.map(item => (
-                                          <div key={item.id} className="border border-border-light rounded-xl px-3 pt-2.5 pb-2 group bg-surface-subtle">
+                                          <div key={item.id} className="border border-gray-100 rounded-xl px-3 pt-2.5 pb-2 group bg-gray-50">
                                             <div className="flex items-center gap-3">
-                                              {item.thumbnail && <img src={item.thumbnail} alt="" className="w-8 h-8 rounded-lg object-cover flex-shrink-0 bg-surface-ui" />}
-                                              <div className="flex-1 min-w-0"><div className="flex items-center gap-1 mb-0.5"><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${item.type === 'original' ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600'}`}>{item.type === 'original' ? 'J& 오리지널' : '큐레이션'}</span><span className="text-[10px] text-text-secondary">{item.category} · {item.duration}분</span></div><p className="text-xs font-semibold text-text-primary truncate">{item.title}</p></div>
-                                              <button onClick={() => removeCustomContentFromRound(activeRoundIdx, item.id)} className="flex-shrink-0 text-icon hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                                              {item.thumbnail && <img src={item.thumbnail} alt="" className="w-8 h-8 rounded-lg object-cover flex-shrink-0 bg-gray-200" />}
+                                              <div className="flex-1 min-w-0"><div className="flex items-center gap-1 mb-0.5"><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${item.type === 'original' ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600'}`}>{item.type === 'original' ? 'J& 오리지널' : '큐레이션'}</span><span className="text-[10px] text-gray-400">{item.category} · {item.duration}분</span></div><p className="text-xs font-semibold text-gray-700 truncate">{item.title}</p></div>
+                                              <button onClick={() => removeCustomContentFromRound(activeRoundIdx, item.id)} className="flex-shrink-0 text-gray-300 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
                                             </div>
-                                            {item.body && <button onClick={() => setContentPreviewItem(item)} className="mt-1.5 text-[11px] text-brand hover:text-brand-dark font-medium transition-colors">내용 보기 →</button>}
+                                            {item.body && <button onClick={() => setContentPreviewItem(item)} className="mt-1.5 text-[11px] text-[#55A4DA] hover:text-[#2E7DB5] font-medium transition-colors">내용 보기 →</button>}
                                           </div>
                                         ))}
-                                        {contentSuggestLoading[activeRoundIdx] && (<div className="flex items-center gap-2 px-3 py-3 rounded-xl border border-dashed border-brand/40 bg-brand/5"><svg className="w-3.5 h-3.5 animate-spin text-brand flex-shrink-0" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg><p className="text-xs text-brand font-medium">AI가 콘텐츠를 선택하는 중...</p></div>)}
+                                        {contentSuggestLoading[activeRoundIdx] && (<div className="flex items-center gap-2 px-3 py-3 rounded-xl border border-dashed border-[#55A4DA]/40 bg-[#55A4DA]/5"><svg className="w-3.5 h-3.5 animate-spin text-[#55A4DA] flex-shrink-0" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg><p className="text-xs text-[#55A4DA] font-medium">AI가 콘텐츠를 선택하는 중...</p></div>)}
                                       </div>
                                     )}
                                   </div>
@@ -1352,40 +1610,40 @@ function ConfigureContent() {
                               </div>
                             </div>
                             {/* 인터랙션 요소 - 맞춤형 */}
-                            <div className="bg-surface rounded-2xl border border-border-light shadow-sm overflow-hidden">
-                              <button onClick={() => toggleCustomSection(4)} className="w-full px-5 py-3 flex items-center gap-2 hover:bg-surface-hover transition-colors">
-                                <span className="text-sm font-bold text-brand flex-shrink-0">4</span>
-                                <p className="text-sm font-bold text-text-primary flex-1 text-left">인터랙션 요소</p>
-                                {r.customInteractions.length > 0 ? (<span className="text-[11px] font-semibold text-brand flex-shrink-0">{r.customInteractions.map(v => INTERACTION_LABELS[v] ?? v).join(' · ')}</span>) : (<span className="text-[11px] text-text-secondary flex-shrink-0">선택사항</span>)}
-                                <svg className={`w-3.5 h-3.5 text-text-secondary flex-shrink-0 ml-1 transition-transform duration-200 ${customOpenSections.has(4) ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                              <button onClick={() => toggleCustomSection(4)} className="w-full px-5 py-3 flex items-center gap-2 hover:bg-gray-50 transition-colors">
+                                <span className="text-sm font-bold text-[#55A4DA] flex-shrink-0">4</span>
+                                <p className="text-sm font-bold text-gray-800 flex-1 text-left">인터랙션 요소</p>
+                                {r.customInteractions.length > 0 ? (<span className="text-[11px] font-semibold text-[#55A4DA] flex-shrink-0">{r.customInteractions.map(v => INTERACTION_LABELS[v] ?? v).join(' · ')}</span>) : (<span className="text-[11px] text-gray-400 flex-shrink-0">선택사항</span>)}
+                                <svg className={`w-3.5 h-3.5 text-gray-400 flex-shrink-0 ml-1 transition-transform duration-200 ${customOpenSections.has(4) ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                               </button>
                               <div className={`grid transition-all duration-200 ${customOpenSections.has(4) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
                                 <div className="overflow-hidden">
-                                  <div className="border-t border-border-light p-5 space-y-2">
-                                    <p className="text-xs text-text-secondary mb-3">학습 참여도를 높이는 인터랙션 요소를 선택하세요. 복수 선택 가능합니다.</p>
+                                  <div className="border-t border-gray-100 p-5 space-y-2">
+                                    <p className="text-xs text-gray-400 mb-3">학습 참여도를 높이는 인터랙션 요소를 선택하세요. 복수 선택 가능합니다.</p>
                                     {([{ val: 'quiz' as const, label: '퀴즈', desc: '학습 내용 확인 퀴즈' }, { val: 'scenario' as const, label: '선택형 시나리오', desc: '상황을 주고 A/B/C 중 선택하면 유형별 피드백을 주는 인터랙션' }, { val: 'selfcheck' as const, label: '셀프 진단/체크리스트', desc: '정답 없이 스스로를 점검하는 체크리스트 (예: 나는 팀원 의견을 충분히 듣는가?)' }, { val: 'reflection' as const, label: '회고 질문', desc: '성찰을 유도하는 열린 질문 (예: 이번 주 바꾸고 싶은 내 행동은?)' }, { val: 'dodont' as const, label: "Do & Don't 리스트", desc: '해야 할 것과 하지 말아야 할 것을 명확하게 정리한 실천 가이드' }]).map(({ val, label, desc }) => {
                                       const checked = r.customInteractions.includes(val);
-                                      return (<button key={val} onClick={() => toggleCustomInteraction(activeRoundIdx, val)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-left ${checked ? 'border-brand bg-brand/5' : 'border-border-light hover:border-border hover:bg-surface-hover'}`}><div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${checked ? 'border-brand bg-brand' : 'border-border'}`}>{checked && <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}</div><div><p className={`text-sm font-semibold ${checked ? 'text-brand-dark' : 'text-text-primary'}`}>{label}</p><p className="text-[11px] text-text-secondary">{desc}</p></div></button>);
+                                      return (<button key={val} onClick={() => toggleCustomInteraction(activeRoundIdx, val)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-left ${checked ? 'border-[#55A4DA] bg-[#55A4DA]/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}><div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${checked ? 'border-[#55A4DA] bg-[#55A4DA]' : 'border-gray-300'}`}>{checked && <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}</div><div><p className={`text-sm font-semibold ${checked ? 'text-[#2E7DB5]' : 'text-gray-700'}`}>{label}</p><p className="text-[11px] text-gray-400">{desc}</p></div></button>);
                                     })}
                                   </div>
                                 </div>
                               </div>
                             </div>
                             {/* 만족도 조사 - 맞춤형 */}
-                            <div className="bg-surface rounded-2xl border border-border-light shadow-sm overflow-hidden">
-                              <button onClick={() => toggleCustomSection(5)} className="w-full px-5 py-3 flex items-center gap-2 hover:bg-surface-hover transition-colors">
-                                <span className="text-sm font-bold text-brand flex-shrink-0">5</span>
-                                <p className="text-sm font-bold text-text-primary flex-1 text-left">만족도 조사</p>
-                                {r.customSurveys.length > 0 ? (<span className="text-[11px] font-semibold text-brand flex-shrink-0">{r.customSurveys.map(v => v === 'always' ? '상시' : '정기').join(' · ')}</span>) : (<span className="text-[11px] text-text-secondary flex-shrink-0">선택사항</span>)}
-                                <svg className={`w-3.5 h-3.5 text-text-secondary flex-shrink-0 ml-1 transition-transform duration-200 ${customOpenSections.has(5) ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                              <button onClick={() => toggleCustomSection(5)} className="w-full px-5 py-3 flex items-center gap-2 hover:bg-gray-50 transition-colors">
+                                <span className="text-sm font-bold text-[#55A4DA] flex-shrink-0">5</span>
+                                <p className="text-sm font-bold text-gray-800 flex-1 text-left">만족도 조사</p>
+                                {r.customSurveys.length > 0 ? (<span className="text-[11px] font-semibold text-[#55A4DA] flex-shrink-0">{r.customSurveys.map(v => v === 'always' ? '상시' : '정기').join(' · ')}</span>) : (<span className="text-[11px] text-gray-400 flex-shrink-0">선택사항</span>)}
+                                <svg className={`w-3.5 h-3.5 text-gray-400 flex-shrink-0 ml-1 transition-transform duration-200 ${customOpenSections.has(5) ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                               </button>
                               <div className={`grid transition-all duration-200 ${customOpenSections.has(5) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
                                 <div className="overflow-hidden">
-                                  <div className="border-t border-border-light p-5 space-y-2">
-                                    <p className="text-xs text-text-secondary mb-3">이 회차에 포함할 만족도 조사를 선택하세요. 중복 선택 가능합니다.</p>
+                                  <div className="border-t border-gray-100 p-5 space-y-2">
+                                    <p className="text-xs text-gray-400 mb-3">이 회차에 포함할 만족도 조사를 선택하세요. 중복 선택 가능합니다.</p>
                                     {([{ val: 'always' as const, label: '상시 만족도 조사', desc: '매 회차 발송 후 수집' }, { val: 'periodic' as const, label: '정기 만족도 조사', desc: '주기적으로 심층 수집' }]).map(({ val, label, desc }) => {
                                       const checked = r.customSurveys.includes(val);
-                                      return (<button key={val} onClick={() => toggleCustomSurvey(activeRoundIdx, val)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-left ${checked ? 'border-brand bg-brand/5' : 'border-border-light hover:border-border hover:bg-surface-hover'}`}><div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${checked ? 'border-brand bg-brand' : 'border-border'}`}>{checked && <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}</div><div><p className={`text-sm font-semibold ${checked ? 'text-brand-dark' : 'text-text-primary'}`}>{label}</p><p className="text-[11px] text-text-secondary">{desc}</p></div></button>);
+                                      return (<button key={val} onClick={() => toggleCustomSurvey(activeRoundIdx, val)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-left ${checked ? 'border-[#55A4DA] bg-[#55A4DA]/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}><div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${checked ? 'border-[#55A4DA] bg-[#55A4DA]' : 'border-gray-300'}`}>{checked && <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}</div><div><p className={`text-sm font-semibold ${checked ? 'text-[#2E7DB5]' : 'text-gray-700'}`}>{label}</p><p className="text-[11px] text-gray-400">{desc}</p></div></button>);
                                     })}
                                   </div>
                                 </div>
@@ -1398,30 +1656,29 @@ function ConfigureContent() {
                   )}
 
                   {/* 일반형 섹션 */}
-                  <div className={`rounded-2xl overflow-hidden ${r.newsletterType === '맞춤형' && r.customTypes.length > 0 ? 'bg-surface-subtle border border-border-light' : 'bg-surface border border-border-light shadow-sm'}`}>
-                    <button onClick={() => setGeneralPanelOpen(prev => !prev)} className={`w-full px-5 py-3 flex items-center gap-2 transition-colors ${r.newsletterType === '맞춤형' && r.customTypes.length > 0 ? 'hover:bg-surface-hover' : 'hover:bg-surface-hover'}`}>
-                      <span className="text-sm">📋</span>
-                      <p className="text-sm font-bold text-text-primary flex-1 text-left">일반형 <span className="font-normal text-text-secondary">({r.newsletterType === '맞춤형' && r.customTypes.length > 0 ? `나머지 ${r.generalLeaderIds.length}명` : `${selectedParticipants.length}명`})</span></p>
-                      <svg className={`w-3.5 h-3.5 text-text-secondary flex-shrink-0 transition-transform duration-200 ${generalPanelOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                  <div className={`rounded-2xl overflow-hidden ${r.newsletterType === '맞춤형' && r.customTypes.length > 0 ? 'bg-gray-50 border border-gray-200' : 'bg-white border border-gray-200 shadow-sm'}`}>
+                    <button onClick={() => setGeneralPanelOpen(prev => !prev)} className={`w-full px-5 py-3 flex items-center gap-2 transition-colors ${r.newsletterType === '맞춤형' && r.customTypes.length > 0 ? 'hover:bg-gray-100' : 'hover:bg-gray-50'}`}>
+                      <p className="text-sm font-bold text-gray-800 flex-1 text-left">일반형 <span className="font-normal text-gray-400">({r.newsletterType === '맞춤형' && r.customTypes.length > 0 ? `나머지 ${r.generalLeaderIds.length}명` : `${selectedParticipants.length}명`})</span></p>
+                      <svg className={`w-3.5 h-3.5 text-gray-400 flex-shrink-0 transition-transform duration-200 ${generalPanelOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                     </button>
                     <div className={`grid transition-all duration-200 ${generalPanelOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
                       <div className="overflow-hidden">
                         <div className="px-3 pb-3 space-y-2">
 
                           {/* 주제 선정 - 일반형 */}
-                          <div className="bg-surface rounded-2xl border border-border-light shadow-sm overflow-hidden">
-                            <button onClick={() => toggleGeneralSection(2)} className="w-full px-5 py-3 flex items-center gap-2 hover:bg-surface-hover transition-colors">
-                              <span className="text-sm font-bold text-brand flex-shrink-0">2</span>
-                              <p className="text-sm font-bold text-text-primary flex-1 text-left">주제 선정</p>
-                              {r.topic.trim() ? (<svg className="w-4 h-4 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>) : (<span className="text-[11px] text-text-secondary flex-shrink-0">필수</span>)}
-                              <svg className={`w-3.5 h-3.5 text-text-secondary flex-shrink-0 ml-1 transition-transform duration-200 ${generalOpenSections.has(2) ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                            <button onClick={() => toggleGeneralSection(2)} className="w-full px-5 py-3 flex items-center gap-2 hover:bg-gray-50 transition-colors">
+                              <span className="text-sm font-bold text-[#55A4DA] flex-shrink-0">2</span>
+                              <p className="text-sm font-bold text-gray-800 flex-1 text-left">주제 선정</p>
+                              {r.topic.trim() ? (<svg className="w-4 h-4 text-emerald-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>) : (<span className="text-[11px] text-gray-400 flex-shrink-0">필수</span>)}
+                              <svg className={`w-3.5 h-3.5 text-gray-400 flex-shrink-0 ml-1 transition-transform duration-200 ${generalOpenSections.has(2) ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                             </button>
                             <div className={`grid transition-all duration-200 ${generalOpenSections.has(2) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
                               <div className="overflow-hidden">
-                                <div className="border-t border-border-light p-5 space-y-4">
+                                <div className="border-t border-gray-100 p-5 space-y-4">
                                   <div className="flex items-center justify-between">
-                                    <p className="text-xs text-text-secondary">이 회차 · 단계에 맞는 주제를 AI가 추천합니다.</p>
-                                    <button onClick={() => fetchTopicsForRound(activeRoundIdx, false)} disabled={isLoadingTopics} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex-shrink-0 ml-3 ${isLoadingTopics ? 'bg-surface-subtle text-text-secondary cursor-not-allowed' : 'bg-brand hover:bg-brand-dark text-text-onBrand shadow-sm'}`}>
+                                    <p className="text-xs text-gray-500">이 회차 · 단계에 맞는 주제를 AI가 추천합니다.</p>
+                                    <button onClick={() => fetchTopicsForRound(activeRoundIdx, false)} disabled={isLoadingTopics} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex-shrink-0 ml-3 ${isLoadingTopics ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-[#55A4DA] hover:bg-[#3A8BC4] text-white shadow-sm'}`}>
                                       {isLoadingTopics ? (<><svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>생성 중...</>) : (<><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>{suggestions.length > 0 && suggestionsTarget === 'general' ? '다시 추천' : 'AI 추천받기'}</>)}
                                     </button>
                                   </div>
@@ -1437,49 +1694,49 @@ function ConfigureContent() {
                                       {suggestions.map((topic, idx) => {
                                         const isSelected = r.topic === topic.title;
                                         return (
-                                          <button key={idx} onClick={() => { setRoundTopic(activeRoundIdx, topic.title); if (!rounds[activeRoundIdx]?.contents.length) void suggestContentsForRound(activeRoundIdx, topic.title); }} className={`w-full text-left flex items-start gap-3 px-4 py-3 rounded-xl border-2 transition-all ${isSelected ? 'border-brand bg-brand/5' : 'border-border-light hover:border-border hover:bg-surface-hover'}`}>
-                                            <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-colors ${isSelected ? 'border-brand bg-brand' : 'border-border'}`}>{isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}</div>
-                                            <div className="flex-1 min-w-0"><p className={`text-sm font-semibold leading-snug ${isSelected ? 'text-brand-dark' : 'text-text-primary'}`}>{topic.title}</p><p className="text-xs text-text-secondary mt-0.5 leading-relaxed">{topic.description}</p></div>
+                                          <button key={idx} onClick={() => { setRoundTopic(activeRoundIdx, topic.title); if (!rounds[activeRoundIdx]?.contents.length) void suggestContentsForRound(activeRoundIdx, topic.title); }} className={`w-full text-left flex items-start gap-3 px-4 py-3 rounded-xl border-2 transition-all ${isSelected ? 'border-[#55A4DA] bg-[#55A4DA]/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}>
+                                            <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-colors ${isSelected ? 'border-[#55A4DA] bg-[#55A4DA]' : 'border-gray-300'}`}>{isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}</div>
+                                            <div className="flex-1 min-w-0"><p className={`text-sm font-semibold leading-snug ${isSelected ? 'text-[#2E7DB5]' : 'text-gray-800'}`}>{topic.title}</p><p className="text-xs text-gray-400 mt-0.5 leading-relaxed">{topic.description}</p></div>
                                           </button>
                                         );
                                       })}
                                     </div>
                                   )}
                                   <div>
-                                    <p className="text-[11px] text-text-secondary mb-1.5">직접 입력 또는 추천 주제 수정</p>
-                                    <input type="text" value={r.topic} onChange={e => setRoundTopic(activeRoundIdx, e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && r.topic.trim()) void suggestContentsForRound(activeRoundIdx, r.topic.trim()); }} placeholder="일반형 뉴스레터 주제를 입력하세요 (Enter로 AI 콘텐츠 추천)" className="w-full px-4 py-2.5 border border-border-light rounded-xl text-sm text-text-primary placeholder-placeholder focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/30 transition" />
+                                    <p className="text-[11px] text-gray-400 mb-1.5">직접 입력 또는 추천 주제 수정</p>
+                                    <input type="text" value={r.topic} onChange={e => setRoundTopic(activeRoundIdx, e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && r.topic.trim()) void suggestContentsForRound(activeRoundIdx, r.topic.trim()); }} placeholder="일반형 뉴스레터 주제를 입력하세요 (Enter로 AI 콘텐츠 추천)" className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition" />
                                   </div>
                                 </div>
                               </div>
                             </div>
                           </div>
                           {/* 콘텐츠 선택 - 일반형 */}
-                          <div className="bg-surface rounded-2xl border border-border-light shadow-sm overflow-hidden">
-                            <div onClick={() => toggleGeneralSection(3)} className="px-5 py-3 flex items-center gap-2 hover:bg-surface-hover transition-colors cursor-pointer">
-                              <span className="text-sm font-bold text-brand flex-shrink-0">3</span>
-                              <p className="text-sm font-bold text-text-primary flex-1">콘텐츠 선택</p>
-                              {r.contents.length > 0 ? (<span className="text-[11px] font-semibold text-brand flex-shrink-0">{r.contents.length}개 선택됨</span>) : (<span className="text-[11px] text-text-secondary flex-shrink-0">선택사항</span>)}
-                              <button onClick={e => { e.stopPropagation(); openContentPool(false); }} className="flex items-center gap-1 px-2.5 py-1 bg-brand hover:bg-brand-dark text-text-onBrand text-xs font-bold rounded-lg transition-colors ml-2 flex-shrink-0"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>콘텐츠 풀</button>
-                              <svg className={`w-3.5 h-3.5 text-text-secondary flex-shrink-0 ml-1 transition-transform duration-200 ${generalOpenSections.has(3) ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                            <div onClick={() => toggleGeneralSection(3)} className="px-5 py-3 flex items-center gap-2 hover:bg-gray-50 transition-colors cursor-pointer">
+                              <span className="text-sm font-bold text-[#55A4DA] flex-shrink-0">3</span>
+                              <p className="text-sm font-bold text-gray-800 flex-1">콘텐츠 선택</p>
+                              {r.contents.length > 0 ? (<span className="text-[11px] font-semibold text-[#55A4DA] flex-shrink-0">{r.contents.length}개 선택됨</span>) : (<span className="text-[11px] text-gray-400 flex-shrink-0">선택사항</span>)}
+                              <button onClick={e => { e.stopPropagation(); openContentPool(false); }} className="flex items-center gap-1 px-2.5 py-1 bg-[#55A4DA] hover:bg-[#3A8BC4] text-white text-xs font-bold rounded-lg transition-colors ml-2 flex-shrink-0"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>콘텐츠 풀</button>
+                              <svg className={`w-3.5 h-3.5 text-gray-400 flex-shrink-0 ml-1 transition-transform duration-200 ${generalOpenSections.has(3) ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                             </div>
                             <div className={`grid transition-all duration-200 ${generalOpenSections.has(3) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
                               <div className="overflow-hidden">
-                                <div className="border-t border-border-light p-4">
+                                <div className="border-t border-gray-100 p-4">
                                   {r.contents.length === 0 && !contentSuggestLoading[activeRoundIdx] ? (
-                                    <button onClick={() => openContentPool(false)} className="w-full py-5 border-2 border-dashed border-border-light rounded-xl text-xs text-text-secondary hover:border-brand hover:text-brand transition-colors flex flex-col items-center gap-1.5"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" /></svg>콘텐츠 풀에서 선택하세요</button>
+                                    <button onClick={() => openContentPool(false)} className="w-full py-5 border-2 border-dashed border-gray-200 rounded-xl text-xs text-gray-400 hover:border-[#55A4DA] hover:text-[#55A4DA] transition-colors flex flex-col items-center gap-1.5"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" /></svg>콘텐츠 풀에서 선택하세요</button>
                                   ) : (
                                     <div className="space-y-2">
                                       {r.contents.map(item => (
-                                        <div key={item.id} className="border border-border-light rounded-xl px-3 pt-2.5 pb-2 group bg-surface-subtle">
+                                        <div key={item.id} className="border border-gray-100 rounded-xl px-3 pt-2.5 pb-2 group bg-gray-50">
                                           <div className="flex items-center gap-3">
-                                            {item.thumbnail && <img src={item.thumbnail} alt="" className="w-8 h-8 rounded-lg object-cover flex-shrink-0 bg-surface-ui" />}
-                                            <div className="flex-1 min-w-0"><div className="flex items-center gap-1 mb-0.5"><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${item.type === 'original' ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600'}`}>{item.type === 'original' ? 'J& 오리지널' : '큐레이션'}</span><span className="text-[10px] text-text-secondary">{item.category} · {item.duration}분</span></div><p className="text-xs font-semibold text-text-primary truncate">{item.title}</p></div>
-                                            <button onClick={() => removeContentFromRound(activeRoundIdx, item.id)} className="flex-shrink-0 text-icon hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                                            {item.thumbnail && <img src={item.thumbnail} alt="" className="w-8 h-8 rounded-lg object-cover flex-shrink-0 bg-gray-200" />}
+                                            <div className="flex-1 min-w-0"><div className="flex items-center gap-1 mb-0.5"><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${item.type === 'original' ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600'}`}>{item.type === 'original' ? 'J& 오리지널' : '큐레이션'}</span><span className="text-[10px] text-gray-400">{item.category} · {item.duration}분</span></div><p className="text-xs font-semibold text-gray-700 truncate">{item.title}</p></div>
+                                            <button onClick={() => removeContentFromRound(activeRoundIdx, item.id)} className="flex-shrink-0 text-gray-300 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
                                           </div>
-                                          {item.body && <button onClick={() => setContentPreviewItem(item)} className="mt-1.5 text-[11px] text-brand hover:text-brand-dark font-medium transition-colors">내용 보기 →</button>}
+                                          {item.body && <button onClick={() => setContentPreviewItem(item)} className="mt-1.5 text-[11px] text-[#55A4DA] hover:text-[#2E7DB5] font-medium transition-colors">내용 보기 →</button>}
                                         </div>
                                       ))}
-                                      {contentSuggestLoading[activeRoundIdx] && (<div className="flex items-center gap-2 px-3 py-3 rounded-xl border border-dashed border-brand/40 bg-brand/5"><svg className="w-3.5 h-3.5 animate-spin text-brand flex-shrink-0" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg><p className="text-xs text-brand font-medium">AI가 콘텐츠를 선택하는 중...</p></div>)}
+                                      {contentSuggestLoading[activeRoundIdx] && (<div className="flex items-center gap-2 px-3 py-3 rounded-xl border border-dashed border-[#55A4DA]/40 bg-[#55A4DA]/5"><svg className="w-3.5 h-3.5 animate-spin text-[#55A4DA] flex-shrink-0" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg><p className="text-xs text-[#55A4DA] font-medium">AI가 콘텐츠를 선택하는 중...</p></div>)}
                                     </div>
                                   )}
                                 </div>
@@ -1487,40 +1744,40 @@ function ConfigureContent() {
                             </div>
                           </div>
                           {/* 인터랙션 요소 - 일반형 */}
-                          <div className="bg-surface rounded-2xl border border-border-light shadow-sm overflow-hidden">
-                            <button onClick={() => toggleGeneralSection(4)} className="w-full px-5 py-3 flex items-center gap-2 hover:bg-surface-hover transition-colors">
-                              <span className="text-sm font-bold text-brand flex-shrink-0">4</span>
-                              <p className="text-sm font-bold text-text-primary flex-1 text-left">인터랙션 요소</p>
-                              {r.interactions.length > 0 ? (<span className="text-[11px] font-semibold text-brand flex-shrink-0">{r.interactions.map(v => INTERACTION_LABELS[v] ?? v).join(' · ')}</span>) : (<span className="text-[11px] text-text-secondary flex-shrink-0">선택사항</span>)}
-                              <svg className={`w-3.5 h-3.5 text-text-secondary flex-shrink-0 ml-1 transition-transform duration-200 ${generalOpenSections.has(4) ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                            <button onClick={() => toggleGeneralSection(4)} className="w-full px-5 py-3 flex items-center gap-2 hover:bg-gray-50 transition-colors">
+                              <span className="text-sm font-bold text-[#55A4DA] flex-shrink-0">4</span>
+                              <p className="text-sm font-bold text-gray-800 flex-1 text-left">인터랙션 요소</p>
+                              {r.interactions.length > 0 ? (<span className="text-[11px] font-semibold text-[#55A4DA] flex-shrink-0">{r.interactions.map(v => INTERACTION_LABELS[v] ?? v).join(' · ')}</span>) : (<span className="text-[11px] text-gray-400 flex-shrink-0">선택사항</span>)}
+                              <svg className={`w-3.5 h-3.5 text-gray-400 flex-shrink-0 ml-1 transition-transform duration-200 ${generalOpenSections.has(4) ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                             </button>
                             <div className={`grid transition-all duration-200 ${generalOpenSections.has(4) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
                               <div className="overflow-hidden">
-                                <div className="border-t border-border-light p-5 space-y-2">
-                                  <p className="text-xs text-text-secondary mb-3">학습 참여도를 높이는 인터랙션 요소를 선택하세요. 복수 선택 가능합니다.</p>
+                                <div className="border-t border-gray-100 p-5 space-y-2">
+                                  <p className="text-xs text-gray-400 mb-3">학습 참여도를 높이는 인터랙션 요소를 선택하세요. 복수 선택 가능합니다.</p>
                                   {([{ val: 'quiz' as const, label: '퀴즈', desc: '학습 내용 확인 퀴즈' }, { val: 'scenario' as const, label: '선택형 시나리오', desc: '상황을 주고 A/B/C 중 선택하면 유형별 피드백을 주는 인터랙션' }, { val: 'selfcheck' as const, label: '셀프 진단/체크리스트', desc: '정답 없이 스스로를 점검하는 체크리스트 (예: 나는 팀원 의견을 충분히 듣는가?)' }, { val: 'reflection' as const, label: '회고 질문', desc: '성찰을 유도하는 열린 질문 (예: 이번 주 바꾸고 싶은 내 행동은?)' }, { val: 'dodont' as const, label: "Do & Don't 리스트", desc: '해야 할 것과 하지 말아야 할 것을 명확하게 정리한 실천 가이드' }]).map(({ val, label, desc }) => {
                                     const checked = r.interactions.includes(val);
-                                    return (<button key={val} onClick={() => toggleInteraction(activeRoundIdx, val)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-left ${checked ? 'border-brand bg-brand/5' : 'border-border-light hover:border-border hover:bg-surface-hover'}`}><div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${checked ? 'border-brand bg-brand' : 'border-border'}`}>{checked && <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}</div><div><p className={`text-sm font-semibold ${checked ? 'text-brand-dark' : 'text-text-primary'}`}>{label}</p><p className="text-[11px] text-text-secondary">{desc}</p></div></button>);
+                                    return (<button key={val} onClick={() => toggleInteraction(activeRoundIdx, val)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-left ${checked ? 'border-[#55A4DA] bg-[#55A4DA]/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}><div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${checked ? 'border-[#55A4DA] bg-[#55A4DA]' : 'border-gray-300'}`}>{checked && <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}</div><div><p className={`text-sm font-semibold ${checked ? 'text-[#2E7DB5]' : 'text-gray-700'}`}>{label}</p><p className="text-[11px] text-gray-400">{desc}</p></div></button>);
                                   })}
                                 </div>
                               </div>
                             </div>
                           </div>
                           {/* 만족도 조사 - 일반형 */}
-                          <div className="bg-surface rounded-2xl border border-border-light shadow-sm overflow-hidden">
-                            <button onClick={() => toggleGeneralSection(5)} className="w-full px-5 py-3 flex items-center gap-2 hover:bg-surface-hover transition-colors">
-                              <span className="text-sm font-bold text-brand flex-shrink-0">5</span>
-                              <p className="text-sm font-bold text-text-primary flex-1 text-left">만족도 조사</p>
-                              {r.surveys.length > 0 ? (<span className="text-[11px] font-semibold text-brand flex-shrink-0">{r.surveys.map(v => v === 'always' ? '상시' : '정기').join(' · ')}</span>) : (<span className="text-[11px] text-text-secondary flex-shrink-0">선택사항</span>)}
-                              <svg className={`w-3.5 h-3.5 text-text-secondary flex-shrink-0 ml-1 transition-transform duration-200 ${generalOpenSections.has(5) ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                            <button onClick={() => toggleGeneralSection(5)} className="w-full px-5 py-3 flex items-center gap-2 hover:bg-gray-50 transition-colors">
+                              <span className="text-sm font-bold text-[#55A4DA] flex-shrink-0">5</span>
+                              <p className="text-sm font-bold text-gray-800 flex-1 text-left">만족도 조사</p>
+                              {r.surveys.length > 0 ? (<span className="text-[11px] font-semibold text-[#55A4DA] flex-shrink-0">{r.surveys.map(v => v === 'always' ? '상시' : '정기').join(' · ')}</span>) : (<span className="text-[11px] text-gray-400 flex-shrink-0">선택사항</span>)}
+                              <svg className={`w-3.5 h-3.5 text-gray-400 flex-shrink-0 ml-1 transition-transform duration-200 ${generalOpenSections.has(5) ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                             </button>
                             <div className={`grid transition-all duration-200 ${generalOpenSections.has(5) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
                               <div className="overflow-hidden">
-                                <div className="border-t border-border-light p-5 space-y-2">
-                                  <p className="text-xs text-text-secondary mb-3">이 회차에 포함할 만족도 조사를 선택하세요. 중복 선택 가능합니다.</p>
+                                <div className="border-t border-gray-100 p-5 space-y-2">
+                                  <p className="text-xs text-gray-400 mb-3">이 회차에 포함할 만족도 조사를 선택하세요. 중복 선택 가능합니다.</p>
                                   {([{ val: 'always' as const, label: '상시 만족도 조사', desc: '매 회차 발송 후 수집' }, { val: 'periodic' as const, label: '정기 만족도 조사', desc: '주기적으로 심층 수집' }]).map(({ val, label, desc }) => {
                                     const checked = r.surveys.includes(val);
-                                    return (<button key={val} onClick={() => toggleSurvey(activeRoundIdx, val)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-left ${checked ? 'border-brand bg-brand/5' : 'border-border-light hover:border-border hover:bg-surface-hover'}`}><div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${checked ? 'border-brand bg-brand' : 'border-border'}`}>{checked && <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}</div><div><p className={`text-sm font-semibold ${checked ? 'text-brand-dark' : 'text-text-primary'}`}>{label}</p><p className="text-[11px] text-text-secondary">{desc}</p></div></button>);
+                                    return (<button key={val} onClick={() => toggleSurvey(activeRoundIdx, val)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-left ${checked ? 'border-[#55A4DA] bg-[#55A4DA]/5' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}><div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${checked ? 'border-[#55A4DA] bg-[#55A4DA]' : 'border-gray-300'}`}>{checked && <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}</div><div><p className={`text-sm font-semibold ${checked ? 'text-[#2E7DB5]' : 'text-gray-700'}`}>{label}</p><p className="text-[11px] text-gray-400">{desc}</p></div></button>);
                                   })}
                                 </div>
                               </div>
@@ -1539,21 +1796,21 @@ function ConfigureContent() {
       )}
 
       {/* ════════════════════════════════
-          4단계: 발송 주기
+          5단계: 발송 주기
       ════════════════════════════════ */}
-      {wizardStep === 4 && (
+      {wizardStep === 5 && (
         <div className="flex-1 overflow-y-auto bg-[#F8FAFC]">
           <div className="w-full px-8 py-6 space-y-5">
 
             {/* 헤더 */}
             <div>
-              <h2 className="text-base font-bold text-text-primary mb-1">발송 주기 설정</h2>
-              <p className="text-xs text-text-secondary">주기와 시작일을 선택하면 전체 발송 일정이 자동으로 계산됩니다.</p>
+              <h2 className="text-base font-bold text-gray-800 mb-1">발송 주기 설정</h2>
+              <p className="text-xs text-gray-400">주기와 시작일을 선택하면 전체 발송 일정이 자동으로 계산됩니다.</p>
             </div>
 
             {/* ① 발송 주기 카드 선택 */}
-            <div className="bg-surface rounded-2xl border border-border-light shadow-sm p-6">
-              <p className="text-xs font-bold text-text-secondary uppercase tracking-wider mb-4">발송 주기</p>
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">발송 주기</p>
               <div className="grid grid-cols-3 gap-3">
                 {DELIVERY_INTERVAL_OPTIONS.map(opt => {
                   const isSelected = deliveryInterval === opt.value;
@@ -1563,19 +1820,19 @@ function ConfigureContent() {
                       onClick={() => setDeliveryInterval(opt.value)}
                       className={`relative flex flex-col items-center gap-1.5 px-4 py-4 rounded-xl border-2 transition-all ${
                         isSelected
-                          ? 'border-brand bg-brand/5'
-                          : 'border-border-light hover:border-border hover:bg-surface-hover'
+                          ? 'border-[#55A4DA] bg-[#55A4DA]/5'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                       }`}
                     >
                       {isSelected && (
-                        <div className="absolute top-2 right-2 w-4 h-4 rounded-full bg-brand flex items-center justify-center">
+                        <div className="absolute top-2 right-2 w-4 h-4 rounded-full bg-[#55A4DA] flex items-center justify-center">
                           <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                           </svg>
                         </div>
                       )}
-                      <p className={`text-base font-bold ${isSelected ? 'text-brand' : 'text-text-primary'}`}>{opt.label}</p>
-                      <p className={`text-xs ${isSelected ? 'text-brand/70' : 'text-text-secondary'}`}>{opt.desc}</p>
+                      <p className={`text-base font-bold ${isSelected ? 'text-[#55A4DA]' : 'text-gray-800'}`}>{opt.label}</p>
+                      <p className={`text-xs ${isSelected ? 'text-[#55A4DA]/70' : 'text-gray-400'}`}>{opt.desc}</p>
                     </button>
                   );
                 })}
@@ -1583,13 +1840,13 @@ function ConfigureContent() {
             </div>
 
             {/* ② 시작일 선택 */}
-            <div className="bg-surface rounded-2xl border border-border-light shadow-sm p-6">
-              <p className="text-xs font-bold text-text-secondary uppercase tracking-wider mb-4">첫 번째 회차 발송일</p>
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4">첫 번째 회차 발송일</p>
               <input
                 type="date"
                 value={startDate}
                 onChange={e => setStartDate(e.target.value)}
-                className="px-4 py-2.5 border border-border-light rounded-xl text-sm text-text-primary focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/30 transition"
+                className="px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition"
               />
             </div>
 
@@ -1597,28 +1854,28 @@ function ConfigureContent() {
             {deliveryInterval && startDate && rounds.length > 0 && (() => {
               const schedDates = calcScheduleDates(startDate, deliveryInterval, rounds.length);
               return (
-                <div className="bg-surface rounded-2xl border border-border-light shadow-sm overflow-hidden">
-                  <div className="px-6 py-4 border-b border-border-light flex items-center justify-between">
-                    <p className="text-xs font-bold text-text-secondary uppercase tracking-wider">발송 일정 미리보기</p>
-                    <span className="text-[11px] text-text-secondary">총 {rounds.length}회차</span>
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">발송 일정 미리보기</p>
+                    <span className="text-[11px] text-gray-400">총 {rounds.length}회차</span>
                   </div>
                   <table className="w-full">
                     <thead>
-                      <tr className="border-b border-border-light bg-surface-subtle/50">
-                        <th className="text-left px-6 py-2.5 text-[11px] font-bold text-text-secondary uppercase tracking-wider w-20">회차</th>
-                        <th className="text-left px-6 py-2.5 text-[11px] font-bold text-text-secondary uppercase tracking-wider">발송일</th>
-                        <th className="text-left px-6 py-2.5 text-[11px] font-bold text-text-secondary uppercase tracking-wider">스토리라인 단계</th>
+                      <tr className="border-b border-gray-100 bg-gray-50/50">
+                        <th className="text-left px-6 py-2.5 text-[11px] font-bold text-gray-400 uppercase tracking-wider w-20">회차</th>
+                        <th className="text-left px-6 py-2.5 text-[11px] font-bold text-gray-400 uppercase tracking-wider">발송일</th>
+                        <th className="text-left px-6 py-2.5 text-[11px] font-bold text-gray-400 uppercase tracking-wider">스토리라인 단계</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-border-light">
+                    <tbody className="divide-y divide-gray-50">
                       {rounds.map((r, idx) => {
                         const s = customStoryline[r.stepIndex];
                         const color = STEP_COLORS[r.stepIndex % STEP_COLORS.length];
                         const date = schedDates[idx];
                         return (
-                          <tr key={idx} className="hover:bg-surface-hover/50 transition-colors">
-                            <td className="px-6 py-2.5 text-xs font-semibold text-text-secondary">{idx + 1}회차</td>
-                            <td className="px-6 py-2.5 text-xs text-text-primary">{date ? formatKoreanDate(date) : '—'}</td>
+                          <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
+                            <td className="px-6 py-2.5 text-xs font-semibold text-gray-500">{idx + 1}회차</td>
+                            <td className="px-6 py-2.5 text-xs text-gray-800">{date ? formatKoreanDate(date) : '—'}</td>
                             <td className="px-6 py-2.5">
                               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${color.badge} text-white`}>
                                 {s?.title}
@@ -1629,9 +1886,9 @@ function ConfigureContent() {
                       })}
                     </tbody>
                   </table>
-                  <div className="px-6 py-3 border-t border-border-light bg-surface-subtle/50">
-                    <p className="text-xs text-text-secondary">
-                      총 발송 기간: <span className="font-semibold text-text-primary">{calcTotalDuration(startDate, deliveryInterval, rounds.length)}</span>
+                  <div className="px-6 py-3 border-t border-gray-100 bg-gray-50/50">
+                    <p className="text-xs text-gray-500">
+                      총 발송 기간: <span className="font-semibold text-gray-700">{calcTotalDuration(startDate, deliveryInterval, rounds.length)}</span>
                     </p>
                   </div>
                 </div>
@@ -1648,13 +1905,13 @@ function ConfigureContent() {
       ════════════════════════════════ */}
       {isEditingStoryline && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-2xl shadow-xl w-full max-w-xl max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border-light flex-shrink-0">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
               <div>
-                <h2 className="text-base font-bold text-text-primary">스토리라인 편집</h2>
-                <p className="text-xs text-text-secondary mt-0.5">단계 추가·삭제·순서 변경 및 내용 수정이 가능합니다.</p>
+                <h2 className="text-base font-bold text-gray-800">스토리라인 편집</h2>
+                <p className="text-xs text-gray-400 mt-0.5">단계 추가·삭제·순서 변경 및 내용 수정이 가능합니다.</p>
               </div>
-              <button onClick={() => setIsEditingStoryline(false)} className="text-text-secondary hover:text-text-primary transition-colors">
+              <button onClick={() => setIsEditingStoryline(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -1674,7 +1931,7 @@ function ConfigureContent() {
                         <button
                           onClick={() => removeDraftStep(idx)}
                           disabled={draftStoryline.length <= 2}
-                          className="text-icon hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                          className="text-gray-300 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -1686,20 +1943,20 @@ function ConfigureContent() {
                           value={s.title}
                           onChange={e => updateDraftStep(idx, 'title', e.target.value)}
                           placeholder="단계명 (예: 수용)"
-                          className={`w-full px-3 py-1.5 border border-border-light rounded-lg text-sm font-semibold bg-white focus:outline-none focus:border-current focus:ring-1 focus:ring-current/20 transition ${color.titleColor}`}
+                          className={`w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-semibold bg-white focus:outline-none focus:border-current focus:ring-1 focus:ring-current/20 transition ${color.titleColor}`}
                         />
                         <input
                           value={s.subtitle}
                           onChange={e => updateDraftStep(idx, 'subtitle', e.target.value)}
                           placeholder="부제 (예: 성찰과 인정)"
-                          className="w-full px-3 py-1.5 border border-border-light rounded-lg text-xs bg-white text-text-secondary focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20 transition"
+                          className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white text-gray-600 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/20 transition"
                         />
                         <textarea
                           value={s.description}
                           onChange={e => updateDraftStep(idx, 'description', e.target.value)}
                           placeholder="단계 설명을 입력하세요"
                           rows={2}
-                          className="w-full px-3 py-1.5 border border-border-light rounded-lg text-xs bg-white text-text-secondary resize-none focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/20 transition"
+                          className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-xs bg-white text-gray-600 resize-none focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/20 transition"
                         />
                       </div>
                     </div>
@@ -1709,22 +1966,22 @@ function ConfigureContent() {
 
               <button
                 onClick={addDraftStep}
-                className="w-full py-3 border-2 border-dashed border-border-light rounded-xl text-sm text-text-secondary hover:border-brand hover:text-brand transition-colors font-medium"
+                className="w-full py-3 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-400 hover:border-[#55A4DA] hover:text-[#55A4DA] transition-colors font-medium"
               >
                 + 단계 추가
               </button>
             </div>
 
-            <div className="px-6 py-4 border-t border-border-light flex justify-end gap-2 flex-shrink-0">
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-2 flex-shrink-0">
               <button
                 onClick={() => setIsEditingStoryline(false)}
-                className="px-4 py-2 text-sm font-medium text-text-secondary border border-border-light rounded-lg hover:bg-surface-hover transition-colors"
+                className="px-4 py-2 text-sm font-medium text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 취소
               </button>
               <button
                 onClick={saveStoryline}
-                className="px-5 py-2 text-sm font-bold bg-brand hover:bg-brand-dark text-text-onBrand rounded-lg transition-colors"
+                className="px-5 py-2 text-sm font-bold bg-[#55A4DA] hover:bg-[#3A8BC4] text-white rounded-lg transition-colors"
               >
                 저장
               </button>
@@ -1738,24 +1995,24 @@ function ConfigureContent() {
       ════════════════════════════════ */}
       {contentPoolOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border-light flex-shrink-0">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
               <div>
-                <h2 className="text-base font-bold text-text-primary">콘텐츠 풀</h2>
-                <p className="text-xs text-text-secondary mt-0.5">
+                <h2 className="text-base font-bold text-gray-800">콘텐츠 풀</h2>
+                <p className="text-xs text-gray-400 mt-0.5">
                   {activeRoundIdx + 1}회차 · {rounds[activeRoundIdx]?.topic || '—'}
                 </p>
               </div>
-              <button onClick={() => setContentPoolOpen(false)} className="text-text-secondary hover:text-text-primary transition-colors">
+              <button onClick={() => setContentPoolOpen(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
 
-            <div className="px-6 py-3 border-b border-border-light flex-shrink-0 space-y-2.5">
+            <div className="px-6 py-3 border-b border-gray-100 flex-shrink-0 space-y-2.5">
               <div className="relative">
-                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
                 <input
@@ -1766,7 +2023,7 @@ function ConfigureContent() {
                     void loadContentPool(e.target.value, contentPoolCategoryFilter);
                   }}
                   placeholder="제목, 작성자, 태그 검색..."
-                  className="w-full pl-9 pr-4 py-2 border border-border-light rounded-xl text-xs text-text-primary placeholder-placeholder focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand/30 transition"
+                  className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-xs text-gray-700 placeholder-gray-300 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition"
                 />
               </div>
               <div className="flex gap-1.5 overflow-x-auto">
@@ -1779,8 +2036,8 @@ function ConfigureContent() {
                     }}
                     className={`flex-shrink-0 px-3 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
                       contentPoolCategoryFilter === cat
-                        ? 'bg-brand text-white'
-                        : 'bg-surface-subtle text-text-secondary hover:bg-surface-hover'
+                        ? 'bg-[#55A4DA] text-white'
+                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                     }`}
                   >
                     {cat === '' ? '전체' : cat}
@@ -1791,15 +2048,15 @@ function ConfigureContent() {
 
             <div className="flex-1 overflow-y-auto p-4 space-y-1.5">
               {contentPoolLoading ? (
-                <div className="flex items-center justify-center py-12 gap-2 text-text-secondary">
-                  <svg className="w-4 h-4 animate-spin text-brand" fill="none" viewBox="0 0 24 24">
+                <div className="flex items-center justify-center py-12 gap-2 text-gray-400">
+                  <svg className="w-4 h-4 animate-spin text-[#55A4DA]" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                   </svg>
                   <span className="text-sm">불러오는 중...</span>
                 </div>
               ) : contentPoolItems.length === 0 ? (
-                <div className="flex items-center justify-center py-12 text-text-secondary text-sm">
+                <div className="flex items-center justify-center py-12 text-gray-400 text-sm">
                   검색 결과가 없습니다.
                 </div>
               ) : (
@@ -1814,8 +2071,8 @@ function ConfigureContent() {
                       key={item.id}
                       className={`rounded-xl border transition-all ${
                         alreadyAdded
-                          ? 'border-border-light bg-surface-subtle opacity-50'
-                          : 'border-border-light hover:border-brand hover:bg-brand/5'
+                          ? 'border-gray-100 bg-gray-50 opacity-50'
+                          : 'border-gray-200 hover:border-[#55A4DA] hover:bg-[#55A4DA]/5'
                       }`}
                     >
                       <div
@@ -1823,20 +2080,20 @@ function ConfigureContent() {
                         className={`flex items-start gap-3 px-4 pt-3 pb-2 ${alreadyAdded ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                       >
                         {item.thumbnail && (
-                          <img src={item.thumbnail} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0 bg-surface-subtle mt-0.5" />
+                          <img src={item.thumbnail} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0 bg-gray-100 mt-0.5" />
                         )}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 mb-0.5">
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
                               item.type === 'original' ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600'
                             }`}>{item.type === 'original' ? 'J& 오리지널' : '큐레이션'}</span>
-                            <span className="text-[10px] text-text-secondary">{item.category}</span>
+                            <span className="text-[10px] text-gray-400">{item.category}</span>
                           </div>
-                          <p className="text-xs font-semibold text-text-primary truncate">{item.title}</p>
+                          <p className="text-xs font-semibold text-gray-800 truncate">{item.title}</p>
                           <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-[10px] text-text-secondary">{item.author} · {item.duration}분</span>
+                            <span className="text-[10px] text-gray-400">{item.author} · {item.duration}분</span>
                             {item.tags.slice(0, 2).map(tag => (
-                              <span key={tag} className="text-[10px] bg-surface-subtle text-text-secondary px-1.5 py-0.5 rounded">{tag}</span>
+                              <span key={tag} className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{tag}</span>
                             ))}
                           </div>
                         </div>
@@ -1845,7 +2102,7 @@ function ConfigureContent() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                           </svg>
                         ) : (
-                          <svg className="w-4 h-4 text-icon flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-4 h-4 text-gray-300 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                           </svg>
                         )}
@@ -1854,7 +2111,7 @@ function ConfigureContent() {
                         <div className="px-4 pb-2.5">
                           <button
                             onClick={() => setContentPreviewItem(item)}
-                            className="text-[11px] text-brand hover:text-brand-dark font-medium transition-colors"
+                            className="text-[11px] text-[#55A4DA] hover:text-[#2E7DB5] font-medium transition-colors"
                           >
                             내용 보기 →
                           </button>
@@ -1866,10 +2123,10 @@ function ConfigureContent() {
               )}
             </div>
 
-            <div className="px-6 py-4 border-t border-border-light flex justify-end flex-shrink-0">
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end flex-shrink-0">
               <button
                 onClick={() => setContentPoolOpen(false)}
-                className="px-5 py-2 text-sm font-bold bg-brand hover:bg-brand-dark text-text-onBrand rounded-lg transition-colors"
+                className="px-5 py-2 text-sm font-bold bg-[#55A4DA] hover:bg-[#3A8BC4] text-white rounded-lg transition-colors"
               >
                 완료
               </button>
@@ -1883,26 +2140,26 @@ function ConfigureContent() {
       ════════════════════════════════ */}
       {contentPreviewItem && (
         <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col">
-            <div className="flex items-start justify-between px-6 py-4 border-b border-border-light flex-shrink-0">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col">
+            <div className="flex items-start justify-between px-6 py-4 border-b border-gray-200 flex-shrink-0">
               <div className="flex-1 min-w-0 pr-4">
                 <div className="flex items-center gap-2 mb-1.5">
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
                     contentPreviewItem.type === 'original' ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600'
                   }`}>{contentPreviewItem.type === 'original' ? 'J& 오리지널' : '큐레이션'}</span>
-                  <span className="text-[10px] text-text-secondary">{contentPreviewItem.category} · {contentPreviewItem.duration}분</span>
+                  <span className="text-[10px] text-gray-400">{contentPreviewItem.category} · {contentPreviewItem.duration}분</span>
                 </div>
-                <h3 className="text-sm font-bold text-text-primary leading-snug">{contentPreviewItem.title}</h3>
+                <h3 className="text-sm font-bold text-gray-800 leading-snug">{contentPreviewItem.title}</h3>
                 <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                  <span className="text-[11px] text-text-secondary">{contentPreviewItem.author}</span>
+                  <span className="text-[11px] text-gray-400">{contentPreviewItem.author}</span>
                   {contentPreviewItem.tags.slice(0, 4).map(tag => (
-                    <span key={tag} className="text-[10px] bg-surface-subtle text-text-secondary px-1.5 py-0.5 rounded">#{tag}</span>
+                    <span key={tag} className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">#{tag}</span>
                   ))}
                 </div>
               </div>
               <button
                 onClick={() => setContentPreviewItem(null)}
-                className="flex-shrink-0 text-text-secondary hover:text-text-primary transition-colors"
+                className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1910,12 +2167,12 @@ function ConfigureContent() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto px-6 py-5">
-              <p className="text-sm text-text-primary leading-relaxed whitespace-pre-wrap">{contentPreviewItem.body}</p>
+              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{contentPreviewItem.body}</p>
             </div>
-            <div className="px-6 py-3 border-t border-border-light flex justify-end flex-shrink-0">
+            <div className="px-6 py-3 border-t border-gray-100 flex justify-end flex-shrink-0">
               <button
                 onClick={() => setContentPreviewItem(null)}
-                className="px-5 py-2 text-sm font-semibold text-text-secondary border border-border-light rounded-lg hover:bg-surface-hover transition-colors"
+                className="px-5 py-2 text-sm font-semibold text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 닫기
               </button>
@@ -1947,17 +2204,17 @@ function ConfigureContent() {
 
         return (
           <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-6">
-            <div className="bg-surface rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
 
               {/* 헤더 */}
-              <div className="px-6 py-4 border-b border-border-light flex items-center justify-between flex-shrink-0">
+              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
                 <div>
-                  <h2 className="text-base font-bold text-text-primary">뉴스레터 미리보기</h2>
-                  <p className="text-xs text-text-secondary mt-0.5">생성 전 전체 구성을 확인하세요.</p>
+                  <h2 className="text-base font-bold text-gray-800">뉴스레터 미리보기</h2>
+                  <p className="text-xs text-gray-400 mt-0.5">생성 전 전체 구성을 확인하세요.</p>
                 </div>
                 <button
                   onClick={() => setPreviewOpen(false)}
-                  className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
+                  className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-600 transition-colors"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1970,59 +2227,59 @@ function ConfigureContent() {
               <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
 
                 {/* A: 상단 요약 */}
-                <div className="bg-surface-subtle rounded-xl p-5">
+                <div className="bg-gray-50 rounded-xl p-5">
                   <div className="grid grid-cols-3 gap-3 mb-4">
-                    <div className="bg-surface rounded-xl border border-border-light px-4 py-3 text-center">
-                      <p className="text-[11px] text-text-secondary mb-1">대상 기업</p>
-                      <p className="text-sm font-bold text-text-primary truncate">
+                    <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 text-center">
+                      <p className="text-[11px] text-gray-400 mb-1">대상 기업</p>
+                      <p className="text-sm font-bold text-gray-800 truncate">
                         {targetCompanies.length > 0 ? targetCompanies.map(c => c.name).join(', ') : '—'}
                       </p>
                     </div>
-                    <div className="bg-surface rounded-xl border border-border-light px-4 py-3 text-center">
-                      <p className="text-[11px] text-text-secondary mb-1">총 회차</p>
-                      <p className="text-sm font-bold text-text-primary">{rounds.length}회차</p>
+                    <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 text-center">
+                      <p className="text-[11px] text-gray-400 mb-1">총 회차</p>
+                      <p className="text-sm font-bold text-gray-800">{rounds.length}회차</p>
                     </div>
-                    <div className="bg-surface rounded-xl border border-border-light px-4 py-3 text-center">
-                      <p className="text-[11px] text-text-secondary mb-1">발송 주기</p>
-                      <p className="text-sm font-bold text-text-primary">{intervalLabel}</p>
+                    <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 text-center">
+                      <p className="text-[11px] text-gray-400 mb-1">발송 주기</p>
+                      <p className="text-sm font-bold text-gray-800">{intervalLabel}</p>
                     </div>
                   </div>
                   <div className="flex flex-col gap-3">
                     <div className="flex items-center gap-5 flex-wrap">
                       {leadershipTypes.length > 0 && (
                         <div className="flex items-center gap-1.5">
-                          <span className="text-[11px] text-text-secondary">리더십 유형</span>
+                          <span className="text-[11px] text-gray-400">리더십 유형</span>
                           <div className="flex gap-1">
                             {leadershipTypes.map(t => (
-                              <span key={t} className="text-xs font-semibold px-1.5 h-6 inline-flex items-center rounded bg-surface-ui text-text-primary">{t}</span>
+                              <span key={t} className={`text-xs font-semibold px-2 py-0.5 rounded-full ${LEADERSHIP_COLOR[t] ?? 'bg-gray-100 text-gray-600'}`}>{t}</span>
                             ))}
                           </div>
                         </div>
                       )}
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] text-text-secondary">시작일</span>
-                        <span className="text-xs font-semibold text-text-primary">
+                        <span className="text-[11px] text-gray-400">시작일</span>
+                        <span className="text-xs font-semibold text-gray-700">
                           {startDate ? formatKoreanDate(new Date(startDate + 'T00:00:00')) : '—'}
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] text-text-secondary">총 발송 기간</span>
-                        <span className="text-xs font-semibold text-text-primary">
+                        <span className="text-[11px] text-gray-400">총 발송 기간</span>
+                        <span className="text-xs font-semibold text-gray-700">
                           {deliveryInterval && startDate ? calcTotalDuration(startDate, deliveryInterval, rounds.length) : '—'}
                         </span>
                       </div>
                     </div>
                     {selectedParticipants.length > 0 && (
-                      <div className="flex items-center gap-2 pt-2 border-t border-border-light">
-                        <span className="text-[11px] text-text-secondary flex-shrink-0">수신 리더</span>
+                      <div className="flex items-center gap-2 pt-2 border-t border-gray-200">
+                        <span className="text-[11px] text-gray-400 flex-shrink-0">수신 리더</span>
                         <div className="flex flex-wrap gap-2">
                           {selectedParticipants.slice(0, 5).map(p => (
-                            <span key={p.id} className="text-xs font-semibold px-2 py-0.5 rounded-full bg-surface-subtle text-text-primary">
+                            <span key={p.id} className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
                               {p.name} {p.position}
                             </span>
                           ))}
                           {selectedParticipants.length > 5 && (
-                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-surface-subtle text-text-secondary">
+                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
                               +{selectedParticipants.length - 5}명
                             </span>
                           )}
@@ -2034,7 +2291,7 @@ function ConfigureContent() {
 
                 {/* B: 스토리라인 단계별 회차 묶음 */}
                 <div>
-                  <h3 className="text-xs font-bold text-text-secondary uppercase tracking-wider mb-3">스토리라인 단계별 구성</h3>
+                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">스토리라인 단계별 구성</h3>
                   <div className="space-y-2.5">
                     {stepGroups.map(({ step, stepIdx, rounds: groupRounds }) => {
                       const color = STEP_COLORS[stepIdx % STEP_COLORS.length];
@@ -2043,41 +2300,41 @@ function ConfigureContent() {
                         ? `${groupRounds[0].globalIdx + 1}회차`
                         : `${groupRounds[0].globalIdx + 1}~${groupRounds[groupRounds.length - 1].globalIdx + 1}회차`;
                       return (
-                        <div key={stepIdx} className="bg-surface rounded-xl border border-border-light shadow-sm overflow-hidden">
+                        <div key={stepIdx} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                           <button
                             onClick={() => togglePreviewGroup(stepIdx)}
-                            className="w-full px-5 py-3.5 flex items-center gap-3 hover:bg-surface-hover transition-colors"
+                            className="w-full px-5 py-3.5 flex items-center gap-3 hover:bg-gray-50 transition-colors"
                           >
                             <div className={`w-7 h-7 rounded-full ${color.badge} flex items-center justify-center flex-shrink-0`}>
                               <span className="text-white text-xs font-bold">{step.step}</span>
                             </div>
                             <div className="flex-1 text-left">
                               <p className={`text-sm font-bold ${color.titleColor}`}>{step.title}</p>
-                              <p className="text-[11px] text-text-secondary">{step.subtitle}</p>
+                              <p className="text-[11px] text-gray-400">{step.subtitle}</p>
                             </div>
-                            <span className="text-[11px] text-text-secondary flex-shrink-0">{rangeText} · {groupRounds.length}개</span>
-                            <svg className={`w-4 h-4 text-text-secondary flex-shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <span className="text-[11px] text-gray-400 flex-shrink-0">{rangeText} · {groupRounds.length}개</span>
+                            <svg className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                             </svg>
                           </button>
                           <div className={`grid transition-all duration-200 ${isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
                             <div className="overflow-hidden">
-                              <div className="border-t border-border-light divide-y divide-border-light">
+                              <div className="border-t border-gray-100 divide-y divide-gray-50">
                                 {groupRounds.map(r => {
                                   const date = schedDates[r.globalIdx];
                                   return (
                                     <div key={r.id} className="px-5 py-3">
                                       <div className="flex items-center gap-2 mb-1">
-                                        <span className="text-xs font-bold text-text-primary">{r.globalIdx + 1}회차</span>
+                                        <span className="text-xs font-bold text-gray-700">{r.globalIdx + 1}회차</span>
                                         {r.topic.trim()
-                                          ? <span className="text-xs text-text-secondary">{r.topic}</span>
-                                          : <span className="text-[11px] text-icon italic">주제 미선정</span>
+                                          ? <span className="text-xs text-gray-600">{r.topic}</span>
+                                          : <span className="text-[11px] text-gray-300 italic">주제 미선정</span>
                                         }
                                       </div>
                                       <div className="flex items-center gap-3 flex-wrap">
-                                        <span className="text-[11px] text-text-secondary">콘텐츠 {r.contents.length}개</span>
+                                        <span className="text-[11px] text-gray-400">콘텐츠 {r.contents.length}개</span>
                                         {r.interactions.length > 0 && (
-                                          <span className="text-[11px] text-brand">
+                                          <span className="text-[11px] text-[#55A4DA]">
                                             {r.interactions.map(v => INTERACTION_LABELS[v] ?? v).join(' · ')}
                                           </span>
                                         )}
@@ -2087,14 +2344,14 @@ function ConfigureContent() {
                                           </span>
                                         )}
                                         {date && (
-                                          <span className="text-[11px] text-text-secondary">📅 {formatKoreanDate(date)}</span>
+                                          <span className="text-[11px] text-gray-400">📅 {formatKoreanDate(date)}</span>
                                         )}
                                         {r.newsletterType === '맞춤형' && r.customTypes.length > 0 ? (
                                           <span className="text-[11px] text-amber-600 font-semibold">
                                             {r.customTypes.join('+')} {r.customLeaderIds.length}명(맞춤) + {r.generalLeaderIds.length}명(일반)
                                           </span>
                                         ) : (
-                                          <span className="text-[11px] text-text-secondary">
+                                          <span className="text-[11px] text-gray-400">
                                             전체 {selectedParticipants.length}명 수신
                                           </span>
                                         )}
@@ -2113,7 +2370,7 @@ function ConfigureContent() {
 
                 {/* C: 뉴스레터 프리뷰 */}
                 <div>
-                  <h3 className="text-xs font-bold text-text-secondary uppercase tracking-wider mb-3">뉴스레터 PREVIEW</h3>
+                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">뉴스레터 PREVIEW</h3>
                   {/* 회차 탭 */}
                   <div className="flex gap-1.5 overflow-x-auto pb-2 flex-nowrap mb-4">
                     {rounds.map((_, idx) => (
@@ -2122,8 +2379,8 @@ function ConfigureContent() {
                         onClick={() => setPreviewTab(idx)}
                         className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                           previewTab === idx
-                            ? 'bg-brand text-white'
-                            : 'bg-surface-subtle text-text-secondary hover:bg-surface-hover'
+                            ? 'bg-[#55A4DA] text-white'
+                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                         }`}
                       >
                         {idx + 1}회차
@@ -2134,18 +2391,18 @@ function ConfigureContent() {
                   {activeRound && (() => {
                     const isGenerating = generatingRounds.has(previewTab);
                     const generated = generatedContent[previewTab];
-                    const contentTab = previewContentTab[previewTab] ?? 'email';
+                    const contentTab = previewContentTab[previewTab] ?? 'full';
                     const firstThumbnail = activeRound.contents[0]?.thumbnail ?? '';
                     const schedDate = schedDates[previewTab];
 
                     if (isGenerating) {
                       return (
                         <div className="flex flex-col items-center justify-center py-16 gap-3">
-                          <svg className="w-8 h-8 text-brand animate-spin" fill="none" viewBox="0 0 24 24">
+                          <svg className="w-8 h-8 text-[#55A4DA] animate-spin" fill="none" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                           </svg>
-                          <p className="text-sm text-text-secondary font-medium">AI가 뉴스레터를 작성 중입니다...</p>
+                          <p className="text-sm text-gray-500 font-medium">AI가 뉴스레터를 작성 중입니다...</p>
                         </div>
                       );
                     }
@@ -2153,18 +2410,18 @@ function ConfigureContent() {
                     if (!generated) {
                       return (
                         <div className="flex flex-col items-center justify-center py-12 gap-4">
-                          <div className="w-12 h-12 rounded-full bg-brand-50 flex items-center justify-center">
-                            <svg className="w-6 h-6 text-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <div className="w-12 h-12 rounded-full bg-[#55A4DA]/10 flex items-center justify-center">
+                            <svg className="w-6 h-6 text-[#55A4DA]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                             </svg>
                           </div>
                           <div className="text-center">
-                            <p className="text-sm font-bold text-text-primary mb-1">{previewTab + 1}회차 뉴스레터</p>
-                            <p className="text-xs text-text-secondary">AI가 이 회차의 뉴스레터 본문을 생성합니다.</p>
+                            <p className="text-sm font-bold text-gray-700 mb-1">{previewTab + 1}회차 뉴스레터</p>
+                            <p className="text-xs text-gray-400">AI가 이 회차의 뉴스레터 본문을 생성합니다.</p>
                           </div>
                           <button
                             onClick={() => handleGenerateRound(previewTab)}
-                            className="flex items-center gap-2 px-5 py-2.5 bg-brand hover:bg-brand-dark text-text-onBrand text-sm font-semibold rounded-xl transition-colors shadow-sm"
+                            className="flex items-center gap-2 px-5 py-2.5 bg-[#55A4DA] hover:bg-[#3A8BC4] text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -2180,23 +2437,23 @@ function ConfigureContent() {
                         {/* 서브탭 + 다시생성 */}
                         <div className="flex items-center justify-between">
                           <div className="flex gap-1">
-                            {(['email', 'full'] as const).map(tab => (
+                            {(['full', 'email'] as const).map(tab => (
                               <button
                                 key={tab}
                                 onClick={() => setPreviewContentTab(prev => ({ ...prev, [previewTab]: tab }))}
                                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                                   contentTab === tab
-                                    ? 'bg-brand text-white'
-                                    : 'bg-surface-subtle text-text-secondary hover:bg-surface-hover'
+                                    ? 'bg-[#55A4DA] text-white'
+                                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                                 }`}
                               >
-                                {tab === 'email' ? '이메일 미리보기' : '전체 본문'}
+                                {tab === 'full' ? '전체 본문' : '이메일 미리보기'}
                               </button>
                             ))}
                           </div>
                           <button
                             onClick={() => handleGenerateRound(previewTab)}
-                            className="flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary transition-colors"
+                            className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
                           >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -2212,11 +2469,11 @@ function ConfigureContent() {
                             <div className="px-5 py-3.5 flex items-center justify-between bg-white border-b border-[#D6EAF8]">
                               <div className="flex items-center gap-2">
                                 <img src="/logo-jc.png" alt="J&Company" className="h-6 object-contain" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                                <span className="text-sm font-black text-text-primary tracking-wider">J&COMPANY</span>
+                                <span className="text-sm font-black text-gray-800 tracking-wider">J&COMPANY</span>
                               </div>
                               <div className="text-right">
-                                <p className="text-[11px] text-text-secondary">Vol.{previewTab + 1}</p>
-                                {schedDate && <p className="text-[10px] text-text-secondary mt-0.5">{formatKoreanDate(schedDate)}</p>}
+                                <p className="text-[11px] text-gray-400">Vol.{previewTab + 1}</p>
+                                {schedDate && <p className="text-[10px] text-gray-400 mt-0.5">{formatKoreanDate(schedDate)}</p>}
                               </div>
                             </div>
                             {/* 히어로 — 썸네일 + 헤드라인 (클릭 시 전체 본문으로) */}
@@ -2238,19 +2495,19 @@ function ConfigureContent() {
                             </div>
                             {/* 인트로 */}
                             <div className="px-5 pt-4 pb-3">
-                              <p className="text-xs text-text-secondary leading-relaxed">{generated.intro}</p>
+                              <p className="text-xs text-gray-600 leading-relaxed">{generated.intro}</p>
                             </div>
                             <div className="mx-5 border-t border-[#D6EAF8]" />
                             {/* 이번 호 내용 */}
                             <div className="px-5 py-4">
-                              <p className="text-xs font-bold text-text-primary mb-3">이번 호에서 다루는 내용 👇</p>
+                              <p className="text-xs font-bold text-gray-700 mb-3">이번 호에서 다루는 내용 👇</p>
                               <div className="grid grid-cols-2 gap-2">
                                 {generated.sections.map(sec => (
                                   <div key={sec.contentId} className="bg-white rounded-xl p-3 border border-[#D6EAF8] space-y-1.5 flex flex-col">
                                     <p className="text-base leading-none">{sec.emoji}</p>
-                                    <p className="text-xs font-bold text-text-primary leading-snug line-clamp-2">{sec.contentTitle}</p>
-                                    <p className="text-[11px] text-text-secondary leading-relaxed line-clamp-2 flex-1">{sec.summary}</p>
-                                    <div className="border-t border-border-light pt-1.5">
+                                    <p className="text-xs font-bold text-gray-800 leading-snug line-clamp-2">{sec.contentTitle}</p>
+                                    <p className="text-[11px] text-gray-500 leading-relaxed line-clamp-2 flex-1">{sec.summary}</p>
+                                    <div className="border-t border-gray-100 pt-1.5">
                                       <p className="text-[11px] text-[#2B9EE8] font-semibold leading-snug line-clamp-1">{sec.keyTakeaway}</p>
                                     </div>
                                     <button
@@ -2276,10 +2533,10 @@ function ConfigureContent() {
                             <div className="mx-5 border-t border-[#D6EAF8]" />
                             {/* 푸터 */}
                             <div className="px-5 py-3 flex items-center justify-between">
-                              <span className="text-[11px] font-semibold text-text-secondary">J&Company 코칭팀</span>
+                              <span className="text-[11px] font-semibold text-gray-600">J&Company 코칭팀</span>
                               <div className="flex gap-3">
-                                <span className="text-[10px] text-text-secondary cursor-pointer hover:underline">수신거부</span>
-                                <span className="text-[10px] text-text-secondary cursor-pointer hover:underline">문의하기</span>
+                                <span className="text-[10px] text-gray-400 cursor-pointer hover:underline">수신거부</span>
+                                <span className="text-[10px] text-gray-400 cursor-pointer hover:underline">문의하기</span>
                               </div>
                             </div>
                           </div>
@@ -2292,11 +2549,11 @@ function ConfigureContent() {
                             <div className="px-6 py-3.5 flex items-center justify-between bg-white border-b border-[#D6EAF8]">
                               <div className="flex items-center gap-2">
                                 <img src="/logo-jc.png" alt="J&Company" className="h-6 object-contain" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                                <span className="text-sm font-black text-text-primary tracking-wider">J&COMPANY</span>
+                                <span className="text-sm font-black text-gray-800 tracking-wider">J&COMPANY</span>
                               </div>
                               <div className="text-right">
-                                <p className="text-[11px] text-text-secondary">Vol.{previewTab + 1} · {schedDate ? formatKoreanDate(schedDate) : '—'}</p>
-                                {leadershipTypes.length > 0 && <p className="text-[10px] text-text-secondary mt-0.5">{leadershipTypes.join(', ')}</p>}
+                                <p className="text-[11px] text-gray-400">Vol.{previewTab + 1} · {schedDate ? formatKoreanDate(schedDate) : '—'}</p>
+                                {leadershipTypes.length > 0 && <p className="text-[10px] text-gray-400 mt-0.5">{leadershipTypes.join(', ')}</p>}
                               </div>
                             </div>
                             {/* 히어로 */}
@@ -2317,13 +2574,13 @@ function ConfigureContent() {
                             <div className="px-6 py-6 space-y-5">
                               {/* 헤드라인 + 인트로 */}
                               <div className="bg-white rounded-2xl p-5 border border-[#D6EAF8]">
-                                <p className="text-base font-black text-text-primary leading-snug mb-2">{generated.headline}</p>
-                                <p className="text-sm text-text-secondary leading-relaxed">{generated.intro}</p>
+                                <p className="text-base font-black text-gray-800 leading-snug mb-2">{generated.headline}</p>
+                                <p className="text-sm text-gray-600 leading-relaxed">{generated.intro}</p>
                               </div>
                               {/* CONTENTS 구분 */}
                               <div className="flex items-center gap-3">
                                 <div className="flex-1 border-t border-[#D6EAF8]" />
-                                <span className="text-[10px] text-text-secondary font-bold uppercase tracking-widest">CONTENTS</span>
+                                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">CONTENTS</span>
                                 <div className="flex-1 border-t border-[#D6EAF8]" />
                               </div>
                               {/* 섹션별 본문 */}
@@ -2331,12 +2588,12 @@ function ConfigureContent() {
                                 <div key={sec.contentId} className="bg-white rounded-2xl p-5 border border-[#D6EAF8] space-y-3">
                                   <div className="flex items-start gap-3">
                                     <span className="text-2xl flex-shrink-0 mt-0.5">{sec.emoji}</span>
-                                    <p className="text-sm font-black text-text-primary leading-snug">{sec.contentTitle}</p>
+                                    <p className="text-sm font-black text-gray-800 leading-snug">{sec.contentTitle}</p>
                                   </div>
-                                  <p className="text-sm text-text-secondary leading-relaxed">{sec.summary}</p>
+                                  <p className="text-sm text-gray-600 leading-relaxed">{sec.summary}</p>
                                   <div className="bg-[#F0FDF4] border border-emerald-200 rounded-xl px-4 py-3">
                                     <p className="text-[11px] font-bold text-emerald-700 mb-0.5">💡 핵심 포인트</p>
-                                    <p className="text-sm text-text-primary leading-relaxed">{sec.keyTakeaway}</p>
+                                    <p className="text-sm text-gray-700 leading-relaxed">{sec.keyTakeaway}</p>
                                   </div>
                                   {sec.youtubeUrl && (
                                     <div className="aspect-video rounded-xl overflow-hidden bg-black">
@@ -2350,7 +2607,7 @@ function ConfigureContent() {
                                 <>
                                   <div className="flex items-center gap-3">
                                     <div className="flex-1 border-t border-[#D6EAF8]" />
-                                    <span className="text-[10px] text-text-secondary font-bold uppercase tracking-widest">INTERACTION</span>
+                                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">INTERACTION</span>
                                     <div className="flex-1 border-t border-[#D6EAF8]" />
                                   </div>
                                   {generated.interactions.map((ia, idx) => {
@@ -2358,12 +2615,12 @@ function ConfigureContent() {
                                       const c = ia.content as { question: string; options: string[]; answer: number };
                                       return (
                                         <div key={idx} className="bg-[#EBF5FF] rounded-2xl p-5 border border-blue-200 space-y-3">
-                                          <div className="flex items-center gap-2"><span className="text-lg">🧠</span><p className="text-sm font-bold text-text-primary">{ia.title}</p></div>
-                                          <p className="text-sm text-text-primary leading-relaxed">{c.question}</p>
+                                          <div className="flex items-center gap-2"><span className="text-lg">🧠</span><p className="text-sm font-bold text-gray-800">{ia.title}</p></div>
+                                          <p className="text-sm text-gray-700 leading-relaxed">{c.question}</p>
                                           <div className="space-y-2">
                                             {(c.options ?? []).map((opt, i) => (
-                                              <div key={i} className="flex items-center gap-2.5 px-4 py-2.5 bg-white rounded-xl border border-blue-100 text-sm text-text-primary">
-                                                <div className="w-4 h-4 rounded-full border-2 border-border flex-shrink-0" />{opt}
+                                              <div key={i} className="flex items-center gap-2.5 px-4 py-2.5 bg-white rounded-xl border border-blue-100 text-sm text-gray-700">
+                                                <div className="w-4 h-4 rounded-full border-2 border-gray-300 flex-shrink-0" />{opt}
                                               </div>
                                             ))}
                                           </div>
@@ -2375,11 +2632,11 @@ function ConfigureContent() {
                                       const c = ia.content as { situation: string; options: { label: string; result: string }[] };
                                       return (
                                         <div key={idx} className="bg-[#EBF5FF] rounded-2xl p-5 border border-blue-200 space-y-3">
-                                          <div className="flex items-center gap-2"><span className="text-lg">🎭</span><p className="text-sm font-bold text-text-primary">{ia.title}</p></div>
-                                          <p className="text-sm text-text-primary leading-relaxed">{c.situation}</p>
+                                          <div className="flex items-center gap-2"><span className="text-lg">🎭</span><p className="text-sm font-bold text-gray-800">{ia.title}</p></div>
+                                          <p className="text-sm text-gray-700 leading-relaxed">{c.situation}</p>
                                           <div className="space-y-2">
                                             {(c.options ?? []).map((opt, i) => (
-                                              <button key={i} className="w-full text-left px-4 py-2.5 bg-white rounded-xl border border-blue-100 text-sm text-text-primary hover:bg-blue-50 transition-colors">{opt.label}</button>
+                                              <button key={i} className="w-full text-left px-4 py-2.5 bg-white rounded-xl border border-blue-100 text-sm text-gray-700 hover:bg-blue-50 transition-colors">{opt.label}</button>
                                             ))}
                                           </div>
                                         </div>
@@ -2389,12 +2646,12 @@ function ConfigureContent() {
                                       const c = ia.content as { items: string[] };
                                       return (
                                         <div key={idx} className="bg-[#EBF5FF] rounded-2xl p-5 border border-blue-200 space-y-3">
-                                          <div className="flex items-center gap-2"><span className="text-lg">✅</span><p className="text-sm font-bold text-text-primary">{ia.title}</p></div>
+                                          <div className="flex items-center gap-2"><p className="text-sm font-bold text-gray-800">{ia.title}</p></div>
                                           <div className="space-y-2">
                                             {(c.items ?? []).map((item, i) => (
                                               <div key={i} className="flex items-start gap-2.5">
                                                 <div className="w-4 h-4 rounded border-2 border-blue-300 flex-shrink-0 mt-0.5 bg-white" />
-                                                <p className="text-sm text-text-primary">{item}</p>
+                                                <p className="text-sm text-gray-700">{item}</p>
                                               </div>
                                             ))}
                                           </div>
@@ -2405,12 +2662,12 @@ function ConfigureContent() {
                                       const c = ia.content as { questions: string[] };
                                       return (
                                         <div key={idx} className="bg-[#EBF5FF] rounded-2xl p-5 border border-blue-200 space-y-3">
-                                          <div className="flex items-center gap-2"><span className="text-lg">💭</span><p className="text-sm font-bold text-text-primary">{ia.title}</p></div>
+                                          <div className="flex items-center gap-2"><span className="text-lg">💭</span><p className="text-sm font-bold text-gray-800">{ia.title}</p></div>
                                           <div className="space-y-2">
                                             {(c.questions ?? []).map((q, i) => (
                                               <div key={i} className="bg-white rounded-xl px-4 py-3 border border-blue-100">
                                                 <p className="text-[11px] font-bold text-[#2B9EE8] mb-0.5">Q{i + 1}</p>
-                                                <p className="text-sm text-text-primary">{q}</p>
+                                                <p className="text-sm text-gray-700">{q}</p>
                                               </div>
                                             ))}
                                           </div>
@@ -2421,21 +2678,21 @@ function ConfigureContent() {
                                       const c = ia.content as { do: string[]; dont: string[] };
                                       return (
                                         <div key={idx} className="bg-[#EBF5FF] rounded-2xl p-5 border border-blue-200 space-y-3">
-                                          <div className="flex items-center gap-2"><span className="text-lg">📋</span><p className="text-sm font-bold text-text-primary">{ia.title}</p></div>
+                                          <div className="flex items-center gap-2"><p className="text-sm font-bold text-gray-800">{ia.title}</p></div>
                                           <div className="grid grid-cols-2 gap-3">
                                             <div className="bg-white rounded-xl p-3 border border-emerald-200">
-                                              <p className="text-xs font-bold text-emerald-600 mb-2">✅ Do</p>
+                                              <p className="text-xs font-bold text-emerald-600 mb-2">Do</p>
                                               <ul className="space-y-1.5">
                                                 {(c.do ?? []).map((item, i) => (
-                                                  <li key={i} className="text-xs text-text-primary flex items-start gap-1.5"><span className="text-emerald-500 flex-shrink-0 mt-0.5">•</span>{item}</li>
+                                                  <li key={i} className="text-xs text-gray-700 flex items-start gap-1.5"><span className="text-emerald-500 flex-shrink-0 mt-0.5">•</span>{item}</li>
                                                 ))}
                                               </ul>
                                             </div>
                                             <div className="bg-white rounded-xl p-3 border border-red-200">
-                                              <p className="text-xs font-bold text-red-500 mb-2">❌ Don't</p>
+                                              <p className="text-xs font-bold text-red-500 mb-2">Don't</p>
                                               <ul className="space-y-1.5">
                                                 {(c.dont ?? []).map((item, i) => (
-                                                  <li key={i} className="text-xs text-text-primary flex items-start gap-1.5"><span className="text-red-400 flex-shrink-0 mt-0.5">•</span>{item}</li>
+                                                  <li key={i} className="text-xs text-gray-700 flex items-start gap-1.5"><span className="text-red-400 flex-shrink-0 mt-0.5">•</span>{item}</li>
                                                 ))}
                                               </ul>
                                             </div>
@@ -2452,7 +2709,7 @@ function ConfigureContent() {
                                 <>
                                   <div className="flex items-center gap-3">
                                     <div className="flex-1 border-t border-[#D6EAF8]" />
-                                    <span className="text-[10px] text-text-secondary font-bold uppercase tracking-widest">SURVEY</span>
+                                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">SURVEY</span>
                                     <div className="flex-1 border-t border-[#D6EAF8]" />
                                   </div>
                                   {generated.surveys.map((survey, idx) => {
@@ -2460,29 +2717,29 @@ function ConfigureContent() {
                                       const q = survey.questions[0] as { type: 'rating'; options: string[]; followUp: string; followUpOptions: string[]; openQuestion: string };
                                       return (
                                         <div key={idx} className="bg-[#FFFBEB] rounded-2xl p-5 border border-amber-200 space-y-4">
-                                          <p className="text-sm font-bold text-text-primary">📊 이번 뉴스레터 어떠셨나요?</p>
+                                          <p className="text-sm font-bold text-gray-800">📊 이번 뉴스레터 어떠셨나요?</p>
                                           <div className="flex gap-2">
                                             {(q.options ?? []).map((opt, i) => (
                                               <button key={i} className="flex-1 flex flex-col items-center gap-1 py-2.5 bg-white rounded-xl border border-amber-200 hover:bg-amber-50 transition-colors">
                                                 <span className="text-xl">{['😐', '😊', '🤩'][i]}</span>
-                                                <span className="text-[10px] text-text-secondary">{opt}</span>
+                                                <span className="text-[10px] text-gray-600">{opt}</span>
                                               </button>
                                             ))}
                                           </div>
                                           <div>
-                                            <p className="text-xs font-semibold text-text-primary mb-2">{q.followUp}</p>
+                                            <p className="text-xs font-semibold text-gray-700 mb-2">{q.followUp}</p>
                                             <div className="space-y-1.5">
                                               {(q.followUpOptions ?? []).map((opt, i) => (
                                                 <div key={i} className="flex items-center gap-2">
                                                   <div className="w-4 h-4 rounded border-2 border-amber-300 flex-shrink-0 bg-white" />
-                                                  <p className="text-xs text-text-primary">{opt}</p>
+                                                  <p className="text-xs text-gray-700">{opt}</p>
                                                 </div>
                                               ))}
                                             </div>
                                           </div>
                                           <div>
-                                            <p className="text-xs font-semibold text-text-primary mb-1.5">{q.openQuestion}</p>
-                                            <div className="w-full h-14 bg-white rounded-lg border border-amber-200 px-3 py-2 text-xs text-text-secondary flex items-start">답변을 입력해 주세요...</div>
+                                            <p className="text-xs font-semibold text-gray-700 mb-1.5">{q.openQuestion}</p>
+                                            <div className="w-full h-14 bg-white rounded-lg border border-amber-200 px-3 py-2 text-xs text-gray-400 flex items-start">답변을 입력해 주세요...</div>
                                           </div>
                                         </div>
                                       );
@@ -2491,10 +2748,10 @@ function ConfigureContent() {
                                       const questions = survey.questions as PeriodicSurveyQuestion[];
                                       return (
                                         <div key={idx} className="bg-[#FFFBEB] rounded-2xl p-5 border border-amber-200 space-y-5">
-                                          <p className="text-sm font-bold text-text-primary">📊 정기 만족도 조사</p>
+                                          <p className="text-sm font-bold text-gray-800">📊 정기 만족도 조사</p>
                                           {questions.map((q, i) => (
                                             <div key={i}>
-                                              <p className="text-xs font-semibold text-text-primary mb-2">Q{i + 1}. {q.question}</p>
+                                              <p className="text-xs font-semibold text-gray-700 mb-2">Q{i + 1}. {q.question}</p>
                                               {q.type === 'scale' && (
                                                 <div>
                                                   <div className="flex gap-1">
@@ -2503,8 +2760,8 @@ function ConfigureContent() {
                                                     ))}
                                                   </div>
                                                   <div className="flex justify-between mt-1">
-                                                    <span className="text-[10px] text-text-secondary">매우 불만족</span>
-                                                    <span className="text-[10px] text-text-secondary">매우 만족</span>
+                                                    <span className="text-[10px] text-gray-400">매우 불만족</span>
+                                                    <span className="text-[10px] text-gray-400">매우 만족</span>
                                                   </div>
                                                 </div>
                                               )}
@@ -2516,7 +2773,7 @@ function ConfigureContent() {
                                                 </div>
                                               )}
                                               {q.type === 'open' && (
-                                                <div className="w-full h-14 bg-white rounded-lg border border-amber-200 px-3 py-2 text-xs text-text-secondary flex items-start">답변을 입력해 주세요...</div>
+                                                <div className="w-full h-14 bg-white rounded-lg border border-amber-200 px-3 py-2 text-xs text-gray-400 flex items-start">답변을 입력해 주세요...</div>
                                               )}
                                             </div>
                                           ))}
@@ -2530,15 +2787,25 @@ function ConfigureContent() {
                               )}
                               {/* 클로징 */}
                               <div className="bg-white rounded-2xl p-5 border border-[#D6EAF8]">
-                                <p className="text-sm text-text-secondary leading-relaxed italic mb-2">{generated.closing}</p>
-                                <p className="text-xs text-text-secondary font-semibold">J&Company 코칭팀 드림</p>
+                                <p className="text-sm text-gray-600 leading-relaxed italic mb-2">{generated.closing}</p>
+                                <p className="text-xs text-gray-400 font-semibold">J&Company 코칭팀 드림</p>
                               </div>
+                              {/* 마이페이지 바로가기 */}
+                              <div className="flex justify-center py-1">
+                                <button className="flex items-center gap-2 px-6 py-3 bg-[#2B9EE8] hover:bg-[#1a8ad4] text-white text-sm font-semibold rounded-2xl transition-colors shadow-sm">
+                                  내 마이페이지 바로가기
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                  </svg>
+                                </button>
+                              </div>
+
                               {/* 푸터 */}
                               <div className="flex items-center justify-between pb-1">
                                 <img src="/logo-jc.png" alt="J&Company" className="h-5 object-contain" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                                 <div className="flex gap-3">
-                                  <span className="text-[10px] text-text-secondary cursor-pointer hover:underline">수신거부</span>
-                                  <span className="text-[10px] text-text-secondary cursor-pointer hover:underline">문의하기</span>
+                                  <span className="text-[10px] text-gray-400 cursor-pointer hover:underline">수신거부</span>
+                                  <span className="text-[10px] text-gray-400 cursor-pointer hover:underline">문의하기</span>
                                 </div>
                               </div>
                             </div>
@@ -2552,10 +2819,10 @@ function ConfigureContent() {
               </div>
 
               {/* 푸터 */}
-              <div className="px-6 py-4 border-t border-border-light flex items-center justify-between flex-shrink-0">
+              <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between flex-shrink-0">
                 <button
                   onClick={() => setPreviewOpen(false)}
-                  className="flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg border border-border-light text-text-secondary hover:bg-surface-hover transition-colors"
+                  className="flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -2564,7 +2831,7 @@ function ConfigureContent() {
                 </button>
                 <button
                   onClick={handleConfirmCreate}
-                  className="flex items-center gap-2 px-6 py-2 bg-brand hover:bg-brand-dark text-text-onBrand text-sm font-bold rounded-lg transition-colors shadow-sm"
+                  className="flex items-center gap-2 px-6 py-2 bg-[#55A4DA] hover:bg-[#3A8BC4] text-white text-sm font-bold rounded-lg transition-colors shadow-sm"
                 >
                   생성 확정
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2582,21 +2849,21 @@ function ConfigureContent() {
       {/* ── 임시저장 토스트 ── */}
       {showCancelConfirm && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-5">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-5">
             <div>
-              <h3 className="text-sm font-bold text-text-primary">저장하지 않고 나가시겠습니까?</h3>
-              <p className="text-xs text-text-secondary mt-2 leading-relaxed">작업 내용이 사라집니다.</p>
+              <h3 className="text-sm font-bold text-gray-800">저장하지 않고 나가시겠습니까?</h3>
+              <p className="text-xs text-gray-500 mt-2 leading-relaxed">작업 내용이 사라집니다.</p>
             </div>
             <div className="flex gap-2">
               <button
                 onClick={() => setShowCancelConfirm(false)}
-                className="flex-1 px-4 py-2 text-sm font-semibold bg-brand hover:bg-brand-dark text-text-onBrand rounded-lg transition-colors"
+                className="flex-1 px-4 py-2 text-sm font-semibold bg-[#55A4DA] hover:bg-[#3A8BC4] text-white rounded-lg transition-colors"
               >
                 계속 작업
               </button>
               <button
                 onClick={handleCancel}
-                className="flex-1 px-4 py-2 text-sm font-medium text-text-secondary border border-border-light rounded-lg hover:bg-surface-hover transition-colors"
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 나가기
               </button>
@@ -2606,7 +2873,7 @@ function ConfigureContent() {
       )}
 
       {showDraftToast && (
-        <div className="fixed top-4 right-4 z-[100] bg-surface-inverted text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2">
+        <div className="fixed top-4 right-4 z-[100] bg-gray-800 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2">
           <svg className="w-4 h-4 text-emerald-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
           </svg>
@@ -2615,11 +2882,11 @@ function ConfigureContent() {
       )}
 
       {/* ── 하단 네비게이션 ── */}
-      <div className="bg-surface border-t border-border-light px-8 py-3.5 flex items-center justify-between flex-shrink-0">
+      {configDraft.companyIds.length > 0 && <div className="bg-white border-t border-gray-200 px-8 py-3.5 flex items-center justify-between flex-shrink-0">
         {wizardStep > 1 ? (
           <button
             onClick={goPrev}
-            className="flex items-center gap-1.5 text-sm font-medium px-4 py-1.5 rounded-lg border border-border-light text-text-secondary hover:bg-surface-hover transition-colors"
+            className="flex items-center gap-1.5 text-sm font-medium px-4 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -2628,10 +2895,10 @@ function ConfigureContent() {
           </button>
         ) : <div />}
 
-        {wizardStep < 4 && (
+        {wizardStep < 5 && (
           <div className="relative group">
             {wizardStep === 1 && configDraft.companyIds.length === 0 && (
-              <div className="absolute bottom-full mb-2 right-0 whitespace-nowrap bg-surface-inverted text-white text-xs font-medium px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+              <div className="absolute bottom-full mb-2 right-0 whitespace-nowrap bg-gray-800 text-white text-xs font-medium px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                 기업을 먼저 선택해주세요
               </div>
             )}
@@ -2640,8 +2907,8 @@ function ConfigureContent() {
               disabled={!canGoNext()}
               className={`flex items-center gap-1.5 text-sm font-semibold px-5 py-1.5 rounded-lg transition-colors ${
                 canGoNext()
-                  ? 'bg-brand hover:bg-brand-dark text-text-onBrand'
-                  : 'bg-surface-subtle text-text-secondary cursor-not-allowed'
+                  ? 'bg-[#55A4DA] hover:bg-[#3A8BC4] text-white'
+                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
               }`}
             >
               다음
@@ -2651,14 +2918,14 @@ function ConfigureContent() {
             </button>
           </div>
         )}
-        {wizardStep === 4 && (
+        {wizardStep === 5 && (
           <button
             onClick={handleComplete}
             disabled={!deliveryInterval || !startDate}
             className={`flex items-center gap-1.5 text-sm font-semibold px-5 py-1.5 rounded-lg transition-colors ${
               deliveryInterval && startDate
-                ? 'bg-brand hover:bg-brand-dark text-text-onBrand'
-                : 'bg-surface-subtle text-text-secondary cursor-not-allowed'
+                ? 'bg-[#55A4DA] hover:bg-[#3A8BC4] text-white'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
             }`}
           >
             생성 완료
@@ -2667,7 +2934,7 @@ function ConfigureContent() {
             </svg>
           </button>
         )}
-      </div>
+      </div>}
 
     </div>
   );
@@ -2676,7 +2943,7 @@ function ConfigureContent() {
 export default function ConfigurePage() {
   return (
     <Suspense fallback={
-      <div className="flex items-center justify-center h-full text-text-secondary text-sm">
+      <div className="flex items-center justify-center h-full text-gray-400 text-sm">
         로딩 중...
       </div>
     }>

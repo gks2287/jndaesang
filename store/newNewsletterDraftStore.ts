@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { DEFAULT_STORYLINE, type StorylineStep } from '@/lib/storyline';
 import { makeStepContents, type StepContent, type Round } from '@/lib/content';
 
-export type WizardStep = 1 | 2 | 3 | 4;
+export type WizardStep = 1 | 2 | 3 | 4 | 5;
 type DeliverySchedule = '주 1회' | '격주' | '월 1회';
 
 export interface TopicSuggestion {

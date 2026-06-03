@@ -10,6 +10,7 @@ export interface Round {
   interactions: ('quiz' | 'scenario' | 'selfcheck' | 'reflection' | 'dodont')[];
   surveys: ('always' | 'periodic')[];
   newsletterType: '일반형' | '맞춤형';
+  generalTypes: string[];   // 일반형으로 이동된 부정 리더십 유형 (기본 빈 배열 = 전체 맞춤형)
   customTypes: string[];
   customLeaderIds: number[];
   generalLeaderIds: number[];
