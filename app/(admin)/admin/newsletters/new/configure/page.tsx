@@ -1658,7 +1658,24 @@ function ConfigureContent() {
                   {/* 일반형 섹션 */}
                   <div className={`rounded-2xl overflow-hidden ${r.newsletterType === '맞춤형' && r.customTypes.length > 0 ? 'bg-gray-50 border border-gray-200' : 'bg-white border border-gray-200 shadow-sm'}`}>
                     <button onClick={() => setGeneralPanelOpen(prev => !prev)} className={`w-full px-5 py-3 flex items-center gap-2 transition-colors ${r.newsletterType === '맞춤형' && r.customTypes.length > 0 ? 'hover:bg-gray-100' : 'hover:bg-gray-50'}`}>
-                      <p className="text-sm font-bold text-gray-800 flex-1 text-left">일반형 <span className="font-normal text-gray-400">({r.newsletterType === '맞춤형' && r.customTypes.length > 0 ? `나머지 ${r.generalLeaderIds.length}명` : `${selectedParticipants.length}명`})</span></p>
+                      <div className="flex-1 text-left min-w-0">
+                        <p className="text-sm font-bold text-gray-800">
+                          일반형 <span className="font-normal text-gray-400">({r.newsletterType === '맞춤형' && r.customTypes.length > 0 ? `나머지 ${r.generalLeaderIds.length}명` : `${selectedParticipants.length}명`})</span>
+                        </p>
+                        {(() => {
+                          const generalParticipants = selectedParticipants.filter(p => r.generalLeaderIds.includes(p.id));
+                          const posCount = generalParticipants.filter(p => POSITIVE_TYPES.includes(p.leadershipType)).length;
+                          const negGroups = (r.generalTypes ?? []).map(t => {
+                            const n = generalParticipants.filter(p => p.leadershipType === t).length;
+                            return n > 0 ? `${t} ${n}명` : null;
+                          }).filter(Boolean);
+                          const parts: string[] = [];
+                          if (posCount > 0) parts.push(`긍정 리더 ${posCount}명`);
+                          negGroups.forEach(g => g && parts.push(g));
+                          if (parts.length === 0) return null;
+                          return <p className="text-[11px] text-gray-400 mt-0.5">{parts.join(' + ')}</p>;
+                        })()}
+                      </div>
                       <svg className={`w-3.5 h-3.5 text-gray-400 flex-shrink-0 transition-transform duration-200 ${generalPanelOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                     </button>
                     <div className={`grid transition-all duration-200 ${generalPanelOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
@@ -2273,16 +2290,11 @@ function ConfigureContent() {
                       <div className="flex items-center gap-2 pt-2 border-t border-gray-200">
                         <span className="text-[11px] text-gray-400 flex-shrink-0">수신 리더</span>
                         <div className="flex flex-wrap gap-2">
-                          {selectedParticipants.slice(0, 5).map(p => (
+                          {selectedParticipants.map(p => (
                             <span key={p.id} className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
                               {p.name} {p.position}
                             </span>
                           ))}
-                          {selectedParticipants.length > 5 && (
-                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
-                              +{selectedParticipants.length - 5}명
-                            </span>
-                          )}
                         </div>
                       </div>
                     )}
