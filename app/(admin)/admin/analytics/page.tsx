@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useCompanyStore } from '@/store/companyStore';
 import { useParticipantStore, type LeadershipType } from '@/store/participantStore';
+import { DonutChart } from '@/components/ui/donut-chart';
 
 const YEARS = ['2026', '2025', '2024'];
 
@@ -27,37 +28,6 @@ const statusText: Record<string, string> = {
   '진행 전':   'text-text-secondary',
 };
 
-function DonutChart({ segments, total }: {
-  segments: { type: LeadershipType; count: number }[];
-  total: number;
-}) {
-  let cum = 0;
-  return (
-    <svg viewBox="0 0 100 100" className="w-32 h-32">
-      <g style={{ transform: 'rotate(-90deg)', transformOrigin: '50px 50px' }}>
-        {total === 0 ? (
-          <circle cx="50" cy="50" r="32" fill="none" stroke="#f3f4f6" strokeWidth="16" />
-        ) : segments.filter(s => s.count > 0).map((seg, i) => {
-          const pct = (seg.count / total) * 100;
-          const offset = -cum;
-          cum += pct;
-          return (
-            <circle
-              key={i}
-              cx="50" cy="50" r="32"
-              fill="none"
-              stroke={LEADERSHIP_COLORS[seg.type]}
-              strokeWidth="16"
-              pathLength="100"
-              strokeDasharray={`${pct} 100`}
-              strokeDashoffset={offset}
-            />
-          );
-        })}
-      </g>
-    </svg>
-  );
-}
 
 const STATUS_TOGGLES = ['진행 전', '진행 중', '진행 완료'] as const;
 type StatusToggle = typeof STATUS_TOGGLES[number];
@@ -218,7 +188,15 @@ export default function AnalyticsPage() {
                 {/* 도넛 차트 + 범례 */}
                 <div className="flex items-center justify-center gap-12 py-1">
                   <div className="flex-shrink-0">
-                    <DonutChart segments={leadershipDist} total={total} />
+                    <DonutChart
+                      segments={leadershipDist.filter(s => s.count > 0).map(s => ({
+                        value: s.count,
+                        color: LEADERSHIP_COLORS[s.type],
+                        label: s.type,
+                      }))}
+                      size={120}
+                      strokeWidth={14}
+                    />
                   </div>
 
                   {/* 범례 */}
