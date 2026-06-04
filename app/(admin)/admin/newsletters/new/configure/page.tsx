@@ -160,6 +160,8 @@ function ConfigureContent() {
   const [activeRoundIdx, setActiveRoundIdx] = useState(0);
   // 좌측 실시간 미리보기 대상 탭 ('general' 또는 그룹 id)
   const [previewTargetId, setPreviewTargetId] = useState<string>('general');
+  // 좌측 실시간 미리보기 표시 모드 (전체 본문 / 요약본)
+  const [livePreviewMode, setLivePreviewMode] = useState<'full' | 'email'>('full');
   // AI 자동 채움 중복 실행 가드 (`${roundIdx}:${targetId}`)
   const autoFilledRef = useRef<Set<string>>(new Set());
   // 좌측 실시간 미리보기 본문 (generate API 결과, `${roundIdx}:${targetId}` 키)
@@ -253,7 +255,7 @@ function ConfigureContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewOpen]);
 
-  // Step 4: 활성 회차의 일반형 + 그룹 본문을 주제/콘텐츠 기준으로 백그라운드 자동 생성 (debounce 500ms)
+  // Step 4: 활성 회차의 일반형 + 그룹 본문을 주제/콘텐츠 기준으로 백그라운드 자동 생성 (debounce 1초)
   // - 진입/회차전환 시 활성 회차의 전 대상 생성([수정1·4]), 탭 전환과 무관하게 미리 준비됨([수정5])
   // - 인터랙션/만족도는 시그니처에서 제외 → 토글해도 본문 재생성 안 함([수정2·3])
   useEffect(() => {
@@ -275,7 +277,7 @@ function ConfigureContent() {
       timers[key] = setTimeout(async () => {
         livePreviewDoneRef.current.add(sig);
         await generateLivePreview(activeRoundIdx, targetId);
-      }, 500);
+      }, 1000);
     });
     return () => {
       targetList.forEach(({ targetId }) => {
@@ -346,8 +348,9 @@ function ConfigureContent() {
     }
   }
 
-  // 모달 진입 시: 실시간 미리보기(일반형) 결과 재활용. 실제 생성은 현재 회차(1회차)만, 나머지는 탭 클릭 시
-  async function runPreviewPregen() {
+  // 모달 진입 시: 콘텐츠 구성 단계에서 만든 본문을 재활용만 함 (새로 생성하지 않음 — [수정5])
+  // 미생성 회차는 탭 클릭 시 selectPreviewTab에서 지연 생성
+  function runPreviewPregen() {
     const seed: Record<number, GeneratedNewsletter> = {};
     rounds.forEach((_, idx) => {
       const reused = livePreviewContent[`${idx}:general`];
@@ -356,10 +359,6 @@ function ConfigureContent() {
     if (Object.keys(seed).length > 0) {
       generatedContentRef.current = { ...generatedContentRef.current, ...seed };
       setGeneratedContent(prev => ({ ...seed, ...prev }));
-    }
-    // 현재 회차만 생성 (재활용/기존 생성 완료분은 건너뜀)
-    if (!generatedContentRef.current[previewTab]) {
-      await handleGenerateRound(previewTab);
     }
   }
 
@@ -1107,6 +1106,9 @@ function ConfigureContent() {
       );
     }
 
+    if (livePreviewMode === 'email') {
+      return renderNewsletterEmailPreview(generated, { vol: activeRoundIdx + 1, dateLabel: '발송일 미정', onReadFull: () => setLivePreviewMode('full') });
+    }
     return renderGeneratedFullBody(generated, { vol: activeRoundIdx + 1, dateLabel: '발송일 미정', leadershipLabel, firstThumbnail, templateInteractions: interactions, templateSurveys: surveys });
   }
 
@@ -1747,9 +1749,23 @@ function ConfigureContent() {
                   const current = tabs.some(t => t.id === previewTargetId) ? previewTargetId : (tabs[0]?.id ?? 'general');
                   return (
                     <div className="flex flex-col h-full">
-                      <div className="pb-3 flex-shrink-0">
-                        <p className="text-base font-bold text-gray-800">실시간 미리보기</p>
-                        <p className="text-[11px] text-gray-400 mt-0.5">선택한 대상이 받게 될 뉴스레터 화면</p>
+                      <div className="pb-3 flex-shrink-0 flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-base font-bold text-gray-800">실시간 미리보기</p>
+                          <p className="text-[11px] text-gray-400 mt-0.5">선택한 대상이 받게 될 뉴스레터 화면</p>
+                        </div>
+                        {/* 전체본문 / 요약본 전환 토글 */}
+                        <div className="flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-lg flex-shrink-0">
+                          {([['full', '전체본문'], ['email', '요약본']] as const).map(([mode, label]) => (
+                            <button
+                              key={mode}
+                              onClick={() => setLivePreviewMode(mode)}
+                              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${livePreviewMode === mode ? 'bg-white text-[#2E7DB5] shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                       <div className="w-full flex-1">
                         {renderLivePreview(current)}
