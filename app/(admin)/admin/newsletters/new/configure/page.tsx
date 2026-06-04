@@ -213,11 +213,9 @@ function ConfigureContent() {
   const [previewTab, setPreviewTab] = useState(0);
   const [previewOpenGroups, setPreviewOpenGroups] = useState<Set<number>>(new Set([0]));
   const [generatedContent, setGeneratedContent] = useState<Record<number, GeneratedNewsletter>>({});
-  const [generatingRounds, setGeneratingRounds] = useState<Set<number>>(new Set());
   // 최신 생성 결과 미러 (사전 생성 루프에서 stale closure 없이 참조)
   const generatedContentRef = useRef<Record<number, GeneratedNewsletter>>({});
   // 진행 중 회차 미러 (중복 호출 방지 — 클로저 stale 없이 즉시 참조)
-  const generatingRoundsRef = useRef<Set<number>>(new Set());
   const [previewContentTab, setPreviewContentTab] = useState<Record<number, 'email' | 'full'>>({});
   // 본문 편집 모드 (미리보기 모달)
   const [editMode, setEditMode] = useState(false);
@@ -323,44 +321,6 @@ function ConfigureContent() {
     });
   }
 
-  async function handleGenerateRound(roundIdx: number, force = false) {
-    const round = rounds[roundIdx];
-    if (!round) return;
-    if (!force && generatingRoundsRef.current.has(roundIdx)) return; // 이미 진행 중 — 중복 호출 방지
-    generatingRoundsRef.current.add(roundIdx);
-    setGeneratingRounds(prev => new Set([...prev, roundIdx]));
-    try {
-      const res = await fetch('/api/newsletter/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          round: {
-            id: round.id,
-            topic: round.topic,
-            stepLabel: customStoryline[round.stepIndex]?.title ?? '',
-            contents: round.contents,
-            interactions: round.interactions,
-            surveys: round.surveys,
-          },
-          leadershipType: leadershipTypes.join(', ') || '리더십',
-          companyName: targetCompanies.map(c => c.name).join(', ') || '대상 기업',
-        }),
-      });
-      if (!res.ok) throw new Error('생성 실패');
-      const data = attachSectionThumbnails(await res.json() as GeneratedNewsletter, round.contents);
-      generatedContentRef.current = { ...generatedContentRef.current, [roundIdx]: data };
-      setGeneratedContent(prev => ({ ...prev, [roundIdx]: data }));
-    } catch (e) {
-      console.error('뉴스레터 생성 오류:', e);
-    } finally {
-      generatingRoundsRef.current.delete(roundIdx);
-      setGeneratingRounds(prev => {
-        const s = new Set(prev);
-        s.delete(roundIdx);
-        return s;
-      });
-    }
-  }
 
   // 모달 진입 시: 콘텐츠 구성 단계에서 만든 본문을 재활용만 함 (새로 생성하지 않음 — [수정5])
   // 미생성 회차는 탭 클릭 시 selectPreviewTab에서 지연 생성
@@ -376,14 +336,18 @@ function ConfigureContent() {
     }
   }
 
-  // 미리보기 모달: 회차 탭 클릭 — 해당 회차가 미생성·미진행 중이면 그때 생성
+  // 미리보기 모달: 회차 탭 클릭 — 저장된 데이터만 재활용 (API 호출 X)
   function selectPreviewTab(idx: number) {
     setPreviewTab(idx);
     setEditMode(false);
     setEditDraft(null);
-    if (generatedContentRef.current[idx]) return; // 이미 생성됨 (캐시 유지)
-    if (generatingRoundsRef.current.has(idx)) return; // 이미 진행 중
-    void handleGenerateRound(idx);
+    if (generatedContentRef.current[idx]) return; // 이미 보유
+    const reused = livePreviewContent[`${idx}:general`]; // 콘텐츠 구성에서 만든 결과 재활용
+    if (reused) {
+      generatedContentRef.current = { ...generatedContentRef.current, [idx]: reused };
+      setGeneratedContent(prev => ({ ...prev, [idx]: reused }));
+    }
+    // 없으면 생성하지 않음 — 모달은 저장된 데이터만 표시
   }
 
   // ── 본문 편집 (미리보기 모달) ──
@@ -411,10 +375,27 @@ function ConfigureContent() {
   function updateEditField(field: 'subject' | 'headline' | 'intro' | 'closing', value: string) {
     setEditDraft(prev => prev ? { ...prev, [field]: value } : prev);
   }
-  function updateEditSection(secIdx: number, field: 'contentTitle' | 'intro' | 'mainBody' | 'examples' | 'summary' | 'keyTakeaway', value: string) {
+  function updateEditSection(secIdx: number, field: 'contentTitle' | 'subtitle' | 'intro' | 'mainBody' | 'examples' | 'summary' | 'keyTakeaway' | 'quote' | 'caseStudy', value: string) {
     setEditDraft(prev => {
       if (!prev) return prev;
       const sections = prev.sections.map((s, i) => i === secIdx ? { ...s, [field]: value } : s);
+      return { ...prev, sections };
+    });
+  }
+  // 본문 단락(body)은 빈 줄로 구분된 textarea로 편집
+  function updateEditBody(secIdx: number, value: string) {
+    setEditDraft(prev => {
+      if (!prev) return prev;
+      const list = value.split('\n\n').map(s => s.trim()).filter(Boolean);
+      const sections = prev.sections.map((s, i) => i === secIdx ? { ...s, body: list } : s);
+      return { ...prev, sections };
+    });
+  }
+  // 데이터 박스(dataStat) 편집
+  function updateEditDataStat(secIdx: number, field: 'value' | 'description', value: string) {
+    setEditDraft(prev => {
+      if (!prev) return prev;
+      const sections = prev.sections.map((s, i) => i === secIdx ? { ...s, dataStat: { value: s.dataStat?.value ?? '', description: s.dataStat?.description ?? '', [field]: value } } : s);
       return { ...prev, sections };
     });
   }
@@ -1201,14 +1182,6 @@ function ConfigureContent() {
     return renderGeneratedFullBody(generated, { vol: activeRoundIdx + 1, dateLabel: '발송일 미정', leadershipLabel, firstThumbnail, templateInteractions: interactions, templateSurveys: surveys });
   }
 
-  // 명시적 AI 재생성 (편집 내용 폐기 후 덮어쓰기)
-  function regenerateCurrent() {
-    editedRoundsRef.current.delete(previewTab);
-    setEditMode(false);
-    setEditDraft(null);
-    void handleGenerateRound(previewTab, true);
-  }
-
   // ── 본문 편집 패널 (미리보기 모달) ──
   function renderEditPanel() {
     if (!editDraft) return null;
@@ -1241,7 +1214,7 @@ function ConfigureContent() {
                 <label className={labelCls}>{i + 1}. 제목</label>
                 <input className={inputCls} value={sec.contentTitle} onChange={e => updateEditSection(i, 'contentTitle', e.target.value)} />
               </div>
-              {sec.summary !== undefined && sec.intro === undefined && sec.mainBody === undefined ? (
+              {sec.summary !== undefined && sec.body === undefined && sec.intro === undefined ? (
                 <div>
                   <label className={labelCls}>요약</label>
                   <textarea className={areaCls} rows={2} value={sec.summary} onChange={e => updateEditSection(i, 'summary', e.target.value)} />
@@ -1249,16 +1222,34 @@ function ConfigureContent() {
               ) : (
                 <>
                   <div>
+                    <label className={labelCls}>부제</label>
+                    <input className={inputCls} value={sec.subtitle ?? ''} onChange={e => updateEditSection(i, 'subtitle', e.target.value)} />
+                  </div>
+                  <div>
                     <label className={labelCls}>도입</label>
                     <textarea className={areaCls} rows={2} value={sec.intro ?? ''} onChange={e => updateEditSection(i, 'intro', e.target.value)} />
                   </div>
                   <div>
-                    <label className={labelCls}>본문</label>
-                    <textarea className={areaCls} rows={3} value={sec.mainBody ?? ''} onChange={e => updateEditSection(i, 'mainBody', e.target.value)} />
+                    <label className={labelCls}>본문 (단락은 빈 줄로 구분)</label>
+                    <textarea className={areaCls} rows={5} value={(sec.body && sec.body.length ? sec.body.join('\n\n') : (sec.mainBody ?? ''))} onChange={e => updateEditBody(i, e.target.value)} />
                   </div>
                   <div>
-                    <label className={labelCls}>사례/데이터</label>
-                    <textarea className={areaCls} rows={2} value={sec.examples ?? ''} onChange={e => updateEditSection(i, 'examples', e.target.value)} />
+                    <label className={labelCls}>💬 인용구</label>
+                    <input className={inputCls} value={sec.quote ?? ''} onChange={e => updateEditSection(i, 'quote', e.target.value)} />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className={labelCls}>📊 수치</label>
+                      <input className={inputCls} value={sec.dataStat?.value ?? ''} onChange={e => updateEditDataStat(i, 'value', e.target.value)} />
+                    </div>
+                    <div className="col-span-2">
+                      <label className={labelCls}>데이터 설명</label>
+                      <input className={inputCls} value={sec.dataStat?.description ?? ''} onChange={e => updateEditDataStat(i, 'description', e.target.value)} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelCls}>💼 실제 사례</label>
+                    <textarea className={areaCls} rows={2} value={sec.caseStudy ?? ''} onChange={e => updateEditSection(i, 'caseStudy', e.target.value)} />
                   </div>
                 </>
               )}
@@ -2662,20 +2653,20 @@ function ConfigureContent() {
                   </div>
                   {/* AI 생성 영역 */}
                   {activeRound && (() => {
-                    const isGenerating = generatingRounds.has(previewTab);
                     const generated = generatedContent[previewTab];
                     const contentTab = previewContentTab[previewTab] ?? 'full';
                     const firstThumbnail = activeRound.contents[0]?.thumbnail ?? '';
                     const schedDate = schedDates[previewTab];
 
-                    // 데이터가 없을 때만 작은 스피너 (메시지 없음). 데이터가 있으면 갱신 중에도 기존 데이터 유지
+                    // 저장된 데이터만 표시 — 없으면 안내 (API 호출/스피너 없음)
                     if (!generated) {
                       return (
-                        <div className="flex items-center justify-center py-16">
-                          <svg className="w-6 h-6 text-[#55A4DA] animate-spin" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                          </svg>
+                        <div className="flex flex-col items-center justify-center py-20 px-6 gap-3 text-center">
+                          <svg className="w-9 h-9 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                          <div>
+                            <p className="text-sm font-semibold text-gray-600">아직 생성된 본문이 없어요</p>
+                            <p className="text-xs text-gray-400 mt-1">콘텐츠 구성 단계에서 이 회차를 먼저 생성해주세요</p>
+                          </div>
                         </div>
                       );
                     }
@@ -2697,7 +2688,7 @@ function ConfigureContent() {
                                     : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                                 }`}
                               >
-                                {tab === 'full' ? '전체 본문' : '이메일 미리보기'}
+                                {tab === 'full' ? '전체 본문' : '요약본'}
                               </button>
                             ))}
                             {isEdited && !editMode && (
@@ -2705,26 +2696,13 @@ function ConfigureContent() {
                             )}
                           </div>
                           {!editMode && (
-                            <div className="flex items-center gap-3">
-                              <button
-                                onClick={startEdit}
-                                className="flex items-center gap-1 text-xs font-semibold text-[#55A4DA] hover:text-[#3A8BC4] transition-colors"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                                본문 편집
-                              </button>
-                              <button
-                                onClick={regenerateCurrent}
-                                disabled={isGenerating}
-                                title="AI로 다시 생성 (편집 내용 덮어쓰기)"
-                                className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-60"
-                              >
-                                <svg className={`w-3.5 h-3.5 ${isGenerating ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                                {isGenerating ? '갱신 중' : 'AI로 다시 생성'}
-                              </button>
-                            </div>
+                            <button
+                              onClick={startEdit}
+                              className="flex items-center gap-1 text-xs font-semibold text-[#55A4DA] hover:text-[#3A8BC4] transition-colors"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                              본문 편집
+                            </button>
                           )}
                         </div>
 

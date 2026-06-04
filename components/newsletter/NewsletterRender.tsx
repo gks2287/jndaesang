@@ -751,7 +751,7 @@ export function SavedNewsletterPreviewModal({
                 onClick={() => setTab(t)}
                 className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${tab === t ? 'bg-[#55A4DA] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
               >
-                {t === 'full' ? '전체 본문' : '이메일 미리보기'}
+                {t === 'full' ? '전체 본문' : '요약본'}
               </button>
             ))}
           </div>
