@@ -5,8 +5,12 @@ import { callClaude } from '@/lib/api/claude';
 type GeneratedSection = {
   contentTitle: string;
   contentId: string;
-  summary: string;
+  summary?: string;       // (구버전 호환) 핵심 요약
+  intro?: string;         // 도입 단락
+  mainBody?: string;      // 본문 핵심 내용
+  examples?: string;      // 구체적 사례/데이터
   keyTakeaway: string;
+  actionPlan?: string[];  // 실천 가능한 행동 2~3개
   emoji: string;
   youtubeUrl?: string;
 };
@@ -137,8 +141,17 @@ ${contentSummary}
 - 리더(독자)에게 직접 말 거는 2인칭 톤 ("여러분", "당신")
 - 이모지 적절히 활용 (과하지 않게)
 - sections는 콘텐츠 수만큼 생성 (콘텐츠 없으면 1개, 주제 기반 작성)
-- summary: 콘텐츠 본문을 바탕으로 2~3문장 핵심 요약
-- keyTakeaway: 한 줄 핵심 교훈 (이모지 포함)${hasInteractions ? `
+- 각 섹션은 흐름: 도입(intro) → 본문(mainBody) → 구체적 사례/데이터(examples) → 핵심 포인트(keyTakeaway) → Action Plan(actionPlan)
+- intro: 흥미를 끄는 도입 1~2문장
+- mainBody: 콘텐츠 본문 기반 핵심 내용 2~4문장
+- examples: 구체적 사례·수치·데이터 1~2문장
+- keyTakeaway: 한 줄 핵심 교훈 (이모지 포함)
+- actionPlan: 실천 가능한 구체적 행동 2~3개 (배열). 작성 원칙:
+  · 추상적 조언이 아닌 구체적 행동, "~해보세요"/"~를 시도해보세요" 형태
+  · 측정 가능하거나 명확한 행동, 리더십 유형(${leadershipType})·단계(${round.stepLabel})에 맞춤
+  · 가능하면 [오늘 당장 / 이번 주 / 지속 적용] 단계로 구성
+  · 예시(독재형 맞춤형): "이번 주 회의에서 팀원 3명에게 의견을 먼저 물어보세요"
+  · 예시(일반형): "오늘 1on1에서 '요즘 어떤 점이 가장 어렵나요?'라고 질문해보세요"${hasInteractions ? `
 
 [인터랙션 생성 — 주제·리더십 유형과 연관된 구체적인 내용으로 작성]
 "interactions" 배열에 아래 구조로 정확히 생성하세요:
@@ -153,8 +166,11 @@ ${interactionSchema}` : ''}
     {
       "contentTitle": "콘텐츠 제목",
       "contentId": "콘텐츠 id",
-      "summary": "2~3문장 핵심 요약",
-      "keyTakeaway": "한 줄 핵심 교훈",
+      "intro": "흥미를 끄는 도입 1~2문장",
+      "mainBody": "핵심 내용 2~4문장",
+      "examples": "구체적 사례/데이터 1~2문장",
+      "keyTakeaway": "한 줄 핵심 교훈 (이모지 포함)",
+      "actionPlan": ["오늘 당장 할 수 있는 구체적 행동", "이번 주에 시도해볼 행동", "지속적으로 적용할 행동"],
       "emoji": "섹션 대표 이모지 1개"
     }
   ],

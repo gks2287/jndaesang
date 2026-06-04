@@ -411,10 +411,19 @@ function ConfigureContent() {
   function updateEditField(field: 'subject' | 'headline' | 'intro' | 'closing', value: string) {
     setEditDraft(prev => prev ? { ...prev, [field]: value } : prev);
   }
-  function updateEditSection(secIdx: number, field: 'contentTitle' | 'summary' | 'keyTakeaway', value: string) {
+  function updateEditSection(secIdx: number, field: 'contentTitle' | 'intro' | 'mainBody' | 'examples' | 'summary' | 'keyTakeaway', value: string) {
     setEditDraft(prev => {
       if (!prev) return prev;
       const sections = prev.sections.map((s, i) => i === secIdx ? { ...s, [field]: value } : s);
+      return { ...prev, sections };
+    });
+  }
+  // Action Plan은 줄바꿈으로 구분된 textarea로 편집
+  function updateEditActionPlan(secIdx: number, value: string) {
+    setEditDraft(prev => {
+      if (!prev) return prev;
+      const list = value.split('\n').map(s => s.trim()).filter(Boolean);
+      const sections = prev.sections.map((s, i) => i === secIdx ? { ...s, actionPlan: list } : s);
       return { ...prev, sections };
     });
   }
@@ -1176,7 +1185,7 @@ function ConfigureContent() {
     }
 
     if (livePreviewMode === 'email') {
-      return renderNewsletterEmailPreview(generated, { vol: activeRoundIdx + 1, dateLabel: '발송일 미정', onReadFull: () => setLivePreviewMode('full') });
+      return renderNewsletterEmailPreview(generated, { vol: activeRoundIdx + 1, dateLabel: '발송일 미정', firstThumbnail, onReadFull: () => setLivePreviewMode('full') });
     }
     return renderGeneratedFullBody(generated, { vol: activeRoundIdx + 1, dateLabel: '발송일 미정', leadershipLabel, firstThumbnail, templateInteractions: interactions, templateSurveys: surveys });
   }
@@ -1221,13 +1230,34 @@ function ConfigureContent() {
                 <label className={labelCls}>{i + 1}. 제목</label>
                 <input className={inputCls} value={sec.contentTitle} onChange={e => updateEditSection(i, 'contentTitle', e.target.value)} />
               </div>
-              <div>
-                <label className={labelCls}>요약</label>
-                <textarea className={areaCls} rows={2} value={sec.summary} onChange={e => updateEditSection(i, 'summary', e.target.value)} />
-              </div>
+              {sec.summary !== undefined && sec.intro === undefined && sec.mainBody === undefined ? (
+                <div>
+                  <label className={labelCls}>요약</label>
+                  <textarea className={areaCls} rows={2} value={sec.summary} onChange={e => updateEditSection(i, 'summary', e.target.value)} />
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className={labelCls}>도입</label>
+                    <textarea className={areaCls} rows={2} value={sec.intro ?? ''} onChange={e => updateEditSection(i, 'intro', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>본문</label>
+                    <textarea className={areaCls} rows={3} value={sec.mainBody ?? ''} onChange={e => updateEditSection(i, 'mainBody', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>사례/데이터</label>
+                    <textarea className={areaCls} rows={2} value={sec.examples ?? ''} onChange={e => updateEditSection(i, 'examples', e.target.value)} />
+                  </div>
+                </>
+              )}
               <div>
                 <label className={labelCls}>💡 핵심 포인트</label>
                 <textarea className={areaCls} rows={2} value={sec.keyTakeaway} onChange={e => updateEditSection(i, 'keyTakeaway', e.target.value)} />
+              </div>
+              <div>
+                <label className={labelCls}>✅ Action Plan (한 줄에 하나씩)</label>
+                <textarea className={areaCls} rows={3} value={(sec.actionPlan ?? []).join('\n')} onChange={e => updateEditActionPlan(i, e.target.value)} placeholder={'오늘 당장 할 수 있는 행동\n이번 주에 시도해볼 행동\n지속적으로 적용할 행동'} />
               </div>
             </div>
           ))}
@@ -1879,12 +1909,32 @@ function ConfigureContent() {
                   const activeGroups = r.customGroups.filter(g => g.types.length > 0);
                   const tabs = [{ id: 'general', label: '일반형' }, ...activeGroups.map((g, gi) => ({ id: g.id, label: `그룹 ${gi + 1}` }))];
                   const current = tabs.some(t => t.id === previewTargetId) ? previewTargetId : (tabs[0]?.id ?? 'general');
+                  // 현재 미리보기 대상 설명 (우측 헤더와 동일 표현)
+                  const targetDesc = (() => {
+                    if (current === 'general') {
+                      const gParts = selectedParticipants.filter(p => r.generalLeaderIds.includes(p.id));
+                      const posCount = gParts.filter(p => POSITIVE_TYPES.includes(p.leadershipType)).length;
+                      const detailArr: string[] = [];
+                      if (posCount > 0) detailArr.push(`긍정 리더 ${posCount}명`);
+                      (r.generalTypes ?? []).forEach(t => {
+                        const n = gParts.filter(p => p.leadershipType === t).length;
+                        if (n > 0) detailArr.push(`${t} ${n}명`);
+                      });
+                      return { title: '일반형', detail: detailArr.join(' + '), count: r.generalLeaderIds.length };
+                    }
+                    const gi = activeGroups.findIndex(g => g.id === current);
+                    const g = activeGroups[gi];
+                    return { title: `맞춤형 그룹 ${gi + 1}`, detail: g ? g.types.join('+') : '', count: g?.leaderIds.length ?? 0 };
+                  })();
                   return (
                     <div className="flex flex-col h-full">
                       <div className="pb-3 flex-shrink-0 flex items-start justify-between gap-3">
                         <div>
                           <p className="text-base font-bold text-gray-800">실시간 미리보기</p>
-                          <p className="text-[11px] text-gray-400 mt-0.5">선택한 대상이 받게 될 뉴스레터 화면</p>
+                          <p className="text-[11px] mt-0.5">
+                            <span className="font-semibold text-[#2E7DB5]">{targetDesc.title}</span>
+                            <span className="text-gray-400">{targetDesc.detail ? ` · ${targetDesc.detail}` : ''} ({targetDesc.count}명)</span>
+                          </p>
                         </div>
                         {/* 전체본문 / 요약본 전환 토글 */}
                         <div className="flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-lg flex-shrink-0">
@@ -2673,6 +2723,7 @@ function ConfigureContent() {
                             {contentTab === 'email' && renderNewsletterEmailPreview(generated, {
                               vol: previewTab + 1,
                               dateLabel: schedDate ? formatKoreanDate(schedDate) : '',
+                              firstThumbnail,
                               onReadFull: () => setPreviewContentTab(prev => ({ ...prev, [previewTab]: 'full' })),
                             })}
                             {contentTab === 'full' && renderGeneratedFullBody(generated, {
