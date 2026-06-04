@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useNewsletterStore } from '@/store/newsletterStore';
@@ -277,24 +277,6 @@ function ConfigureContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoundIdx]);
 
-  // 현재 미리보기 대상의 구성 시그니처 (주제/콘텐츠/인터랙션/만족도 변경 감지)
-  const previewSignature = useMemo(() => {
-    if (wizardStep !== 4) return '';
-    const r = rounds[activeRoundIdx];
-    if (!r) return '';
-    const activeGroups = r.customGroups.filter(g => g.types.length > 0);
-    const targetId = previewTargetId !== 'general' && activeGroups.some(g => g.id === previewTargetId)
-      ? previewTargetId
-      : (previewTargetId === 'general' ? 'general' : (activeGroups[0]?.id ?? 'general'));
-    const isCustom = targetId !== 'general';
-    const g = isCustom ? activeGroups.find(x => x.id === targetId) : undefined;
-    const topic = isCustom ? (g?.topic ?? '') : r.topic;
-    const contents = isCustom ? (g?.contents ?? []) : r.contents;
-    const interactions = isCustom ? (g?.interactions ?? []) : r.interactions;
-    const surveys = isCustom ? (g?.surveys ?? []) : r.surveys;
-    return JSON.stringify({ roundIdx: activeRoundIdx, targetId, topic, ids: contents.map(c => c.id), interactions, surveys });
-  }, [wizardStep, activeRoundIdx, previewTargetId, rounds]);
-
   // 생성 결과 미러 동기화
   useEffect(() => { generatedContentRef.current = generatedContent; }, [generatedContent]);
 
@@ -305,23 +287,38 @@ function ConfigureContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewOpen]);
 
-  // 구성 변경 시 debounce 500ms 후 미리보기 본문 자동 생성
+  // Step 4: 활성 회차의 일반형 + 그룹 본문을 주제/콘텐츠 기준으로 백그라운드 자동 생성 (debounce 500ms)
+  // - 진입/회차전환 시 활성 회차의 전 대상 생성([수정1·4]), 탭 전환과 무관하게 미리 준비됨([수정5])
+  // - 인터랙션/만족도는 시그니처에서 제외 → 토글해도 본문 재생성 안 함([수정2·3])
   useEffect(() => {
-    if (!previewSignature) return;
-    if (livePreviewDoneRef.current.has(previewSignature)) return; // 동일 구성 이미 생성됨
-    const parsed = JSON.parse(previewSignature) as { roundIdx: number; targetId: string; topic: string; ids: string[] };
-    if (!parsed.topic.trim() && parsed.ids.length === 0) return;
-    const key = `${parsed.roundIdx}:${parsed.targetId}`;
-    const sig = previewSignature;
+    if (wizardStep !== 4) return;
+    const r = rounds[activeRoundIdx];
+    if (!r) return;
+    const activeGroups = r.customGroups.filter(g => g.types.length > 0);
+    const targetList = [
+      { targetId: 'general', topic: r.topic, ids: r.contents.map(c => c.id) },
+      ...activeGroups.map(g => ({ targetId: g.id, topic: g.topic, ids: g.contents.map(c => c.id) })),
+    ];
     const timers = livePreviewTimers.current;
-    if (timers[key]) clearTimeout(timers[key]);
-    timers[key] = setTimeout(async () => {
-      livePreviewDoneRef.current.add(sig);
-      await generateLivePreview(parsed.roundIdx, parsed.targetId);
-    }, 500);
-    return () => { if (timers[key]) clearTimeout(timers[key]); };
+    targetList.forEach(({ targetId, topic, ids }) => {
+      if (!topic.trim() && ids.length === 0) return; // 주제/콘텐츠 없으면 생성하지 않음
+      const sig = JSON.stringify({ roundIdx: activeRoundIdx, targetId, topic, ids });
+      if (livePreviewDoneRef.current.has(sig)) return; // 동일 구성 이미 생성됨 (캐시 유지)
+      const key = `${activeRoundIdx}:${targetId}`;
+      if (timers[key]) clearTimeout(timers[key]);
+      timers[key] = setTimeout(async () => {
+        livePreviewDoneRef.current.add(sig);
+        await generateLivePreview(activeRoundIdx, targetId);
+      }, 500);
+    });
+    return () => {
+      targetList.forEach(({ targetId }) => {
+        const key = `${activeRoundIdx}:${targetId}`;
+        if (timers[key]) clearTimeout(timers[key]);
+      });
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewSignature]);
+  }, [wizardStep, activeRoundIdx, rounds]);
 
   // 아코디언 펼침 여부 (collapsedSections에 없으면 펼침)
   function isSectionOpen(key: string): boolean {
@@ -1076,271 +1073,453 @@ function ConfigureContent() {
   }
 
   // ── 생성된 뉴스레터 전체 본문 렌더 (Step 4 미리보기 · Step 5 모달 공용) ──
-  function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: { vol: number; dateLabel: string; leadershipLabel: string; firstThumbnail: string }) {
-    const { vol, dateLabel, leadershipLabel, firstThumbnail } = opts;
+  // ── 인터랙션 템플릿: 선택된 타입을 AI 생성과 무관하게 예시 UI로 즉시 렌더 ──
+  // 공통 섹션 헤더 (콘텐츠/인터랙션/만족도) — 상단 구분선 + 이모지 + 제목
+  function renderSectionHeader(emoji: string, title: string) {
     return (
-      <div style={{ backgroundColor: '#F0F7FF' }} className="rounded-2xl overflow-hidden max-w-2xl mx-auto shadow-md border border-[#D6EAF8]">
-        {/* 헤더 */}
-        <div className="px-6 py-3.5 flex items-center justify-between bg-white border-b border-[#D6EAF8]">
-          <div className="flex items-center gap-2">
-            <img src="/logo-jc.png" alt="J&Company" className="h-6 object-contain" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-            <span className="text-sm font-black text-gray-800 tracking-wider">J&COMPANY</span>
-          </div>
-          <div className="text-right">
-            <p className="text-[11px] text-gray-400">Vol.{vol} · {dateLabel}</p>
-            {leadershipLabel && <p className="text-[10px] text-gray-400 mt-0.5">{leadershipLabel}</p>}
-          </div>
-        </div>
-        {/* 히어로 */}
-        <div className="relative w-full h-44 overflow-hidden">
-          {firstThumbnail ? (
-            <>
-              <img src={firstThumbnail} alt="" className="w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
-            </>
-          ) : (
-            <div className="w-full h-full bg-gradient-to-br from-[#2B9EE8] to-[#1a6fad]" />
-          )}
-          <div className="absolute bottom-0 left-0 right-0 px-6 pb-3">
-            <p className="text-[10px] text-white/60 mb-0.5 uppercase tracking-widest">이번 호 제목</p>
-            <p className="text-sm font-black text-white leading-snug">{generated.subject}</p>
-          </div>
-        </div>
-        <div className="px-6 py-6 space-y-5">
-          {/* 헤드라인 + 인트로 */}
-          <div className="bg-white rounded-2xl p-5 border border-[#D6EAF8]">
-            <p className="text-base font-black text-gray-800 leading-snug mb-2">{generated.headline}</p>
-            <p className="text-sm text-gray-600 leading-relaxed">{generated.intro}</p>
-          </div>
-          {/* CONTENTS 구분 */}
-          <div className="flex items-center gap-3">
-            <div className="flex-1 border-t border-[#D6EAF8]" />
-            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">CONTENTS</span>
-            <div className="flex-1 border-t border-[#D6EAF8]" />
-          </div>
-          {/* 섹션별 본문 */}
-          {generated.sections.map(sec => (
-            <div key={sec.contentId} className="bg-white rounded-2xl p-5 border border-[#D6EAF8] space-y-3">
-              <div className="flex items-start gap-3">
-                <span className="text-2xl flex-shrink-0 mt-0.5">{sec.emoji}</span>
-                <p className="text-sm font-black text-gray-800 leading-snug">{sec.contentTitle}</p>
-              </div>
-              <p className="text-sm text-gray-600 leading-relaxed">{sec.summary}</p>
-              <div className="bg-[#F0FDF4] border border-emerald-200 rounded-xl px-4 py-3">
-                <p className="text-[11px] font-bold text-emerald-700 mb-0.5">💡 핵심 포인트</p>
-                <p className="text-sm text-gray-700 leading-relaxed">{sec.keyTakeaway}</p>
-              </div>
-              {sec.youtubeUrl && (
-                <div className="aspect-video rounded-xl overflow-hidden bg-black">
-                  <iframe src={sec.youtubeUrl} className="w-full h-full" allowFullScreen title={sec.contentTitle} />
+      <div className="mt-10 mb-5 pt-8 border-t border-gray-100 flex items-center gap-2.5">
+        <span className="text-xl">{emoji}</span>
+        <h2 className="text-lg font-bold text-[#2C2C2C]">{title}</h2>
+      </div>
+    );
+  }
+
+  function renderInteractionTemplates(types: ('quiz' | 'scenario' | 'selfcheck' | 'reflection' | 'dodont')[]) {
+    if (types.length === 0) return null;
+    return (
+      <>
+        {renderSectionHeader('🎯', '함께 생각해봐요')}
+        <div className="space-y-5">
+          {types.map(type => {
+            if (type === 'quiz') {
+              return (
+                <div key={type} className="rounded-2xl p-6 space-y-3 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+                  <div className="flex items-center gap-2"><span className="text-lg">🧠</span><p className="text-base font-bold text-[#2C2C2C]">학습 내용 확인 퀴즈</p></div>
+                  <p className="text-[15px] text-[#6B7280] leading-relaxed">이번 회차의 핵심 내용을 가장 잘 설명한 것은 무엇일까요?</p>
+                  <div className="space-y-2">
+                    {['선택지 A', '선택지 B', '선택지 C'].map((opt, i) => (
+                      <div key={i} className="flex items-center gap-2.5 px-4 py-3 bg-white rounded-xl border border-[#E1EFFB] text-[15px] text-[#2C2C2C]">
+                        <div className="w-4 h-4 rounded-full border-2 border-gray-300 flex-shrink-0" />{opt}
+                      </div>
+                    ))}
+                  </div>
+                  <button className="text-sm font-bold text-[#2B9EE8] hover:underline">정답 확인하기 →</button>
                 </div>
-              )}
-            </div>
-          ))}
-          {/* INTERACTION 구분 */}
-          {generated.interactions.length > 0 && (
-            <>
-              <div className="flex items-center gap-3">
-                <div className="flex-1 border-t border-[#D6EAF8]" />
-                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">INTERACTION</span>
-                <div className="flex-1 border-t border-[#D6EAF8]" />
+              );
+            }
+            if (type === 'scenario') {
+              return (
+                <div key={type} className="rounded-2xl p-6 space-y-3 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+                  <div className="flex items-center gap-2"><span className="text-lg">🎭</span><p className="text-base font-bold text-[#2C2C2C]">상황 시나리오</p></div>
+                  <p className="text-[15px] text-[#6B7280] leading-relaxed">다음과 같은 상황이 주어졌을 때, 당신이라면 어떻게 하시겠어요?</p>
+                  <div className="space-y-2">
+                    {['A. 첫 번째 선택', 'B. 두 번째 선택', 'C. 세 번째 선택'].map((opt, i) => (
+                      <button key={i} className="w-full text-left px-4 py-3 bg-white rounded-xl border border-[#E1EFFB] text-[15px] text-[#2C2C2C] hover:border-[#2B9EE8] transition-colors">{opt}</button>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
+            if (type === 'selfcheck') {
+              return (
+                <div key={type} className="rounded-2xl p-6 space-y-3 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+                  <div className="flex items-center gap-2"><span className="text-lg">✅</span><p className="text-base font-bold text-[#2C2C2C]">셀프 진단 체크리스트</p></div>
+                  <div className="space-y-2.5">
+                    {['나는 팀원의 의견을 충분히 듣는가?', '피드백을 구체적으로 전달하는가?', '약속한 사항을 끝까지 지키는가?'].map((item, i) => (
+                      <div key={i} className="flex items-start gap-2.5">
+                        <div className="w-4 h-4 rounded border-2 border-[#2B9EE8]/40 flex-shrink-0 mt-1 bg-white" />
+                        <p className="text-[15px] text-[#2C2C2C]">{item}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
+            if (type === 'reflection') {
+              return (
+                <div key={type} className="rounded-2xl p-6 space-y-3 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+                  <div className="flex items-center gap-2"><span className="text-lg">💭</span><p className="text-base font-bold text-[#2C2C2C]">회고 질문</p></div>
+                  <div className="space-y-2.5">
+                    {['이번 주 가장 잘한 리더십 행동은 무엇인가요?', '다음 주 바꾸고 싶은 행동 하나를 적어보세요.'].map((q, i) => (
+                      <div key={i} className="bg-white rounded-xl px-4 py-3.5 border border-[#E1EFFB]">
+                        <p className="text-xs font-bold text-[#2B9EE8] mb-1">Q{i + 1}</p>
+                        <p className="text-[15px] text-[#2C2C2C]">{q}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
+            // dodont
+            return (
+              <div key={type} className="rounded-2xl p-6 space-y-3 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+                <div className="flex items-center gap-2"><span className="text-lg">📋</span><p className="text-base font-bold text-[#2C2C2C]">Do &amp; Don&apos;t</p></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-white rounded-xl p-4 border border-[#E1EFFB]">
+                    <p className="text-sm font-bold text-emerald-600 mb-2">Do</p>
+                    <ul className="space-y-2">
+                      {['경청하고 질문하기', '구체적으로 칭찬하기'].map((item, i) => (
+                        <li key={i} className="text-sm text-[#2C2C2C] flex items-start gap-1.5"><span className="text-emerald-500 flex-shrink-0 mt-0.5">•</span>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="bg-white rounded-xl p-4 border border-[#E1EFFB]">
+                    <p className="text-sm font-bold text-red-500 mb-2">Don&apos;t</p>
+                    <ul className="space-y-2">
+                      {['말 끊고 단정하기', '감정적으로 반응하기'].map((item, i) => (
+                        <li key={i} className="text-sm text-[#2C2C2C] flex items-start gap-1.5"><span className="text-red-400 flex-shrink-0 mt-0.5">•</span>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
               </div>
-              {generated.interactions.map((ia, idx) => {
-                if (ia.type === 'quiz') {
-                  const c = ia.content as { question: string; options: string[]; answer: number };
-                  return (
-                    <div key={idx} className="bg-[#EBF5FF] rounded-2xl p-5 border border-blue-200 space-y-3">
-                      <div className="flex items-center gap-2"><span className="text-lg">🧠</span><p className="text-sm font-bold text-gray-800">{ia.title}</p></div>
-                      <p className="text-sm text-gray-700 leading-relaxed">{c.question}</p>
-                      <div className="space-y-2">
-                        {(c.options ?? []).map((opt, i) => (
-                          <div key={i} className="flex items-center gap-2.5 px-4 py-2.5 bg-white rounded-xl border border-blue-100 text-sm text-gray-700">
-                            <div className="w-4 h-4 rounded-full border-2 border-gray-300 flex-shrink-0" />{opt}
-                          </div>
-                        ))}
-                      </div>
-                      <button className="text-xs font-bold text-[#2B9EE8] hover:underline">정답 확인하기 →</button>
-                    </div>
-                  );
-                }
-                if (ia.type === 'scenario') {
-                  const c = ia.content as { situation: string; options: { label: string; result: string }[] };
-                  return (
-                    <div key={idx} className="bg-[#EBF5FF] rounded-2xl p-5 border border-blue-200 space-y-3">
-                      <div className="flex items-center gap-2"><span className="text-lg">🎭</span><p className="text-sm font-bold text-gray-800">{ia.title}</p></div>
-                      <p className="text-sm text-gray-700 leading-relaxed">{c.situation}</p>
-                      <div className="space-y-2">
-                        {(c.options ?? []).map((opt, i) => (
-                          <button key={i} className="w-full text-left px-4 py-2.5 bg-white rounded-xl border border-blue-100 text-sm text-gray-700 hover:bg-blue-50 transition-colors">{opt.label}</button>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                }
-                if (ia.type === 'selfcheck') {
-                  const c = ia.content as { items: string[] };
-                  return (
-                    <div key={idx} className="bg-[#EBF5FF] rounded-2xl p-5 border border-blue-200 space-y-3">
-                      <div className="flex items-center gap-2"><p className="text-sm font-bold text-gray-800">{ia.title}</p></div>
-                      <div className="space-y-2">
-                        {(c.items ?? []).map((item, i) => (
-                          <div key={i} className="flex items-start gap-2.5">
-                            <div className="w-4 h-4 rounded border-2 border-blue-300 flex-shrink-0 mt-0.5 bg-white" />
-                            <p className="text-sm text-gray-700">{item}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                }
-                if (ia.type === 'reflection') {
-                  const c = ia.content as { questions: string[] };
-                  return (
-                    <div key={idx} className="bg-[#EBF5FF] rounded-2xl p-5 border border-blue-200 space-y-3">
-                      <div className="flex items-center gap-2"><span className="text-lg">💭</span><p className="text-sm font-bold text-gray-800">{ia.title}</p></div>
-                      <div className="space-y-2">
-                        {(c.questions ?? []).map((q, i) => (
-                          <div key={i} className="bg-white rounded-xl px-4 py-3 border border-blue-100">
-                            <p className="text-[11px] font-bold text-[#2B9EE8] mb-0.5">Q{i + 1}</p>
-                            <p className="text-sm text-gray-700">{q}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                }
-                if (ia.type === 'dodont') {
-                  const c = ia.content as { do: string[]; dont: string[] };
-                  return (
-                    <div key={idx} className="bg-[#EBF5FF] rounded-2xl p-5 border border-blue-200 space-y-3">
-                      <div className="flex items-center gap-2"><p className="text-sm font-bold text-gray-800">{ia.title}</p></div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-white rounded-xl p-3 border border-emerald-200">
-                          <p className="text-xs font-bold text-emerald-600 mb-2">Do</p>
-                          <ul className="space-y-1.5">
-                            {(c.do ?? []).map((item, i) => (
-                              <li key={i} className="text-xs text-gray-700 flex items-start gap-1.5"><span className="text-emerald-500 flex-shrink-0 mt-0.5">•</span>{item}</li>
-                            ))}
-                          </ul>
+            );
+          })}
+        </div>
+      </>
+    );
+  }
+
+  // ── 만족도 템플릿: 선택된 타입을 AI 생성과 무관하게 예시 UI로 즉시 렌더 ──
+  function renderSurveyTemplates(types: ('always' | 'periodic')[]) {
+    if (types.length === 0) return null;
+    const periodicQuestions = [
+      { q: '이번 호 콘텐츠가 업무에 도움이 되었나요?', kind: 'scale' as const },
+      { q: '콘텐츠 분량은 적절했나요?', kind: 'scale' as const },
+      { q: '가장 유익했던 콘텐츠는 무엇인가요?', kind: 'multiple' as const, options: ['콘텐츠 1', '콘텐츠 2', '인터랙션'] },
+      { q: '실천으로 옮길 만한 내용이 있었나요?', kind: 'scale' as const },
+      { q: '앞으로 다루었으면 하는 주제가 있나요?', kind: 'open' as const },
+      { q: '동료에게 추천하고 싶으신가요?', kind: 'scale' as const },
+    ];
+    return (
+      <>
+        {renderSectionHeader('💬', '의견 들려주세요')}
+        <div className="space-y-5">
+          {types.map(type => {
+            if (type === 'always') {
+              return (
+                <div key={type} className="rounded-2xl p-6 space-y-4 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+                  <p className="text-base font-bold text-[#2C2C2C]">이번 호 어떠셨나요?</p>
+                  <div className="flex gap-2">
+                    {['아쉬워요', '괜찮아요', '최고예요'].map((opt, i) => (
+                      <button key={i} className="flex-1 flex flex-col items-center gap-1 py-3 bg-white rounded-xl border border-[#E1EFFB] hover:border-[#2B9EE8] transition-colors">
+                        <span className="text-2xl">{['😐', '😊', '🤩'][i]}</span>
+                        <span className="text-xs text-[#6B7280]">{opt}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-[#2C2C2C] mb-2">도움이 된 콘텐츠가 있었나요?</p>
+                    <div className="space-y-2">
+                      {['본문 콘텐츠', '인터랙션', '특별히 없음'].map((opt, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded border-2 border-[#2B9EE8]/40 flex-shrink-0 bg-white" />
+                          <p className="text-sm text-[#2C2C2C]">{opt}</p>
                         </div>
-                        <div className="bg-white rounded-xl p-3 border border-red-200">
-                          <p className="text-xs font-bold text-red-500 mb-2">Don't</p>
-                          <ul className="space-y-1.5">
-                            {(c.dont ?? []).map((item, i) => (
-                              <li key={i} className="text-xs text-gray-700 flex items-start gap-1.5"><span className="text-red-400 flex-shrink-0 mt-0.5">•</span>{item}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
+                      ))}
                     </div>
-                  );
-                }
-                return null;
-              })}
-            </>
-          )}
-          {/* SURVEY 구분 */}
-          {generated.surveys.length > 0 && (
-            <>
-              <div className="flex items-center gap-3">
-                <div className="flex-1 border-t border-[#D6EAF8]" />
-                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">SURVEY</span>
-                <div className="flex-1 border-t border-[#D6EAF8]" />
-              </div>
-              {generated.surveys.map((survey, idx) => {
-                if (survey.type === 'always') {
-                  const q = survey.questions[0] as { type: 'rating'; options: string[]; followUp: string; followUpOptions: string[]; openQuestion: string };
-                  return (
-                    <div key={idx} className="bg-[#FFFBEB] rounded-2xl p-5 border border-amber-200 space-y-4">
-                      <p className="text-sm font-bold text-gray-800">📊 이번 뉴스레터 어떠셨나요?</p>
-                      <div className="flex gap-2">
-                        {(q.options ?? []).map((opt, i) => (
-                          <button key={i} className="flex-1 flex flex-col items-center gap-1 py-2.5 bg-white rounded-xl border border-amber-200 hover:bg-amber-50 transition-colors">
-                            <span className="text-xl">{['😐', '😊', '🤩'][i]}</span>
-                            <span className="text-[10px] text-gray-600">{opt}</span>
-                          </button>
-                        ))}
-                      </div>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-[#2C2C2C] mb-1.5">한 줄 의견을 남겨주세요</p>
+                    <div className="w-full h-16 bg-white rounded-xl border border-[#E1EFFB] px-3 py-2 text-sm text-gray-400 flex items-start">답변을 입력해 주세요...</div>
+                  </div>
+                </div>
+              );
+            }
+            // periodic
+            return (
+              <div key={type} className="rounded-2xl p-6 space-y-5 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+                <p className="text-base font-bold text-[#2C2C2C]">정기 만족도 조사</p>
+                {periodicQuestions.map((item, i) => (
+                  <div key={i}>
+                    <p className="text-sm font-semibold text-[#2C2C2C] mb-2">Q{i + 1}. {item.q}</p>
+                    {item.kind === 'scale' && (
                       <div>
-                        <p className="text-xs font-semibold text-gray-700 mb-2">{q.followUp}</p>
-                        <div className="space-y-1.5">
-                          {(q.followUpOptions ?? []).map((opt, i) => (
-                            <div key={i} className="flex items-center gap-2">
-                              <div className="w-4 h-4 rounded border-2 border-amber-300 flex-shrink-0 bg-white" />
-                              <p className="text-xs text-gray-700">{opt}</p>
+                        <div className="flex gap-1.5">
+                          {Array.from({ length: 5 }, (_, n) => (
+                            <button key={n} className="flex-1 py-2 text-sm bg-white border border-[#E1EFFB] rounded-lg hover:border-[#2B9EE8] transition-colors">{n + 1}</button>
+                          ))}
+                        </div>
+                        <div className="flex justify-between mt-1">
+                          <span className="text-xs text-gray-400">매우 불만족</span>
+                          <span className="text-xs text-gray-400">매우 만족</span>
+                        </div>
+                      </div>
+                    )}
+                    {item.kind === 'multiple' && (
+                      <div className="flex flex-wrap gap-2">
+                        {item.options.map((opt, j) => (
+                          <button key={j} className="px-3.5 py-1.5 text-sm bg-white border border-[#E1EFFB] rounded-lg hover:border-[#2B9EE8] transition-colors">{opt}</button>
+                        ))}
+                      </div>
+                    )}
+                    {item.kind === 'open' && (
+                      <div className="w-full h-16 bg-white rounded-xl border border-[#E1EFFB] px-3 py-2 text-sm text-gray-400 flex items-start">답변을 입력해 주세요...</div>
+                    )}
+                  </div>
+                ))}
+                <button className="w-full py-3 bg-[#2B9EE8] hover:bg-[#1a8ad4] text-white text-sm font-semibold rounded-xl transition-colors">제출하기</button>
+              </div>
+            );
+          })}
+        </div>
+      </>
+    );
+  }
+
+  function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: { vol: number; dateLabel: string; leadershipLabel: string; firstThumbnail: string; templateInteractions?: ('quiz' | 'scenario' | 'selfcheck' | 'reflection' | 'dodont')[]; templateSurveys?: ('always' | 'periodic')[] }) {
+    const { vol, dateLabel, leadershipLabel, templateInteractions, templateSurveys } = opts;
+    const useTemplateInteractions = templateInteractions !== undefined;
+    const useTemplateSurveys = templateSurveys !== undefined;
+    return (
+      <div className="bg-white max-w-2xl mx-auto rounded-2xl overflow-hidden shadow-sm border border-gray-100">
+        {/* 상단 네비게이션 */}
+        <div className="px-8 py-4 flex items-center justify-between border-b border-gray-100">
+          <img src="/logo-jc.png" alt="J&Company" className="h-9 object-contain" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+          <div className="flex items-center gap-4">
+            <span className="text-xs text-[#6B7280] hover:text-[#2B9EE8] cursor-pointer transition-colors">뉴스레터 알아보기</span>
+            <span className="text-xs text-[#6B7280] hover:text-[#2B9EE8] cursor-pointer transition-colors">지난 호 보기</span>
+            <span className="text-xs text-[#6B7280] hover:text-[#2B9EE8] cursor-pointer transition-colors">마이페이지</span>
+          </div>
+        </div>
+
+        {/* 본문 */}
+        <div className="px-8 sm:px-10 py-10">
+          {/* 헤더 영역 */}
+          <div className="text-center mb-2">
+            {generated.subject && <p className="text-xs font-bold text-[#2B9EE8] tracking-wide uppercase mb-3">{generated.subject}</p>}
+            <p className="text-xs text-[#6B7280] tracking-wide mb-4">Vol.{vol} · {dateLabel}{leadershipLabel ? ` · ${leadershipLabel}` : ''}</p>
+            <h1 className="text-2xl sm:text-3xl font-black text-[#2C2C2C] leading-snug mb-5">{generated.headline}</h1>
+            <p className="text-base text-[#6B7280] leading-relaxed text-left">{generated.intro}</p>
+          </div>
+
+          {/* 콘텐츠 */}
+          {renderSectionHeader('📰', '이번 호에서 다룰 내용')}
+          <div className="space-y-5">
+            {generated.sections.map(sec => (
+              <div key={sec.contentId} className="rounded-2xl p-6 space-y-3 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+                <div className="flex items-start gap-3">
+                  <span className="text-2xl flex-shrink-0 mt-0.5">{sec.emoji}</span>
+                  <p className="text-lg font-bold text-[#2C2C2C] leading-snug">{sec.contentTitle}</p>
+                </div>
+                <p className="text-[15px] text-[#6B7280] leading-relaxed">{sec.summary}</p>
+                <div className="rounded-xl px-4 py-3.5 border border-emerald-100" style={{ backgroundColor: '#F0FDF4' }}>
+                  <p className="text-xs font-bold text-emerald-700 mb-1">💡 핵심 포인트</p>
+                  <p className="text-[15px] text-[#2C2C2C] leading-relaxed">{sec.keyTakeaway}</p>
+                </div>
+                {sec.youtubeUrl && (
+                  <div className="aspect-video rounded-xl overflow-hidden bg-black">
+                    <iframe src={sec.youtubeUrl} className="w-full h-full" allowFullScreen title={sec.contentTitle} />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* 인터랙션 — 템플릿 override 시 선택된 타입을 즉시 렌더 */}
+          {useTemplateInteractions && renderInteractionTemplates(templateInteractions!)}
+          {!useTemplateInteractions && generated.interactions.length > 0 && (
+            <>
+              {renderSectionHeader('🎯', '함께 생각해봐요')}
+              <div className="space-y-5">
+                {generated.interactions.map((ia, idx) => {
+                  if (ia.type === 'quiz') {
+                    const c = ia.content as { question: string; options: string[]; answer: number };
+                    return (
+                      <div key={idx} className="rounded-2xl p-6 space-y-3 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+                        <div className="flex items-center gap-2"><span className="text-lg">🧠</span><p className="text-base font-bold text-[#2C2C2C]">{ia.title}</p></div>
+                        <p className="text-[15px] text-[#6B7280] leading-relaxed">{c.question}</p>
+                        <div className="space-y-2">
+                          {(c.options ?? []).map((opt, i) => (
+                            <div key={i} className="flex items-center gap-2.5 px-4 py-3 bg-white rounded-xl border border-[#E1EFFB] text-[15px] text-[#2C2C2C]">
+                              <div className="w-4 h-4 rounded-full border-2 border-gray-300 flex-shrink-0" />{opt}
+                            </div>
+                          ))}
+                        </div>
+                        <button className="text-sm font-bold text-[#2B9EE8] hover:underline">정답 확인하기 →</button>
+                      </div>
+                    );
+                  }
+                  if (ia.type === 'scenario') {
+                    const c = ia.content as { situation: string; options: { label: string; result: string }[] };
+                    return (
+                      <div key={idx} className="rounded-2xl p-6 space-y-3 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+                        <div className="flex items-center gap-2"><span className="text-lg">🎭</span><p className="text-base font-bold text-[#2C2C2C]">{ia.title}</p></div>
+                        <p className="text-[15px] text-[#6B7280] leading-relaxed">{c.situation}</p>
+                        <div className="space-y-2">
+                          {(c.options ?? []).map((opt, i) => (
+                            <button key={i} className="w-full text-left px-4 py-3 bg-white rounded-xl border border-[#E1EFFB] text-[15px] text-[#2C2C2C] hover:border-[#2B9EE8] transition-colors">{opt.label}</button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (ia.type === 'selfcheck') {
+                    const c = ia.content as { items: string[] };
+                    return (
+                      <div key={idx} className="rounded-2xl p-6 space-y-3 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+                        <div className="flex items-center gap-2"><span className="text-lg">✅</span><p className="text-base font-bold text-[#2C2C2C]">{ia.title}</p></div>
+                        <div className="space-y-2.5">
+                          {(c.items ?? []).map((item, i) => (
+                            <div key={i} className="flex items-start gap-2.5">
+                              <div className="w-4 h-4 rounded border-2 border-[#2B9EE8]/40 flex-shrink-0 mt-1 bg-white" />
+                              <p className="text-[15px] text-[#2C2C2C]">{item}</p>
                             </div>
                           ))}
                         </div>
                       </div>
-                      <div>
-                        <p className="text-xs font-semibold text-gray-700 mb-1.5">{q.openQuestion}</p>
-                        <div className="w-full h-14 bg-white rounded-lg border border-amber-200 px-3 py-2 text-xs text-gray-400 flex items-start">답변을 입력해 주세요...</div>
-                      </div>
-                    </div>
-                  );
-                }
-                if (survey.type === 'periodic') {
-                  const questions = survey.questions as PeriodicSurveyQuestion[];
-                  return (
-                    <div key={idx} className="bg-[#FFFBEB] rounded-2xl p-5 border border-amber-200 space-y-5">
-                      <p className="text-sm font-bold text-gray-800">📊 정기 만족도 조사</p>
-                      {questions.map((q, i) => (
-                        <div key={i}>
-                          <p className="text-xs font-semibold text-gray-700 mb-2">Q{i + 1}. {q.question}</p>
-                          {q.type === 'scale' && (
-                            <div>
-                              <div className="flex gap-1">
-                                {Array.from({ length: q.scale }, (_, n) => (
-                                  <button key={n} className="flex-1 py-1.5 text-xs bg-white border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors">{n + 1}</button>
-                                ))}
-                              </div>
-                              <div className="flex justify-between mt-1">
-                                <span className="text-[10px] text-gray-400">매우 불만족</span>
-                                <span className="text-[10px] text-gray-400">매우 만족</span>
-                              </div>
+                    );
+                  }
+                  if (ia.type === 'reflection') {
+                    const c = ia.content as { questions: string[] };
+                    return (
+                      <div key={idx} className="rounded-2xl p-6 space-y-3 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+                        <div className="flex items-center gap-2"><span className="text-lg">💭</span><p className="text-base font-bold text-[#2C2C2C]">{ia.title}</p></div>
+                        <div className="space-y-2.5">
+                          {(c.questions ?? []).map((q, i) => (
+                            <div key={i} className="bg-white rounded-xl px-4 py-3.5 border border-[#E1EFFB]">
+                              <p className="text-xs font-bold text-[#2B9EE8] mb-1">Q{i + 1}</p>
+                              <p className="text-[15px] text-[#2C2C2C]">{q}</p>
                             </div>
-                          )}
-                          {q.type === 'multiple' && (
-                            <div className="flex flex-wrap gap-1.5">
-                              {q.options.map((opt, j) => (
-                                <button key={j} className="px-3 py-1 text-xs bg-white border border-amber-200 rounded-lg hover:bg-amber-50 transition-colors">{opt}</button>
-                              ))}
-                            </div>
-                          )}
-                          {q.type === 'open' && (
-                            <div className="w-full h-14 bg-white rounded-lg border border-amber-200 px-3 py-2 text-xs text-gray-400 flex items-start">답변을 입력해 주세요...</div>
-                          )}
+                          ))}
                         </div>
-                      ))}
-                      <button className="w-full py-2.5 bg-[#2B9EE8] hover:bg-[#1a8ad4] text-white text-sm font-semibold rounded-xl transition-colors">제출하기</button>
-                    </div>
-                  );
-                }
-                return null;
-              })}
+                      </div>
+                    );
+                  }
+                  if (ia.type === 'dodont') {
+                    const c = ia.content as { do: string[]; dont: string[] };
+                    return (
+                      <div key={idx} className="rounded-2xl p-6 space-y-3 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+                        <div className="flex items-center gap-2"><span className="text-lg">📋</span><p className="text-base font-bold text-[#2C2C2C]">{ia.title}</p></div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="bg-white rounded-xl p-4 border border-[#E1EFFB]">
+                            <p className="text-sm font-bold text-emerald-600 mb-2">Do</p>
+                            <ul className="space-y-2">
+                              {(c.do ?? []).map((item, i) => (
+                                <li key={i} className="text-sm text-[#2C2C2C] flex items-start gap-1.5"><span className="text-emerald-500 flex-shrink-0 mt-0.5">•</span>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div className="bg-white rounded-xl p-4 border border-[#E1EFFB]">
+                            <p className="text-sm font-bold text-red-500 mb-2">Don&apos;t</p>
+                            <ul className="space-y-2">
+                              {(c.dont ?? []).map((item, i) => (
+                                <li key={i} className="text-sm text-[#2C2C2C] flex items-start gap-1.5"><span className="text-red-400 flex-shrink-0 mt-0.5">•</span>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })}
+              </div>
             </>
           )}
+
+          {/* 만족도 — 템플릿 override 시 선택된 타입을 즉시 렌더 */}
+          {useTemplateSurveys && renderSurveyTemplates(templateSurveys!)}
+          {!useTemplateSurveys && generated.surveys.length > 0 && (
+            <>
+              {renderSectionHeader('💬', '의견 들려주세요')}
+              <div className="space-y-5">
+                {generated.surveys.map((survey, idx) => {
+                  if (survey.type === 'always') {
+                    const q = survey.questions[0] as { type: 'rating'; options: string[]; followUp: string; followUpOptions: string[]; openQuestion: string };
+                    return (
+                      <div key={idx} className="rounded-2xl p-6 space-y-4 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+                        <p className="text-base font-bold text-[#2C2C2C]">이번 호 어떠셨나요?</p>
+                        <div className="flex gap-2">
+                          {(q.options ?? []).map((opt, i) => (
+                            <button key={i} className="flex-1 flex flex-col items-center gap-1 py-3 bg-white rounded-xl border border-[#E1EFFB] hover:border-[#2B9EE8] transition-colors">
+                              <span className="text-2xl">{['😐', '😊', '🤩'][i]}</span>
+                              <span className="text-xs text-[#6B7280]">{opt}</span>
+                            </button>
+                          ))}
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-[#2C2C2C] mb-2">{q.followUp}</p>
+                          <div className="space-y-2">
+                            {(q.followUpOptions ?? []).map((opt, i) => (
+                              <div key={i} className="flex items-center gap-2">
+                                <div className="w-4 h-4 rounded border-2 border-[#2B9EE8]/40 flex-shrink-0 bg-white" />
+                                <p className="text-sm text-[#2C2C2C]">{opt}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-[#2C2C2C] mb-1.5">{q.openQuestion}</p>
+                          <div className="w-full h-16 bg-white rounded-xl border border-[#E1EFFB] px-3 py-2 text-sm text-gray-400 flex items-start">답변을 입력해 주세요...</div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (survey.type === 'periodic') {
+                    const questions = survey.questions as PeriodicSurveyQuestion[];
+                    return (
+                      <div key={idx} className="rounded-2xl p-6 space-y-5 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+                        <p className="text-base font-bold text-[#2C2C2C]">정기 만족도 조사</p>
+                        {questions.map((q, i) => (
+                          <div key={i}>
+                            <p className="text-sm font-semibold text-[#2C2C2C] mb-2">Q{i + 1}. {q.question}</p>
+                            {q.type === 'scale' && (
+                              <div>
+                                <div className="flex gap-1.5">
+                                  {Array.from({ length: q.scale }, (_, n) => (
+                                    <button key={n} className="flex-1 py-2 text-sm bg-white border border-[#E1EFFB] rounded-lg hover:border-[#2B9EE8] transition-colors">{n + 1}</button>
+                                  ))}
+                                </div>
+                                <div className="flex justify-between mt-1">
+                                  <span className="text-xs text-gray-400">매우 불만족</span>
+                                  <span className="text-xs text-gray-400">매우 만족</span>
+                                </div>
+                              </div>
+                            )}
+                            {q.type === 'multiple' && (
+                              <div className="flex flex-wrap gap-2">
+                                {q.options.map((opt, j) => (
+                                  <button key={j} className="px-3.5 py-1.5 text-sm bg-white border border-[#E1EFFB] rounded-lg hover:border-[#2B9EE8] transition-colors">{opt}</button>
+                                ))}
+                              </div>
+                            )}
+                            {q.type === 'open' && (
+                              <div className="w-full h-16 bg-white rounded-xl border border-[#E1EFFB] px-3 py-2 text-sm text-gray-400 flex items-start">답변을 입력해 주세요...</div>
+                            )}
+                          </div>
+                        ))}
+                        <button className="w-full py-3 bg-[#2B9EE8] hover:bg-[#1a8ad4] text-white text-sm font-semibold rounded-xl transition-colors">제출하기</button>
+                      </div>
+                    );
+                  }
+                  return null;
+                })}
+              </div>
+            </>
+          )}
+
           {/* 클로징 */}
-          <div className="bg-white rounded-2xl p-5 border border-[#D6EAF8]">
-            <p className="text-sm text-gray-600 leading-relaxed italic mb-2">{generated.closing}</p>
-            <p className="text-xs text-gray-400 font-semibold">J&Company 코칭팀 드림</p>
-          </div>
-          {/* 마이페이지 바로가기 */}
-          <div className="flex justify-center py-1">
-            <button className="flex items-center gap-2 px-6 py-3 bg-[#2B9EE8] hover:bg-[#1a8ad4] text-white text-sm font-semibold rounded-2xl transition-colors shadow-sm">
-              내 마이페이지 바로가기
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-          </div>
-          {/* 푸터 */}
-          <div className="flex items-center justify-between pb-1">
-            <img src="/logo-jc.png" alt="J&Company" className="h-5 object-contain" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-            <div className="flex gap-3">
-              <span className="text-[10px] text-gray-400 cursor-pointer hover:underline">수신거부</span>
-              <span className="text-[10px] text-gray-400 cursor-pointer hover:underline">문의하기</span>
+          <div className="mt-10 pt-8 border-t border-gray-100">
+            <p className="text-[15px] text-[#6B7280] leading-relaxed italic mb-2">{generated.closing}</p>
+            <p className="text-sm text-[#2C2C2C] font-semibold mb-6">J&Company 코칭팀 드림</p>
+            <div className="flex justify-center">
+              <button className="flex items-center gap-2 px-6 py-3 bg-[#2B9EE8] hover:bg-[#1a8ad4] text-white text-sm font-semibold rounded-xl transition-colors">
+                내 마이페이지 바로가기
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
             </div>
+          </div>
+        </div>
+
+        {/* 푸터 */}
+        <div className="px-8 py-6 border-t border-gray-100 flex items-center justify-between">
+          <p className="text-xs text-[#6B7280] font-semibold">J&Company 코칭팀</p>
+          <div className="flex gap-4">
+            <span className="text-xs text-[#6B7280] hover:text-[#2B9EE8] cursor-pointer transition-colors">마이페이지</span>
+            <span className="text-xs text-[#6B7280] hover:text-[#2B9EE8] cursor-pointer transition-colors">문의하기</span>
           </div>
         </div>
       </div>
@@ -1356,8 +1535,10 @@ function ConfigureContent() {
     const group = isCustom ? activeGroups.find(g => g.id === targetId) : undefined;
     const topic = isCustom ? (group?.topic ?? '') : r.topic;
     const contents = isCustom ? (group?.contents ?? []) : r.contents;
+    const interactions = isCustom ? (group?.interactions ?? []) : r.interactions;
+    const surveys = isCustom ? (group?.surveys ?? []) : r.surveys;
     const firstThumbnail = contents[0]?.thumbnail ?? '';
-    const hasConfig = topic.trim().length > 0 || contents.length > 0;
+    const hasConfig = topic.trim().length > 0 || contents.length > 0 || interactions.length > 0 || surveys.length > 0;
     const leadershipLabel = isCustom ? (group?.types.join(', ') ?? '') : '일반형';
     const key = `${activeRoundIdx}:${targetId}`;
     const generated = livePreviewContent[key];
@@ -1371,16 +1552,28 @@ function ConfigureContent() {
       );
     }
 
+    // AI 본문이 아직 없을 때: 본문 영역은 로딩, 인터랙션/만족도 템플릿은 즉시 표시
     if (!generated) {
       return (
-        <div className="h-full min-h-[480px] rounded-2xl shadow-md border border-[#D6EAF8] bg-white flex flex-col items-center justify-center py-20 px-6 gap-3 text-center">
-          <svg className="w-7 h-7 text-[#55A4DA] animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
-          <p className="text-xs text-gray-500">AI가 미리보기 본문을 생성 중입니다...</p>
+        <div className="bg-white max-w-2xl mx-auto rounded-2xl overflow-hidden shadow-sm border border-gray-100">
+          {/* 상단 네비게이션 */}
+          <div className="px-8 py-4 flex items-center justify-between border-b border-gray-100">
+            <img src="/logo-jc.png" alt="J&Company" className="h-9 object-contain" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            <p className="text-xs text-[#6B7280]">Vol.{activeRoundIdx + 1}{leadershipLabel ? ` · ${leadershipLabel}` : ''}</p>
+          </div>
+          <div className="px-8 sm:px-10 py-10">
+            <div className="rounded-2xl py-16 px-5 border border-[#E1EFFB] flex flex-col items-center justify-center gap-3 text-center" style={{ backgroundColor: '#F0F7FF' }}>
+              <svg className="w-7 h-7 text-[#2B9EE8] animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+              <p className="text-sm text-[#6B7280]">AI가 본문을 생성 중입니다...</p>
+            </div>
+            {renderInteractionTemplates(interactions)}
+            {renderSurveyTemplates(surveys)}
+          </div>
         </div>
       );
     }
 
-    return renderGeneratedFullBody(generated, { vol: activeRoundIdx + 1, dateLabel: '발송일 미정', leadershipLabel, firstThumbnail });
+    return renderGeneratedFullBody(generated, { vol: activeRoundIdx + 1, dateLabel: '발송일 미정', leadershipLabel, firstThumbnail, templateInteractions: interactions, templateSurveys: surveys });
   }
 
   return (
