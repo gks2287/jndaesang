@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useNewNewsletterDraftStore } from '@/store/newNewsletterDraftStore';
 import { useCompanyStore } from '@/store/companyStore';
+import { useNewsletterStore } from '@/store/newsletterStore';
+import { SavedNewsletterPreviewModal, type SavedNewsletterContent } from '@/components/newsletter/NewsletterRender';
 
 // ── 타입 ─────────────────────────────────────────────────────────────
 type RoundStatus = 'inProgress' | 'completed';
@@ -684,6 +686,18 @@ function NewslettersContent() {
   const [selectedRoundsByCompany, setSelectedRoundsByCompany] = useState<Map<number, Set<string>>>(new Map());
   const [sendConfirmTarget, setSendConfirmTarget] = useState<SendConfirmTarget | null>(null);
   const [previewTarget, setPreviewTarget] = useState<PreviewTarget | null>(null);
+  const newsletters = useNewsletterStore(s => s.newsletters);
+  const [savedPreview, setSavedPreview] = useState<{ title: string; content: SavedNewsletterContent } | null>(null);
+
+  // 미리보기: 제작완료 + 생성 본문이 저장된 뉴스레터면 콘텐츠 구성 단계와 동일한 미리보기 모달, 아니면 기존 요약 카드
+  function handlePreview(target: PreviewTarget) {
+    const nl = newsletters.find(n =>
+      n.companyName === target.companyName && n.status === '제작완료' &&
+      n.generatedContent && n.generatedContent.rounds.length > 0
+    );
+    if (nl?.generatedContent) setSavedPreview({ title: nl.title, content: nl.generatedContent });
+    else setPreviewTarget(target);
+  }
 
   useEffect(() => {
     const tab = searchParams.get('tab');
@@ -861,7 +875,7 @@ function NewslettersContent() {
           ) : (
             filteredCompanies.map(company => (
               <CompanyRow key={company.companyId} company={company} openKeys={openKeys}
-                onToggle={toggleKey} isCompleteTab={isCompleteTab} onPreview={setPreviewTarget}
+                onToggle={toggleKey} isCompleteTab={isCompleteTab} onPreview={handlePreview}
                 activeTab={activeTab}
                 selectedIds={selectedRoundsByCompany.get(company.companyId) ?? new Set()}
                 onSelectRound={(selectionId, checked) => handleSelectRound(company.companyId, selectionId, checked)}
@@ -892,6 +906,12 @@ function NewslettersContent() {
       )}
 
       {previewTarget && <PreviewModal target={previewTarget} onClose={() => setPreviewTarget(null)} />}
+      <SavedNewsletterPreviewModal
+        open={!!savedPreview}
+        onClose={() => setSavedPreview(null)}
+        title={savedPreview?.title ?? ''}
+        content={savedPreview?.content ?? null}
+      />
       {sendConfirmTarget && (
         <SendConfirmModal target={sendConfirmTarget} onConfirm={handleSendConfirm} onClose={() => setSendConfirmTarget(null)} />
       )}

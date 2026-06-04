@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { SavedNewsletterContent } from '@/components/newsletter/NewsletterRender';
 
 export type NewsletterStatus = '제작 중' | '제작완료';
 
@@ -19,6 +20,8 @@ export interface Newsletter {
   totalLeaders: number;
   createdAt: string;
   updatedAt: string;
+  // 제작완료 시 저장되는 회차별 생성 본문 (전체본문 + 요약본 미리보기용)
+  generatedContent?: SavedNewsletterContent;
 }
 
 const MOCK: Newsletter[] = [
