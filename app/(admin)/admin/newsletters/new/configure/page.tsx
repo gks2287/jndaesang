@@ -1272,7 +1272,7 @@ function ConfigureContent() {
     const useTemplateInteractions = templateInteractions !== undefined;
     const useTemplateSurveys = templateSurveys !== undefined;
     return (
-      <div className="bg-white max-w-2xl mx-auto rounded-2xl overflow-hidden shadow-sm border border-gray-100">
+      <div className="bg-white max-w-2xl mx-auto rounded-2xl overflow-hidden shadow-sm border border-gray-100 break-keep break-words">
         {/* 상단 네비게이션 */}
         <div className="px-6 sm:px-8 py-4 flex items-center justify-between border-b border-gray-100">
           <img src="/logo-jc.png" alt="J&Company" className="h-9 object-contain" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
@@ -1555,7 +1555,7 @@ function ConfigureContent() {
     // AI 본문이 아직 없을 때: 본문 영역은 로딩, 인터랙션/만족도 템플릿은 즉시 표시
     if (!generated) {
       return (
-        <div className="bg-white max-w-2xl mx-auto rounded-2xl overflow-hidden shadow-sm border border-gray-100">
+        <div className="bg-white max-w-2xl mx-auto rounded-2xl overflow-hidden shadow-sm border border-gray-100 break-keep break-words">
           {/* 상단 네비게이션 */}
           <div className="px-6 sm:px-8 py-4 flex items-center justify-between border-b border-gray-100">
             <img src="/logo-jc.png" alt="J&Company" className="h-9 object-contain" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
@@ -2970,7 +2970,7 @@ function ConfigureContent() {
 
                         {/* 이메일(요약본) 미리보기 탭 — 전체 본문과 같은 톤, 더 컴팩트하게 */}
                         {contentTab === 'email' && (
-                          <div className="bg-white max-w-md mx-auto rounded-2xl overflow-hidden shadow-sm border border-gray-100">
+                          <div className="bg-white max-w-md mx-auto rounded-2xl overflow-hidden shadow-sm border border-gray-100 break-keep break-words">
                             {/* 상단 네비게이션 */}
                             <div className="px-5 py-3.5 flex items-center justify-between border-b border-gray-100">
                               <img src="/logo-jc.png" alt="J&Company" className="h-7 object-contain" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
@@ -3030,11 +3030,14 @@ function ConfigureContent() {
                         )}
 
                         {/* 전체 본문 탭 */}
+                        {/* 전체 본문: 실시간 미리보기와 동일한 렌더 함수·데이터 소스 사용 (인터랙션/만족도도 회차 선택값 기반 템플릿으로 통일) */}
                         {contentTab === 'full' && renderGeneratedFullBody(generated, {
                           vol: previewTab + 1,
                           dateLabel: schedDate ? formatKoreanDate(schedDate) : '—',
                           leadershipLabel: leadershipTypes.join(', '),
                           firstThumbnail,
+                          templateInteractions: activeRound.interactions,
+                          templateSurveys: activeRound.surveys,
                         })}
                       </div>
                     );
