@@ -127,6 +127,7 @@ const MOCK_QUESTIONS: {
   type: '주관식' | '체크리스트' | '만족도 설문' | '퀴즈';
   question: string;
   mockAnswers: string[];
+  mockSummary?: string;
 }[] = [
   {
     round: 1, type: '주관식',
@@ -138,6 +139,7 @@ const MOCK_QUESTIONS: {
       '급한 성격 탓에 팀원의 속도를 기다리지 못하고 직접 처리하게 됩니다.',
       '결과가 좋으면 된다고 생각해서 과정에 대한 피드백이 부족했습니다.',
     ],
+    mockSummary: '대부분의 응답자는 결과·성과 우선 사고와 지시형 패턴을 가장 자주 사용한다고 인식하고 있습니다. 경청 부족과 팀원 속도를 기다리지 못하는 점을 스스로 인지하는 경우가 많았으며, 과정보다 결과에 집중하는 경향이 공통적으로 나타났습니다. 자신의 리더십 패턴에 대한 인식은 있으나, 실제 행동 변화로 이어지지 못하고 있다는 점이 주목됩니다.',
   },
   {
     round: 1, type: '체크리스트',
@@ -159,6 +161,7 @@ const MOCK_QUESTIONS: {
       '감정적 반응을 줄이고 일관된 태도를 유지해주길 원할 것 같습니다.',
       '칭찬과 긍정 피드백을 더 자주 전달해주길 원할 것 같습니다.',
     ],
+    mockSummary: '팀원들이 원하는 변화로 "경청과 함께 고민하는 자세"가 가장 많이 언급되었습니다. 실패 허용과 과정 인정, 감정적 일관성, 명확한 기대치 전달에 대한 요구도 공통적으로 나타났습니다. 긍정적 피드백 부족에 대한 인식도 여러 응답에서 발견되어, 인정과 칭찬이 주요 개선 과제로 부각됩니다.',
   },
   {
     round: 2, type: '체크리스트',
@@ -179,6 +182,7 @@ const MOCK_QUESTIONS: {
       '양측 이야기를 충분히 듣고 중립적 입장에서 조율을 시도했습니다.',
       '갈등 원인 파악보다 빠른 결과 복구에 집중했습니다.',
     ],
+    mockSummary: '갈등 대응 방식으로 "일방적 결론 도출"과 "회피"가 주된 패턴으로 나타났습니다. 중립적 조율을 시도한 사례도 있었으나, 빠른 결과 복구에 집중하거나 시간이 해결해주길 기다리는 소극적 방식을 선택한 경우가 더 많았습니다. 대부분의 응답자가 갈등의 근본 원인보다 표면적 해소에 집중하고 있음을 스스로 인지하고 있었습니다.',
   },
   {
     round: 3, type: '만족도 설문',
@@ -190,6 +194,7 @@ const MOCK_QUESTIONS: {
       '좀 더 심층적인 내용이 있으면 더 좋겠습니다.',
       '팀 상황에 맞게 유연하게 활용할 수 있었습니다.',
     ],
+    mockSummary: '전반적으로 콘텐츠 만족도가 높게 나타났습니다. 실무 적용 가능성과 사례 중심 구성, 명확한 핵심 메시지가 긍정적 요소로 자주 언급되었습니다. 일부 응답에서는 더 심층적인 내용에 대한 요구가 있었으며, 팀 상황에 맞게 유연하게 활용할 수 있다는 점도 호평을 받았습니다.',
   },
 ];
 
@@ -235,6 +240,7 @@ export default function CompanyDetailPage() {
   );
 
   const [activeLogRound, setActiveLogRound] = useState<number | 'all'>('all');
+  const [activeBottomTab, setActiveBottomTab] = useState<'summary' | 'log'>('summary');
 
   const typeMembers = useMemo(
     () => activeLeadership ? yearMembers.filter(p => p.leadershipType === activeLeadership) : [],
@@ -255,6 +261,7 @@ export default function CompanyDetailPage() {
         round: q.round,
         type: q.type,
         question: q.question,
+        mockSummary: q.mockSummary,
         responses: typeMembers
           .filter(p => p.stepCurrent >= q.round)
           .map((p, i) => ({ name: p.name, answer: q.mockAnswers[i % q.mockAnswers.length] })),
@@ -547,11 +554,12 @@ export default function CompanyDetailPage() {
           )}
         </div>
 
-        {/* 유형별 활동 로그 */}
+        {/* 유형별 활동 데이터 */}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <p className="text-sm font-bold text-gray-800">유형별 활동 로그</p>
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4">
+            {/* 제목 + 유형 뱃지 */}
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <p className="text-sm font-bold text-gray-800">유형별 활동 데이터</p>
               {activeLeadership && (
                 <span className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ backgroundColor: LEADERSHIP_COLORS[activeLeadership] }} />
@@ -559,25 +567,49 @@ export default function CompanyDetailPage() {
                 </span>
               )}
             </div>
-            {activeLeadership && availableRounds.length > 0 && (
-              <div className="flex gap-1">
+
+            <div className="flex items-center gap-3 ml-auto">
+              {/* 탭 버튼 */}
+              <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
                 <button
-                  onClick={() => setActiveLogRound('all')}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${activeLogRound === 'all' ? 'bg-[#55A4DA] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                  onClick={() => setActiveBottomTab('summary')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    activeBottomTab === 'summary' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}
                 >
-                  전체
+                  응답 요약
                 </button>
-                {availableRounds.map(r => (
-                  <button
-                    key={r}
-                    onClick={() => setActiveLogRound(r)}
-                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${activeLogRound === r ? 'bg-[#55A4DA] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-                  >
-                    {r}회차
-                  </button>
-                ))}
+                <button
+                  onClick={() => setActiveBottomTab('log')}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    activeBottomTab === 'log' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  활동 로그
+                </button>
               </div>
-            )}
+
+              {/* 회차 필터 */}
+              {activeLeadership && availableRounds.length > 0 && (
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => setActiveLogRound('all')}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${activeLogRound === 'all' ? 'bg-[#55A4DA] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                  >
+                    전체
+                  </button>
+                  {availableRounds.map(r => (
+                    <button
+                      key={r}
+                      onClick={() => setActiveLogRound(r)}
+                      className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${activeLogRound === r ? 'bg-[#55A4DA] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                    >
+                      {r}회차
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {!activeLeadership ? (
@@ -585,28 +617,116 @@ export default function CompanyDetailPage() {
               <svg className="w-6 h-6 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
-              <p className="text-sm text-gray-300">리더십 유형을 선택하면 해당 유형 리더들의 활동 로그를 확인할 수 있습니다.</p>
+              <p className="text-sm text-gray-300">리더십 유형을 선택하면 해당 유형 리더들의 활동 데이터를 확인할 수 있습니다.</p>
             </div>
           ) : typeQuestions.length === 0 ? (
             <div className="flex items-center justify-center h-24 text-sm text-gray-300">
               활동 내역이 없습니다.
             </div>
-          ) : (
+          ) : activeBottomTab === 'summary' ? (
+            /* 응답 요약 탭 */
             <div className="p-5 space-y-4 max-h-[520px] overflow-y-auto">
               {typeQuestions.map((q, i) => (
                 <div key={i} className="border border-gray-100 rounded-xl overflow-hidden">
                   {/* 질문 헤더 */}
                   <div className="px-4 py-3 bg-gray-50 flex items-center gap-2">
                     <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
-                      q.type === '주관식'     ? 'bg-purple-50 text-purple-600' :
-                      q.type === '체크리스트' ? 'bg-blue-50 text-blue-600' :
-                      q.type === '만족도 설문'? 'bg-gray-200 text-gray-500' :
-                                               'bg-amber-50 text-amber-600'
+                      q.type === '주관식'      ? 'bg-purple-50 text-purple-600' :
+                      q.type === '체크리스트'  ? 'bg-blue-50 text-blue-600' :
+                      q.type === '만족도 설문' ? 'bg-gray-200 text-gray-500' :
+                                                 'bg-amber-50 text-amber-600'
+                    }`}>{q.type}</span>
+                    <span className="text-sm font-medium text-gray-700 flex-1">{q.question}</span>
+                    <span className="text-[11px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full flex-shrink-0">{q.responses.length}명 응답</span>
+                    <span className="text-[11px] text-gray-300 flex-shrink-0 ml-1">{q.round}회차</span>
+                  </div>
+
+                  {/* 집계 내용 */}
+                  {q.type === '체크리스트' ? (
+                    <div className="px-4 py-4 space-y-3">
+                      {(q.responses[0]?.answer.split('\n') ?? []).map((line, li) => {
+                        const itemText = line.replace(/^[✅☐]\s*/, '');
+                        const checkedCount = q.responses.filter(r => r.answer.split('\n')[li]?.startsWith('✅')).length;
+                        const rate = q.responses.length > 0 ? Math.round((checkedCount / q.responses.length) * 100) : 0;
+                        return (
+                          <div key={li}>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="text-xs text-gray-600">{itemText}</span>
+                              <span className="text-xs text-gray-400 tabular-nums">{checkedCount}/{q.responses.length}명 <span className="text-[#55A4DA] font-semibold">{rate}%</span></span>
+                            </div>
+                            <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                              <div className="h-full bg-[#55A4DA] rounded-full transition-all" style={{ width: `${rate}%` }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (() => {
+                    const summary = q.mockSummary;
+
+                    // 만족도 설문: 키워드 빈도 순위 계산
+                    const rankItems: { text: string; count: number }[] = [];
+                    if (q.type === '만족도 설문') {
+                      const freq: Record<string, number> = {};
+                      q.responses.forEach(r => {
+                        r.answer.split(/[.,\n]/).forEach(chunk => {
+                          const t = chunk.trim();
+                          if (t.length > 4) freq[t] = (freq[t] ?? 0) + 1;
+                        });
+                      });
+                      Object.entries(freq)
+                        .sort((a, b) => b[1] - a[1])
+                        .slice(0, 4)
+                        .forEach(([text, count]) => rankItems.push({ text, count }));
+                    }
+
+                    return (
+                      <div className="px-4 py-4 space-y-3">
+                        {/* 만족도 설문: 응답 빈도 순위 */}
+                        {q.type === '만족도 설문' && rankItems.length > 0 && (
+                          <div className="space-y-2">
+                            {rankItems.map((item, ri) => (
+                              <div key={ri} className="flex items-center gap-3">
+                                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
+                                  ri === 0 ? 'bg-[#55A4DA] text-white' :
+                                  ri === 1 ? 'bg-[#7EC8E3] text-white' :
+                                             'bg-gray-100 text-gray-400'
+                                }`}>{ri + 1}</span>
+                                <p className="text-xs text-gray-600 flex-1 leading-snug">{item.text}</p>
+                                <span className="text-[11px] text-gray-400 flex-shrink-0">{item.count}명</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* 주관식: 요약 텍스트 */}
+                        {q.type === '주관식' && summary && (
+                          <p className="text-xs text-gray-600 leading-relaxed">{summary}</p>
+                        )}
+
+                      </div>
+                    );
+                  })()}
+                </div>
+              ))}
+            </div>
+          ) : (
+            /* 활동 로그 탭 */
+            <div className="p-5 space-y-4 max-h-[520px] overflow-y-auto">
+              {typeQuestions.map((q, i) => (
+                <div key={i} className="border border-gray-100 rounded-xl overflow-hidden">
+                  {/* 질문 헤더 */}
+                  <div className="px-4 py-3 bg-gray-50 flex items-center gap-2">
+                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
+                      q.type === '주관식'      ? 'bg-purple-50 text-purple-600' :
+                      q.type === '체크리스트'  ? 'bg-blue-50 text-blue-600' :
+                      q.type === '만족도 설문' ? 'bg-gray-200 text-gray-500' :
+                                                 'bg-amber-50 text-amber-600'
                     }`}>{q.type}</span>
                     <span className="text-sm font-medium text-gray-700 flex-1">{q.question}</span>
                     <span className="text-[11px] text-gray-300 flex-shrink-0">{q.round}회차</span>
                   </div>
-                  {/* 응답 목록 */}
+                  {/* 응답 목록 (이름 포함) */}
                   <div className="divide-y divide-gray-50">
                     {q.responses.map((r, j) => (
                       <div key={j} className="px-4 py-3 flex gap-4 hover:bg-gray-50/60 transition-colors">

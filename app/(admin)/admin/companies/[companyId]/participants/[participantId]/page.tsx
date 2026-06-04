@@ -239,7 +239,7 @@ export default function ParticipantDetailPage() {
               </div>
             </div>
 
-            <div className="flex flex-col lg:flex-row items-stretch gap-0">
+            <div className="flex flex-col gap-0">
               {DEFAULT_STORYLINE.map((s, i) => {
                 const color = STEP_COLORS[i % STEP_COLORS.length];
                 const mock = MOCK_STEPS[i];
@@ -247,8 +247,8 @@ export default function ParticipantDetailPage() {
                 const isSent = !!mock?.sentAt && !isDone;
 
                 return (
-                  <div key={s.step} className="flex flex-col lg:flex-row items-stretch flex-1 min-w-0">
-                    <div className={`flex-1 rounded-2xl border-2 ${color.border} ${color.cardBg} p-4 flex flex-col gap-2.5 relative`}>
+                  <div key={s.step} className="flex flex-col">
+                    <div className={`rounded-2xl border-2 ${color.border} ${color.cardBg} p-3 flex items-start gap-3 relative`}>
                       {/* 상태 뱃지 */}
                       <div className="absolute top-3 right-3">
                         {isDone ? (
@@ -262,40 +262,33 @@ export default function ParticipantDetailPage() {
                         )}
                       </div>
 
-                      {/* 스텝 번호 + 타이틀 */}
-                      <div className="flex items-center gap-2.5 pr-16">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${isDone ? 'bg-emerald-500' : color.badge}`}>
-                          {isDone ? (
-                            <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                            </svg>
-                          ) : (
-                            <span className="text-white text-xs font-bold">{s.step}</span>
-                          )}
-                        </div>
-                        <div>
-                          <p className={`text-sm font-bold leading-tight ${color.titleColor}`}>{s.title}</p>
-                          <p className={`text-[11px] font-semibold ${color.subtitleColor}`}>{s.subtitle}</p>
-                        </div>
+                      {/* 스텝 번호 뱃지 */}
+                      <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${isDone ? 'bg-emerald-500' : color.badge}`}>
+                        {isDone ? (
+                          <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : (
+                          <span className="text-white text-xs font-bold">{s.step}</span>
+                        )}
                       </div>
 
-                      {/* 설명 */}
-                      <p className="text-xs text-gray-500 leading-relaxed flex-1">{s.description}</p>
-
-                      {/* 발송일 */}
-                      {mock?.sentAt && (
-                        <p className="text-[10px] text-gray-300">{mock.sentAt} 발송</p>
-                      )}
+                      {/* 텍스트 */}
+                      <div className="flex-1 min-w-0 pr-16">
+                        <p className={`text-sm font-bold leading-tight ${color.titleColor}`}>{s.title}</p>
+                        <p className={`text-[11px] font-semibold mb-1 ${color.subtitleColor}`}>{s.subtitle}</p>
+                        <p className="text-xs text-gray-500 leading-snug">{s.description}</p>
+                        {mock?.sentAt && (
+                          <p className="text-[10px] text-gray-300 mt-1">{mock.sentAt} 발송</p>
+                        )}
+                      </div>
                     </div>
 
                     {/* 화살표 */}
                     {i < DEFAULT_STORYLINE.length - 1 && (
-                      <div className="flex items-center justify-center lg:px-2 py-2 lg:py-0 flex-shrink-0">
-                        <svg className="w-4 h-4 text-gray-300 lg:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <div className="flex items-center justify-center py-0.5 flex-shrink-0">
+                        <svg className="w-3.5 h-3.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                        <svg className="w-4 h-4 text-gray-300 hidden lg:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
                       </div>
                     )}
