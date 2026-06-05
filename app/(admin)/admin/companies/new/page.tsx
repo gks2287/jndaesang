@@ -110,6 +110,17 @@ export default function NewCompanyPage() {
     setShowAddRow(false);
   }
 
+  async function downloadTemplate() {
+    const { utils, writeFile } = await import('xlsx');
+    const ws = utils.aoa_to_sheet([
+      ['이름', '부서', '직책', '이메일', '리더십유형'],
+      ['홍길동', '인사팀', '부장', 'hong@example.com', '독재형'],
+    ]);
+    const wb = utils.book_new();
+    utils.book_append_sheet(wb, ws, '직책자');
+    writeFile(wb, '직책자_업로드_템플릿.xlsx');
+  }
+
   async function handleParticipantFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -298,7 +309,18 @@ export default function NewCompanyPage() {
                 )}
               </h2>
 
-              {/* 직책자 추가 버튼 */}
+              {/* 템플릿 다운로드 + 직책자 추가 버튼 */}
+              <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={downloadTemplate}
+                className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 bg-white border border-gray-200 hover:border-gray-300 hover:bg-gray-50 px-3.5 py-1.5 rounded-lg transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                템플릿 다운로드
+              </button>
               <div className="relative">
                 <input ref={participantFileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleParticipantFile} />
                 <button
@@ -351,6 +373,7 @@ export default function NewCompanyPage() {
                     </div>
                   </>
                 )}
+              </div>
               </div>
             </div>
 

@@ -7,6 +7,7 @@ import { useNewNewsletterDraftStore } from '@/store/newNewsletterDraftStore';
 import { useCompanyStore } from '@/store/companyStore';
 import { useNewsletterStore } from '@/store/newsletterStore';
 import CompanyLogo from '@/components/CompanyLogo';
+import { useParticipantStore, POSITIVE_TYPES, NEGATIVE_TYPES } from '@/store/participantStore';
 import { SavedNewsletterPreviewModal, type SavedNewsletterContent } from '@/components/newsletter/NewsletterRender';
 
 // ── 타입 ─────────────────────────────────────────────────────────────
@@ -27,12 +28,14 @@ interface TypeData {
   typeName: string;
   count: number;
   rounds: RoundData[];
+  newsletterId?: number;
 }
 
 interface PolarityGroup {
   polarity: Polarity;
   totalCount: number;
   types: TypeData[];
+  newsletterIds: number[];
 }
 
 interface CompanyData {
@@ -51,8 +54,13 @@ interface PreviewTarget {
   round: RoundData;
 }
 
+interface TypeRoundSelection {
+  typeName: string;
+  roundNums: number[];
+}
+
 interface SendConfirmTarget {
-  selections: { company: CompanyData; roundNums: number[] }[];
+  selections: { company: CompanyData; typeRounds: TypeRoundSelection[] }[];
 }
 
 // ── 목업 데이터 ──────────────────────────────────────────────────────
@@ -67,7 +75,7 @@ const MOCK_COMPANIES: CompanyData[] = [
     companyId: 1, companyName: 'LG화학', totalLeaders: 13, updatedAt: '2026-05-16',
     groups: [
       {
-        polarity: 'positive', totalCount: 8,
+        polarity: 'positive', newsletterIds: [], totalCount: 8,
         types: [
           { typeName: '코칭형', count: 5, rounds: [
             mk(1,'positive','코칭형',1,'나의 리더십을 돌아보며','completed',100),
@@ -88,7 +96,7 @@ const MOCK_COMPANIES: CompanyData[] = [
         ],
       },
       {
-        polarity: 'negative', totalCount: 5,
+        polarity: 'negative', newsletterIds: [], totalCount: 5,
         types: [
           { typeName: '독재형', count: 3, rounds: [
             mk(1,'negative','독재형',1,'나의 리더십을 돌아보며','completed',100),
@@ -114,7 +122,7 @@ const MOCK_COMPANIES: CompanyData[] = [
     companyId: 2, companyName: '현대모비스', totalLeaders: 9, updatedAt: '2026-05-14',
     groups: [
       {
-        polarity: 'positive', totalCount: 4,
+        polarity: 'positive', newsletterIds: [], totalCount: 4,
         types: [
           { typeName: '코칭형', count: 4, rounds: [
             mk(2,'positive','코칭형',1,'성장을 이끄는 질문법','completed',100),
@@ -127,7 +135,7 @@ const MOCK_COMPANIES: CompanyData[] = [
         ],
       },
       {
-        polarity: 'negative', totalCount: 5,
+        polarity: 'negative', newsletterIds: [], totalCount: 5,
         types: [
           { typeName: '불통형', count: 3, rounds: [
             mk(2,'negative','불통형',1,'소통의 벽을 허물다','completed',100),
@@ -153,7 +161,7 @@ const MOCK_COMPANIES: CompanyData[] = [
     companyId: 3, companyName: 'SK하이닉스', totalLeaders: 6, updatedAt: '2026-03-25',
     groups: [
       {
-        polarity: 'negative', totalCount: 6,
+        polarity: 'negative', newsletterIds: [], totalCount: 6,
         types: [
           { typeName: '방관형', count: 6, rounds: [
             mk(3,'negative','방관형',1,'리더의 존재 이유','completed',100),
@@ -171,7 +179,7 @@ const MOCK_COMPANIES: CompanyData[] = [
     companyId: 4, companyName: 'KT&G', totalLeaders: 8, updatedAt: '2026-05-12',
     groups: [
       {
-        polarity: 'positive', totalCount: 8,
+        polarity: 'positive', newsletterIds: [], totalCount: 8,
         types: [
           { typeName: '민주형', count: 5, rounds: [
             mk(4,'positive','민주형',1,'함께 만드는 비전','completed',100),
@@ -197,7 +205,7 @@ const MOCK_COMPANIES: CompanyData[] = [
     companyId: 5, companyName: '포스코', totalLeaders: 7, updatedAt: '2025-09-20',
     groups: [
       {
-        polarity: 'negative', totalCount: 7,
+        polarity: 'negative', newsletterIds: [], totalCount: 7,
         types: [
           { typeName: '독재형', count: 4, rounds: [
             mk(5,'negative','독재형',1,'권위와 신뢰 사이에서','completed',100),
@@ -234,6 +242,38 @@ function filterRounds(rounds: RoundData[], tab: TabType): RoundData[] {
   if (tab === '제작 중') return rounds.filter(r => r.status === 'inProgress');
   if (tab === '제작완료') return rounds.filter(r => r.status === 'completed');
   return rounds;
+}
+
+function DeleteConfirmModal({ title, description, onConfirm, onClose }: {
+  title: string; description: React.ReactNode; onConfirm: () => void; onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-5">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-gray-800">{title}</h3>
+            <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">{description}</p>
+          </div>
+        </div>
+        <div className="flex gap-2 justify-end">
+          <button onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+            취소
+          </button>
+          <button onClick={onConfirm}
+            className="px-4 py-2 text-sm font-bold bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors">
+            삭제
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function formatRelativeTime(dateStr: string): string {
@@ -366,10 +406,11 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
 }
 
 // ── 발송 확인 모달 ──────────────────────────────────────────────────
-function SendConfirmModal({ target, onConfirm, onClose }: {
-  target: SendConfirmTarget; onConfirm: () => void; onClose: () => void;
+function SendConfirmModal({ target, onConfirm, onClose, isSending }: {
+  target: SendConfirmTarget; onConfirm: () => void; onClose: () => void; isSending: boolean;
 }) {
-  const totalCount = target.selections.reduce((s, sel) => s + sel.roundNums.length, 0);
+  const totalCount = target.selections.reduce((s, sel) =>
+    s + sel.typeRounds.reduce((s2, tr) => s2 + tr.roundNums.length, 0), 0);
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-5">
@@ -384,21 +425,41 @@ function SendConfirmModal({ target, onConfirm, onClose }: {
             <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
               선택한 <span className="font-semibold text-gray-700">{totalCount}개</span> 뉴스레터를 발송하시겠습니까?
             </p>
-            <ul className="mt-2.5 space-y-1.5">
-              {target.selections.map(({ company, roundNums }) => (
-                <li key={company.companyId} className="flex items-baseline gap-1.5 text-[11px]">
-                  <span className="font-semibold text-gray-700 flex-shrink-0">{company.companyName}</span>
-                  <span className="text-gray-400 flex-shrink-0">({company.totalLeaders}명)</span>
-                  <span className="text-gray-500">— {roundNums.join('·')}회차</span>
+            <ul className="mt-2.5 space-y-2">
+              {target.selections.map(({ company, typeRounds }) => (
+                <li key={company.companyId} className="text-[11px]">
+                  <span className="font-semibold text-gray-700">{company.companyName}</span>
+                  <ul className="mt-1 ml-3 space-y-0.5">
+                    {typeRounds.map(tr => (
+                      <li key={tr.typeName} className="flex items-baseline gap-1.5">
+                        <span className="text-gray-500">{tr.typeName}</span>
+                        <span className="text-gray-400">— {tr.roundNums.join('·')}회차</span>
+                      </li>
+                    ))}
+                  </ul>
                 </li>
               ))}
             </ul>
-            <p className="text-[11px] text-gray-400 mt-2.5">(각 기업·리더십 유형별 맞춤 내용으로 발송됩니다)</p>
+            <p className="text-[11px] text-gray-400 mt-2.5">(각 리더십 유형별 해당 직책자에게 맞춤 발송됩니다)</p>
           </div>
         </div>
         <div className="flex gap-2 justify-end">
-          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">취소</button>
-          <button onClick={onConfirm} className="px-4 py-2 text-sm font-bold bg-[#55A4DA] hover:bg-[#3A8BC4] text-white rounded-lg transition-colors">발송</button>
+          <button onClick={onClose} disabled={isSending}
+            className="px-4 py-2 text-sm font-medium text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50">
+            취소
+          </button>
+          <button onClick={onConfirm} disabled={isSending}
+            className="px-4 py-2 text-sm font-bold bg-[#55A4DA] hover:bg-[#3A8BC4] text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5">
+            {isSending ? (
+              <>
+                <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                발송 중...
+              </>
+            ) : '발송'}
+          </button>
         </div>
       </div>
     </div>
@@ -452,18 +513,29 @@ function RoundRow({ round, companyName, polarity, typeName, count, isCompleteTab
 }
 
 // ── 3단계: 리더십 유형 행 ────────────────────────────────────────────
-function TypeRow({ typeData, visibleRounds, companyId, companyName, polarity, openKeys, onToggle, isCompleteTab, selectedIds, onSelectRound, onPreview }: {
+function TypeRow({ typeData, visibleRounds, companyId, companyName, polarity, openKeys, onToggle, isCompleteTab, selectedIds, onSelectRound, onPreview, selectedNewsletterIds, onToggleNewsletters }: {
   typeData: TypeData; visibleRounds: RoundData[]; companyId: number; companyName: string; polarity: Polarity;
   openKeys: Set<string>; onToggle: (k: string) => void; isCompleteTab: boolean;
   selectedIds: Set<string>; onSelectRound: (selectionId: string, checked: boolean) => void;
   onPreview: (t: PreviewTarget) => void;
+  selectedNewsletterIds: Set<number>; onToggleNewsletters: (ids: number[]) => void;
 }) {
   const key = `c${companyId}-${polarity}-${typeData.typeName}`;
   const isOpen = openKeys.has(key);
+  const nlId = typeData.newsletterId;
   return (
     <div>
       <button onClick={() => onToggle(key)}
         className="w-full flex items-center gap-3 pl-16 pr-5 py-2.5 bg-white border-b border-gray-100 hover:bg-gray-50/60 transition-colors text-left">
+        {nlId !== undefined && (
+          <input
+            type="checkbox"
+            checked={selectedNewsletterIds.has(nlId)}
+            onClick={e => e.stopPropagation()}
+            onChange={e => { e.stopPropagation(); onToggleNewsletters([nlId]); }}
+            className="w-3.5 h-3.5 rounded border-gray-300 accent-[#55A4DA] cursor-pointer flex-shrink-0"
+          />
+        )}
         <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 ${leadershipColor[typeData.typeName] ?? 'bg-gray-100 text-gray-500'}`}>
           {typeData.typeName}
         </span>
@@ -485,11 +557,12 @@ function TypeRow({ typeData, visibleRounds, companyId, companyName, polarity, op
 }
 
 // ── 2단계: 긍정/부정 행 ──────────────────────────────────────────────
-function PolarityRow({ group, companyId, companyName, openKeys, onToggle, isCompleteTab, selectedIds, onSelectRound, onPreview, activeTab }: {
+function PolarityRow({ group, companyId, companyName, openKeys, onToggle, isCompleteTab, selectedIds, onSelectRound, onPreview, activeTab, selectedNewsletterIds, onToggleNewsletters }: {
   group: PolarityGroup; companyId: number; companyName: string;
   openKeys: Set<string>; onToggle: (k: string) => void; isCompleteTab: boolean;
   selectedIds: Set<string>; onSelectRound: (selectionId: string, checked: boolean) => void;
   onPreview: (t: PreviewTarget) => void; activeTab: TabType;
+  selectedNewsletterIds: Set<number>; onToggleNewsletters: (ids: number[]) => void;
 }) {
   const key = `c${companyId}-${group.polarity}`;
   const isOpen = openKeys.has(key);
@@ -510,6 +583,15 @@ function PolarityRow({ group, companyId, companyName, openKeys, onToggle, isComp
     <div>
       <button onClick={() => onToggle(key)}
         className={`w-full flex items-center gap-3 pl-8 pr-5 py-2.5 border-b border-gray-100 transition-colors text-left ${isPositive ? 'bg-blue-50/30 hover:bg-blue-50/50' : 'bg-red-50/20 hover:bg-red-50/40'}`}>
+        {group.newsletterIds.length > 0 && (
+          <input
+            type="checkbox"
+            checked={group.newsletterIds.every(id => selectedNewsletterIds.has(id))}
+            onClick={e => e.stopPropagation()}
+            onChange={e => { e.stopPropagation(); onToggleNewsletters(group.newsletterIds); }}
+            className="w-3.5 h-3.5 rounded border-gray-300 accent-[#55A4DA] cursor-pointer flex-shrink-0"
+          />
+        )}
         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isPositive ? 'bg-blue-400' : 'bg-red-400'}`} />
         <span className={`text-sm font-semibold flex-1 ${isPositive ? 'text-blue-700' : 'text-red-700'}`}>
           {isPositive ? '긍정적 리더' : '부정적 리더'}
@@ -540,18 +622,21 @@ function PolarityRow({ group, companyId, companyName, openKeys, onToggle, isComp
           companyId={companyId} companyName={companyName} polarity={group.polarity}
           openKeys={openKeys} onToggle={onToggle} isCompleteTab={isCompleteTab}
           selectedIds={selectedIds} onSelectRound={onSelectRound}
-          onPreview={onPreview} />
+          onPreview={onPreview}
+          selectedNewsletterIds={selectedNewsletterIds} onToggleNewsletters={onToggleNewsletters} />
       )))}
     </div>
   );
 }
 
 // ── 1단계: 기업 행 ───────────────────────────────────────────────────
-function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, activeTab, selectedIds, onSelectRound, onSelectRoundBulk }: {
+function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, activeTab, selectedIds, onSelectRound, onSelectRoundBulk, onDelete, selectedNewsletterIds, onToggleNewsletters }: {
   company: CompanyData; openKeys: Set<string>; onToggle: (k: string) => void;
   isCompleteTab: boolean; onPreview: (t: PreviewTarget) => void; activeTab: TabType;
   selectedIds: Set<string>; onSelectRound: (selectionId: string, checked: boolean) => void;
   onSelectRoundBulk: (selectionIds: string[], checked: boolean) => void;
+  onDelete: (company: CompanyData) => void;
+  selectedNewsletterIds: Set<number>; onToggleNewsletters: (ids: number[]) => void;
 }) {
   const key = `c${company.companyId}`;
   const isOpen = openKeys.has(key);
@@ -620,6 +705,15 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
           </div>
         </div>
         <span className="text-xs text-gray-400 flex-shrink-0">{formatRelativeTime(company.updatedAt)}</span>
+        <button
+          onClick={e => { e.stopPropagation(); onDelete(company); }}
+          className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors"
+          title="삭제"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </button>
         <svg className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
           fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -634,7 +728,8 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
               <PolarityRow key={group.polarity} group={group} companyId={company.companyId}
                 companyName={company.companyName} openKeys={openKeys} onToggle={onToggle}
                 isCompleteTab={isCompleteTab} selectedIds={selectedIds}
-                onSelectRound={onSelectRound} onPreview={onPreview} activeTab={activeTab} />
+                onSelectRound={onSelectRound} onPreview={onPreview} activeTab={activeTab}
+                selectedNewsletterIds={selectedNewsletterIds} onToggleNewsletters={onToggleNewsletters} />
             ))}
           </div>
 
@@ -669,6 +764,7 @@ function NewslettersContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const resetDraft = useNewNewsletterDraftStore(s => s.resetDraft);
+  const removeNewsletter = useNewsletterStore(s => s.removeNewsletter);
   const draftCompanyIds = useNewNewsletterDraftStore(s => s.companyIds);
   const draftWizardStep = useNewNewsletterDraftStore(s => s.wizardStep);
   const companies = useCompanyStore(s => s.companies);
@@ -684,7 +780,76 @@ function NewslettersContent() {
   const [sendConfirmTarget, setSendConfirmTarget] = useState<SendConfirmTarget | null>(null);
   const [previewTarget, setPreviewTarget] = useState<PreviewTarget | null>(null);
   const newsletters = useNewsletterStore(s => s.newsletters);
+  const participants = useParticipantStore(s => s.participants);
   const [savedPreview, setSavedPreview] = useState<{ title: string; content: SavedNewsletterContent } | null>(null);
+
+  // companyStore + participantStore + newsletterStore에서 CompanyData 동적 생성
+  const allCompanies = useMemo<CompanyData[]>(() => {
+    const result: CompanyData[] = [];
+
+    for (const company of companies) {
+      const companyPs = participants.filter(p => p.companyId === company.id);
+      if (companyPs.length === 0) continue;
+
+      // 해당 기업의 뉴스레터 목록 (유형 매칭 또는 기업 전체 대상)
+      const companyNLs = newsletters.filter(n => n.companyId === company.id);
+
+      const positivePs = companyPs.filter(p => POSITIVE_TYPES.includes(p.leadershipType));
+      const negativePs = companyPs.filter(p => NEGATIVE_TYPES.includes(p.leadershipType));
+
+      function buildRoundsFromNL(nl: typeof companyNLs[number]): RoundData[] {
+        return Array.from({ length: nl.totalRounds }, (_, i) => ({
+          id: `nl-${nl.id}-r${i + 1}`,
+          round: i + 1,
+          stage: STAGES[i % STAGES.length],
+          topic: nl.generatedContent?.rounds[i]?.generated?.headline ?? null,
+          status: (i < nl.completedRounds ? 'completed' : 'inProgress') as RoundStatus,
+          progressPct: i < nl.completedRounds ? 100 : 0,
+        }));
+      }
+
+      function buildTypes(ps: typeof companyPs): TypeData[] {
+        const typeMap = new Map<string, number>();
+        ps.forEach(p => typeMap.set(p.leadershipType, (typeMap.get(p.leadershipType) ?? 0) + 1));
+
+        return Array.from(typeMap.entries()).map(([typeName, count]) => {
+          // 1순위: 유형이 정확히 일치하는 뉴스레터
+          // 2순위: 기업 전체 대상 뉴스레터 (leadershipType이 '미지정' 등)
+          const nl = companyNLs.find(n => n.leadershipType === typeName)
+            ?? companyNLs.find(n =>
+              !POSITIVE_TYPES.includes(n.leadershipType as typeof POSITIVE_TYPES[number])
+              && !NEGATIVE_TYPES.includes(n.leadershipType as typeof NEGATIVE_TYPES[number])
+            );
+
+          const rounds = nl ? buildRoundsFromNL(nl) : [];
+          return { typeName, count, rounds, newsletterId: nl?.id };
+        });
+      }
+
+      const positiveNLIds = companyNLs.filter(n => n.leaderType === 'positive').map(n => n.id);
+      const negativeNLIds = companyNLs.filter(n => n.leaderType === 'negative').map(n => n.id);
+
+      const groups: PolarityGroup[] = [];
+      if (positivePs.length > 0) {
+        groups.push({ polarity: 'positive', newsletterIds: positiveNLIds, totalCount: positivePs.length, types: buildTypes(positivePs) });
+      }
+      if (negativePs.length > 0) {
+        groups.push({ polarity: 'negative', newsletterIds: negativeNLIds, totalCount: negativePs.length, types: buildTypes(negativePs) });
+      }
+
+      const latestNL = companyNLs.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+
+      result.push({
+        companyId: company.id,
+        companyName: company.name,
+        totalLeaders: companyPs.length,
+        groups,
+        updatedAt: latestNL?.updatedAt ?? company.startDate,
+      });
+    }
+
+    return result;
+  }, [companies, participants, newsletters]);
 
   // 미리보기: 제작완료 + 생성 본문이 저장된 뉴스레터면 콘텐츠 구성 단계와 동일한 미리보기 모달, 아니면 기존 요약 카드
   function handlePreview(target: PreviewTarget) {
@@ -715,22 +880,23 @@ function NewslettersContent() {
 
   useEffect(() => {
     setSelectedRoundsByCompany(new Map());
+    setSelectedNewsletterIds(new Set());
     setOpenKeys(new Set());
   }, [activeTab]);
 
   const isCompleteTab = activeTab === '제작완료';
 
   const countByStatus = useMemo(() => {
-    const all = MOCK_COMPANIES.flatMap(c => c.groups.flatMap(g => g.types.flatMap(t => t.rounds)));
+    const all = allCompanies.flatMap(c => c.groups.flatMap(g => g.types.flatMap(t => t.rounds)));
     return { '제작 중': all.filter(r => r.status === 'inProgress').length, '제작완료': all.filter(r => r.status === 'completed').length };
-  }, []);
+  }, [allCompanies]);
 
   const filteredCompanies = useMemo(() => {
-    let list = [...MOCK_COMPANIES].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    let list = [...allCompanies].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     if (companyFilter) list = list.filter(c => c.companyName === companyFilter);
     if (search.trim()) list = list.filter(c => c.companyName.includes(search.trim()));
     return list;
-  }, [companyFilter, search]);
+  }, [allCompanies, companyFilter, search]);
 
   function toggleKey(k: string) {
     setOpenKeys(prev => { const next = new Set(prev); next.has(k) ? next.delete(k) : next.add(k); return next; });
@@ -763,27 +929,171 @@ function NewslettersContent() {
 
   function handleGlobalSend() {
     const selections = filteredCompanies
-      .map(c => ({
-        company: c,
-        roundNums: [...new Set(
-          Array.from(selectedRoundsByCompany.get(c.companyId) ?? [])
-            .map(id => Number(id.split('-').at(-1)))
-        )].sort((a, b) => a - b),
-      }))
-      .filter(s => s.roundNums.length > 0);
+      .map(c => {
+        const ids = selectedRoundsByCompany.get(c.companyId);
+        if (!ids || ids.size === 0) return null;
+
+        // selection ID "독재형-1" → typeName="독재형", roundNum=1
+        const typeMap = new Map<string, Set<number>>();
+        for (const id of ids) {
+          const lastDash = id.lastIndexOf('-');
+          if (lastDash < 0) continue;
+          const typeName = id.slice(0, lastDash);
+          const roundNum = Number(id.slice(lastDash + 1));
+          if (!Number.isFinite(roundNum)) continue;
+          const set = typeMap.get(typeName) ?? new Set();
+          set.add(roundNum);
+          typeMap.set(typeName, set);
+        }
+
+        const typeRounds: TypeRoundSelection[] = Array.from(typeMap.entries())
+          .map(([typeName, nums]) => ({ typeName, roundNums: [...nums].sort((a, b) => a - b) }));
+
+        if (typeRounds.length === 0) return null;
+        return { company: c, typeRounds };
+      })
+      .filter((s): s is NonNullable<typeof s> => s !== null);
+
     if (selections.length === 0) return;
     setSendConfirmTarget({ selections });
   }
 
-  function handleSendConfirm() {
-    if (!sendConfirmTarget) return;
-    console.log('발송:', sendConfirmTarget.selections.map(s => ({
-      company: s.company.companyName,
-      totalLeaders: s.company.totalLeaders,
-      roundNums: s.roundNums,
-    })));
-    setSelectedRoundsByCompany(new Map());
-    setSendConfirmTarget(null);
+  const [deleteTarget, setDeleteTarget] = useState<CompanyData | null>(null);
+  const [selectedNewsletterIds, setSelectedNewsletterIds] = useState<Set<number>>(new Set());
+  const [deleteAllConfirm, setDeleteAllConfirm] = useState(false);
+  const [deleteSelectedConfirm, setDeleteSelectedConfirm] = useState(false);
+
+  function handleDeleteConfirm() {
+    if (!deleteTarget) return;
+    newsletters.filter(n => n.companyId === deleteTarget.companyId).forEach(n => removeNewsletter(n.id));
+    setDeleteTarget(null);
+  }
+
+  function handleDeleteAll() {
+    filteredCompanies.forEach(c =>
+      newsletters.filter(n => n.companyId === c.companyId).forEach(n => removeNewsletter(n.id))
+    );
+    setSelectedNewsletterIds(new Set());
+    setDeleteAllConfirm(false);
+  }
+
+  function handleDeleteSelected() {
+    selectedNewsletterIds.forEach(id => removeNewsletter(id));
+    setSelectedNewsletterIds(new Set());
+    setDeleteSelectedConfirm(false);
+  }
+
+  function toggleNewsletterSelect(ids: number[]) {
+    setSelectedNewsletterIds(prev => {
+      const next = new Set(prev);
+      const allSelected = ids.every(id => next.has(id));
+      ids.forEach(id => allSelected ? next.delete(id) : next.add(id));
+      return next;
+    });
+  }
+
+  const allFilteredNlIds = useMemo(() =>
+    filteredCompanies.flatMap(c => c.groups.flatMap(g => g.newsletterIds)),
+    [filteredCompanies]
+  );
+  const allFilteredSelected = allFilteredNlIds.length > 0 &&
+    allFilteredNlIds.every(id => selectedNewsletterIds.has(id));
+
+  const [isSending, setIsSending] = useState(false);
+  const [sendResult, setSendResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // 발송 결과 토스트 자동 닫기
+  useEffect(() => {
+    if (!sendResult) return;
+    const timer = setTimeout(() => setSendResult(null), 5000);
+    return () => clearTimeout(timer);
+  }, [sendResult]);
+
+  async function handleSendConfirm() {
+    if (!sendConfirmTarget || isSending) return;
+    setIsSending(true);
+    setSendResult(null);
+
+    let totalSent = 0;
+    let hasError = false;
+    const errorMessages: string[] = [];
+
+    try {
+      for (const { company, typeRounds } of sendConfirmTarget.selections) {
+        for (const { typeName, roundNums } of typeRounds) {
+          // 해당 유형의 직책자 목록 필터
+          const isPositive = typeName === '긍정 리더';
+          const typeParticipants = participants.filter(p => {
+            if (p.companyId !== company.companyId) return false;
+            if (isPositive) return POSITIVE_TYPES.includes(p.leadershipType);
+            return p.leadershipType === typeName;
+          });
+          if (typeParticipants.length === 0) continue;
+
+          // 해당 유형의 뉴스레터 찾기 (생성 본문이 있는 제작완료 뉴스레터)
+          const nl = newsletters.find(n => {
+            if (n.companyId !== company.companyId || n.status !== '제작완료') return false;
+            if (!n.generatedContent || n.generatedContent.rounds.length === 0) return false;
+            if (isPositive) return n.leaderType === 'positive';
+            return n.leadershipType === typeName;
+          });
+          if (!nl?.generatedContent) continue;
+
+          // 선택된 회차별로 발송
+          for (const roundNum of roundNums) {
+            const savedRound = nl.generatedContent.rounds[roundNum - 1];
+            if (!savedRound) continue;
+
+            const recipients = typeParticipants.map(p => ({
+              email: p.email,
+              name: p.name,
+              token: undefined as string | undefined,
+            }));
+
+            const res = await fetch('/api/newsletter/send', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                recipients,
+                round: {
+                  vol: savedRound.vol,
+                  dateLabel: savedRound.dateLabel,
+                  generated: savedRound.generated,
+                },
+                companyName: company.companyName,
+              }),
+            });
+
+            if (res.ok) {
+              const data = await res.json();
+              totalSent += data.sent ?? 0;
+            } else {
+              const err = await res.json().catch(() => ({ error: '발송 실패' }));
+              const errMsg = err.error ?? '발송 실패';
+              console.error(`[발송 실패] ${company.companyName} ${typeName} ${roundNum}회차:`, errMsg);
+              errorMessages.push(`${company.companyName} ${typeName} ${roundNum}회차: ${errMsg}`);
+              hasError = true;
+            }
+          }
+        }
+      }
+
+      setSendResult({
+        success: !hasError,
+        message: hasError
+          ? `일부 발송에 실패했습니다. (${totalSent}건 발송 완료)\n${errorMessages.join('\n')}`
+          : `${totalSent}건의 이메일이 발송되었습니다.`,
+      });
+    } catch (err) {
+      setSendResult({
+        success: false,
+        message: err instanceof Error ? err.message : '발송 중 오류가 발생했습니다.',
+      });
+    } finally {
+      setIsSending(false);
+      setSelectedRoundsByCompany(new Map());
+      setSendConfirmTarget(null);
+    }
   }
 
   return (
@@ -848,15 +1158,46 @@ function NewslettersContent() {
           <select value={companyFilter} onChange={e => setCompanyFilter(e.target.value)}
             className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 bg-gray-50 outline-none focus:border-[#55A4DA] transition-colors cursor-pointer">
             <option value="">전체 기업</option>
-            {MOCK_COMPANIES.map(c => <option key={c.companyId} value={c.companyName}>{c.companyName}</option>)}
+            {allCompanies.map(c => <option key={c.companyId} value={c.companyName}>{c.companyName}</option>)}
           </select>
         </div>
 
-        {/* 최근 탭 카운트 헤더 */}
-        {activeTab === '최근' && filteredCompanies.length > 0 && (
-          <p className="text-xs text-gray-400 font-medium mb-2 pl-1">
-            최근 수정한 뉴스레터 <span className="text-gray-600 font-semibold">{filteredCompanies.length}건</span>
-          </p>
+        {/* 선택 액션 바 */}
+        {filteredCompanies.length > 0 && (
+          <div className="flex items-center gap-2 mb-3">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={allFilteredSelected}
+                onChange={e => {
+                  if (e.target.checked) setSelectedNewsletterIds(new Set(allFilteredNlIds));
+                  else setSelectedNewsletterIds(new Set());
+                }}
+                className="w-4 h-4 rounded border-gray-300 accent-[#55A4DA] cursor-pointer"
+              />
+              <span className="text-xs text-gray-500">전체선택</span>
+            </label>
+            {selectedNewsletterIds.size > 0 && (
+              <button
+                onClick={() => setDeleteSelectedConfirm(true)}
+                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 border border-red-200 transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                선택 삭제 ({selectedNewsletterIds.size})
+              </button>
+            )}
+            <button
+              onClick={() => setDeleteAllConfirm(true)}
+              className="ml-auto flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 border border-gray-200 hover:border-red-200 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              전체삭제
+            </button>
+          </div>
         )}
 
         {/* 드릴다운 목록 */}
@@ -877,6 +1218,9 @@ function NewslettersContent() {
                 selectedIds={selectedRoundsByCompany.get(company.companyId) ?? new Set()}
                 onSelectRound={(selectionId, checked) => handleSelectRound(company.companyId, selectionId, checked)}
                 onSelectRoundBulk={(ids, checked) => handleSelectRoundBulk(company.companyId, ids, checked)}
+                onDelete={setDeleteTarget}
+                selectedNewsletterIds={selectedNewsletterIds}
+                onToggleNewsletters={toggleNewsletterSelect}
               />
             ))
           )}
@@ -902,6 +1246,33 @@ function NewslettersContent() {
         </div>
       )}
 
+      {/* 개별 삭제 확인 */}
+      {deleteTarget && (
+        <DeleteConfirmModal
+          title="뉴스레터를 삭제하시겠습니까?"
+          description={<><span className="font-semibold text-gray-700">"{deleteTarget.companyName}"</span>의 뉴스레터가 모두 삭제됩니다.<br />삭제 후 복구할 수 없습니다.</>}
+          onConfirm={handleDeleteConfirm}
+          onClose={() => setDeleteTarget(null)}
+        />
+      )}
+      {/* 선택 삭제 확인 */}
+      {deleteSelectedConfirm && (
+        <DeleteConfirmModal
+          title="선택한 뉴스레터를 삭제하시겠습니까?"
+          description={<><span className="font-semibold text-gray-700">{selectedNewsletterIds.size}개 뉴스레터</span>가 삭제됩니다.<br />삭제 후 복구할 수 없습니다.</>}
+          onConfirm={handleDeleteSelected}
+          onClose={() => setDeleteSelectedConfirm(false)}
+        />
+      )}
+      {/* 전체삭제 확인 */}
+      {deleteAllConfirm && (
+        <DeleteConfirmModal
+          title="전체 뉴스레터를 삭제하시겠습니까?"
+          description={<><span className="font-semibold text-gray-700">{filteredCompanies.length}개 기업</span>의 뉴스레터가 모두 삭제됩니다.<br />삭제 후 복구할 수 없습니다.</>}
+          onConfirm={handleDeleteAll}
+          onClose={() => setDeleteAllConfirm(false)}
+        />
+      )}
       {previewTarget && <PreviewModal target={previewTarget} onClose={() => setPreviewTarget(null)} />}
       <SavedNewsletterPreviewModal
         open={!!savedPreview}
@@ -910,11 +1281,36 @@ function NewslettersContent() {
         content={savedPreview?.content ?? null}
       />
       {sendConfirmTarget && (
-        <SendConfirmModal target={sendConfirmTarget} onConfirm={handleSendConfirm} onClose={() => setSendConfirmTarget(null)} />
+        <SendConfirmModal target={sendConfirmTarget} onConfirm={handleSendConfirm}
+          onClose={() => setSendConfirmTarget(null)} isSending={isSending} />
       )}
       {showRecovery && (
         <RecoveryModal companyNames={draftCompanyNames} stepLabel={draftStepLabel}
           onNew={handleNewDraft} onContinue={handleContinueDraft} onClose={() => setShowRecovery(false)} />
+      )}
+      {/* 발송 결과 토스트 */}
+      {sendResult && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4 max-w-lg w-full px-4">
+          <div className={`flex items-start gap-2.5 px-5 py-3 rounded-xl shadow-lg text-sm font-medium ${
+            sendResult.success ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
+          }`}>
+            {sendResult.success ? (
+              <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            )}
+            <span className="whitespace-pre-line">{sendResult.message}</span>
+            <button onClick={() => setSendResult(null)} className="ml-2 text-white/70 hover:text-white">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

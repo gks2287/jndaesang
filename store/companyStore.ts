@@ -66,6 +66,6 @@ export const useCompanyStore = create<CompanyStore>((set, get) => ({
       initials: getInitials(data.name),
       color,
     };
-    set({ companies: [...companies, newCompany] });
+    set({ companies: [newCompany, ...companies] });
   },
 }));
