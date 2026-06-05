@@ -76,6 +76,18 @@ const [search, setSearch] = useState('');
   const [uploadResult, setUploadResult] = useState<{ count: number; error?: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  function downloadTemplate() {
+    import('xlsx').then(({ utils, writeFile }) => {
+      const ws = utils.aoa_to_sheet([
+        ['이름', '부서', '직책', '이메일', '리더십유형'],
+        ['홍길동', '인사팀', '부장', 'hong@example.com', '독재형'],
+      ]);
+      const wb = utils.book_new();
+      utils.book_append_sheet(wb, ws, '직책자');
+      writeFile(wb, '직책자_업로드_템플릿.xlsx');
+    });
+  }
+
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -117,7 +129,7 @@ const [search, setSearch] = useState('');
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden" onClick={() => setAddMenuOpen(false)}>
       {/* 업로드 토스트 */}
       {uploadResult && (
         <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-medium transition-all ${
@@ -222,6 +234,47 @@ const [search, setSearch] = useState('');
           <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-gray-50/60">
             <p className="text-sm text-gray-500 font-medium">직책자 목록</p>
             <div className="flex items-center gap-2">
+              {/* Excel 업로드 */}
+              <div className="relative" onClick={e => e.stopPropagation()}>
+                <button
+                  onClick={() => setAddMenuOpen(v => !v)}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#55A4DA] hover:bg-[#4090c8] px-3 py-1.5 rounded-lg transition-colors shadow-sm"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                  </svg>
+                  직책자 추가
+                </button>
+                {addMenuOpen && (
+                  <div className="absolute right-0 top-full mt-1.5 bg-white border border-gray-200 rounded-xl shadow-lg z-20 py-1 min-w-[160px]">
+                    <button
+                      onClick={() => { downloadTemplate(); setAddMenuOpen(false); }}
+                      className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      템플릿 다운로드
+                    </button>
+                    <button
+                      onClick={() => { fileInputRef.current?.click(); setAddMenuOpen(false); }}
+                      className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l4-4m0 0l4 4m-4-4v12" />
+                      </svg>
+                      Excel 업로드
+                    </button>
+                  </div>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                />
+              </div>
               {/* 리더십 유형 필터 */}
               <div className="relative">
                 <select className="appearance-none text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg pl-3 pr-7 py-1.5 outline-none cursor-pointer hover:border-[#55A4DA]/60 focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/20 transition-all shadow-sm">

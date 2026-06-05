@@ -871,6 +871,9 @@ function ConfigureContent() {
       ? leadershipTypes[0]
       : '미지정';
     const autoTitle = `${company?.name ?? '미지정'} ${leadershipType} 리더십 코칭`.trim();
+    const isNegative = NEGATIVE_TYPES.includes(leadershipType as typeof NEGATIVE_TYPES[number]);
+    const posTypes = [...new Set(positiveParticipants.map(p => p.leadershipType))];
+    const negTypes = [...new Set(negativeParticipants.map(p => p.leadershipType))];
     addNewsletter({
       title: autoTitle,
       companyId: company?.id ?? 0,
@@ -878,13 +881,13 @@ function ConfigureContent() {
       leadershipType,
       status,
       stepCount: customStoryline.length,
-      positiveLeaders: { types: [], count: 0 },
-      negativeLeaders: { types: [leadershipType], count: 0 },
+      positiveLeaders: { types: posTypes, count: positiveParticipants.length },
+      negativeLeaders: { types: negTypes, count: negativeParticipants.length },
       totalRounds: customStoryline.length,
       completedRounds: status === '제작완료' ? customStoryline.length : 0,
       type: 'general',
-      leaderType: 'negative',
-      totalLeaders: 0,
+      leaderType: isNegative ? 'negative' : 'positive',
+      totalLeaders: selectedParticipants.length,
       generatedContent: savedContent,
     });
     configDraft.resetDraft();
@@ -901,11 +904,14 @@ function ConfigureContent() {
   function handleDraftSave() {
     // savedByUser 플래그 저장 → 복구 팝업 억제용
     localStorage.setItem('newsletter_draft_saved', JSON.stringify({ savedByUser: true }));
-    // mock 뉴스레터 목록에 추가
+    // 뉴스레터 목록에 추가
     const company = targetCompanies[0];
     const leadershipType = leadershipTypes.length > 0
       ? leadershipTypes[0]
       : '미지정';
+    const isNegative = NEGATIVE_TYPES.includes(leadershipType as typeof NEGATIVE_TYPES[number]);
+    const posTypes = [...new Set(positiveParticipants.map(p => p.leadershipType))];
+    const negTypes = [...new Set(negativeParticipants.map(p => p.leadershipType))];
     addNewsletter({
       title: `${company?.name ?? '미지정'} ${leadershipType} 리더십 코칭`.trim(),
       companyId: company?.id ?? 0,
@@ -913,13 +919,13 @@ function ConfigureContent() {
       leadershipType,
       status: '제작 중',
       stepCount: customStoryline.length,
-      positiveLeaders: { types: [], count: 0 },
-      negativeLeaders: { types: [leadershipType], count: 0 },
+      positiveLeaders: { types: posTypes, count: positiveParticipants.length },
+      negativeLeaders: { types: negTypes, count: negativeParticipants.length },
       totalRounds: customStoryline.length,
       completedRounds: 0,
       type: 'general',
-      leaderType: 'negative',
-      totalLeaders: 0,
+      leaderType: isNegative ? 'negative' : 'positive',
+      totalLeaders: selectedParticipants.length,
     });
     // sessionStorage(Zustand) 클리어 → 이후 새로 만들기 시 팝업 안 뜸
     configDraft.resetDraft();

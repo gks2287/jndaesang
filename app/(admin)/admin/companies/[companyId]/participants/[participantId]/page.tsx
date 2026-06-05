@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useCompanyStore } from '@/store/companyStore';
-import { useParticipantStore, type LeadershipType, type DeliveryStatus } from '@/store/participantStore';
+import { useParticipantStore, POSITIVE_TYPES, NEGATIVE_TYPES, type LeadershipType, type DeliveryStatus } from '@/store/participantStore';
 import { useDiagnosisHistoryStore } from '@/store/diagnosisHistoryStore';
 import { DEFAULT_STORYLINE, STEP_COLORS } from '@/lib/storyline';
 
@@ -83,6 +83,10 @@ const LOG_ROUNDS: number[] = (() => {
 })();
 const AVAILABLE_ROUNDS = [...new Set(LOG_ROUNDS)].filter(r => r > 0).sort((a, b) => a - b);
 
+const ALL_LEADERSHIP_TYPES: LeadershipType[] = [...POSITIVE_TYPES, ...NEGATIVE_TYPES];
+const POSITIONS = ['부장', '차장', '과장', '대리', '팀장', '이사', '상무', '전무', '본부장'];
+const DELIVERY_STATUSES: DeliveryStatus[] = ['미발송', '발송완료', '열람', '완료'];
+
 export default function ParticipantDetailPage() {
   const params = useParams();
   const companyId = Number(params.companyId);
@@ -90,6 +94,7 @@ export default function ParticipantDetailPage() {
 
   const company = useCompanyStore(s => s.companies.find(c => c.id === companyId));
   const participant = useParticipantStore(s => s.participants.find(p => p.id === participantId));
+  const updateParticipant = useParticipantStore(s => s.updateParticipant);
   const rawHistory = useDiagnosisHistoryStore(s => s.history);
   const diagnosisHistory = useMemo(
     () => rawHistory.filter(h => h.participantId === participantId).sort((a, b) => b.id - a.id),
@@ -107,13 +112,51 @@ export default function ParticipantDetailPage() {
   const badge = deliveryBadge[participant.deliveryStatus];
   const leaderColor = leadershipColor[participant.leadershipType] ?? 'bg-gray-100 text-gray-600';
   const leaderInfo = leadershipDesc[participant.leadershipType];
+
+  // 아직 뉴스레터가 발송되지 않은 직책자는 빈 상태로 표시
+  const hasStarted = participant.stepCurrent > 0 || participant.deliveryStatus !== '미발송';
+  const activeSteps = hasStarted ? MOCK_STEPS : [];
+  const activeLogs = hasStarted ? MOCK_LOGS : [];
+  const activeLogRounds = hasStarted ? LOG_ROUNDS : [];
+  const activeAvailableRounds = hasStarted ? AVAILABLE_ROUNDS : [];
+
   const progressPct = Math.round((participant.stepCurrent / participant.stepTotal) * 100);
   const [expandedLog, setExpandedLog] = useState<number | null>(null);
   const [activeRound, setActiveRound] = useState<number | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: participant?.name ?? '',
+    department: participant?.department ?? '',
+    position: participant?.position ?? '',
+    email: participant?.email ?? '',
+    leadershipType: (participant?.leadershipType ?? '독재형') as LeadershipType,
+    assessmentRound: participant?.assessmentRound ?? 1,
+    deliveryStatus: (participant?.deliveryStatus ?? '미발송') as DeliveryStatus,
+  });
 
-  // 실제 데이터에 맞게 스텝 완료 수 계산
-  const completedSteps = MOCK_STEPS.filter(s => s.completed).length;
-  const avgInteraction = MOCK_STEPS.filter(s => s.completed).reduce((acc, s) => acc + s.interactionRate, 0) / (completedSteps || 1);
+  function openEdit() {
+    if (!participant) return;
+    setEditForm({
+      name: participant.name,
+      department: participant.department,
+      position: participant.position,
+      email: participant.email,
+      leadershipType: participant.leadershipType,
+      assessmentRound: participant.assessmentRound,
+      deliveryStatus: participant.deliveryStatus,
+    });
+    setEditOpen(true);
+  }
+
+  function handleEditSave() {
+    updateParticipant(participantId, editForm);
+    setEditOpen(false);
+  }
+
+  const completedSteps = activeSteps.filter(s => s.completed).length;
+  const avgInteraction = completedSteps > 0
+    ? activeSteps.filter(s => s.completed).reduce((acc, s) => acc + s.interactionRate, 0) / completedSteps
+    : 0;
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-gray-50">
@@ -132,7 +175,7 @@ export default function ParticipantDetailPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button className="text-sm font-medium text-white bg-[#55A4DA] hover:bg-[#3A8BC4] px-4 py-2 rounded-lg transition-colors">
+          <button onClick={openEdit} className="text-sm font-medium text-white bg-[#55A4DA] hover:bg-[#3A8BC4] px-4 py-2 rounded-lg transition-colors">
             정보 수정
           </button>
         </div>
@@ -195,7 +238,7 @@ export default function ParticipantDetailPage() {
           <div className="grid grid-cols-4 gap-4">
             <StatCard
               label="뉴스레터 진척도"
-              value={`${participant.assessmentRound}회차`}
+              value={`${participant.stepCurrent}회차`}
               suffix={`/ ${participant.stepTotal}회차`}
               sub="최근 완료 기준"
               color="text-gray-800"
@@ -205,20 +248,20 @@ export default function ParticipantDetailPage() {
               value={`${completedSteps}단계`}
               suffix={`/ ${participant.stepTotal}단계`}
               sub="완료 기준"
-              color="text-emerald-600"
+              color={completedSteps > 0 ? 'text-emerald-600' : 'text-gray-400'}
             />
             <StatCard
               label="평균 참여도"
-              value="68%"
+              value={hasStarted ? '68%' : '0%'}
               sub="발송 기준"
-              color="text-gray-800"
-              percent={68}
+              color={hasStarted ? 'text-gray-800' : 'text-gray-400'}
+              percent={hasStarted ? 68 : 0}
             />
             <StatCard
               label="평균 인터랙션"
               value={`${Math.round(avgInteraction)}%`}
               sub="완료 스텝 기준"
-              color="text-purple-600"
+              color={avgInteraction > 0 ? 'text-purple-600' : 'text-gray-400'}
               percent={Math.round(avgInteraction)}
             />
           </div>
@@ -242,7 +285,7 @@ export default function ParticipantDetailPage() {
             <div className="flex flex-col gap-0">
               {DEFAULT_STORYLINE.map((s, i) => {
                 const color = STEP_COLORS[i % STEP_COLORS.length];
-                const mock = MOCK_STEPS[i];
+                const mock = activeSteps[i];
                 const isDone = mock?.completed ?? false;
                 const isSent = !!mock?.sentAt && !isDone;
 
@@ -304,7 +347,7 @@ export default function ParticipantDetailPage() {
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-bold text-gray-800">활동 로그</h2>
             <span className="text-xs text-gray-400">
-              {activeRound === null ? MOCK_LOGS.length : MOCK_LOGS.filter((_, i) => LOG_ROUNDS[i] === activeRound).length}건
+              {activeRound === null ? activeLogs.length : activeLogs.filter((_, i) => activeLogRounds[i] === activeRound).length}건
             </span>
           </div>
 
@@ -320,8 +363,8 @@ export default function ParticipantDetailPage() {
             >
               전체
             </button>
-            {AVAILABLE_ROUNDS.map(round => {
-              const step = MOCK_STEPS.find(s => s.step === round);
+            {activeAvailableRounds.map(round => {
+              const step = activeSteps.find(s => s.step === round);
               const rate = step?.interactionRate ?? 0;
               const isActive = activeRound === round;
               return (
@@ -348,9 +391,14 @@ export default function ParticipantDetailPage() {
           </div>
 
           <div className="space-y-2">
-            {(activeRound === null ? MOCK_LOGS : MOCK_LOGS.filter((_, i) => LOG_ROUNDS[i] === activeRound))
+            {activeLogs.length === 0 && (
+              <div className="flex items-center justify-center h-20 text-sm text-gray-400">
+                아직 활동 기록이 없습니다.
+              </div>
+            )}
+            {(activeRound === null ? activeLogs : activeLogs.filter((_, i) => activeLogRounds[i] === activeRound))
             .map((log, i) => {
-              const origIdx = activeRound === null ? i : MOCK_LOGS.indexOf(log);
+              const origIdx = activeRound === null ? i : activeLogs.indexOf(log);
               const style = logIcon[log.type as keyof typeof logIcon];
               const isInteract = log.type === 'interact' && log.response;
               const isSurvey = log.type === 'survey' && log.response;
@@ -427,6 +475,123 @@ export default function ParticipantDetailPage() {
         </div>
 
       </div>
+
+      {/* ── 정보 수정 모달 ── */}
+      {editOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+            {/* 헤더 */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h2 className="text-sm font-bold text-gray-800">직책자 정보 수정</h2>
+              <button onClick={() => setEditOpen(false)} className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* 폼 */}
+            <div className="px-6 py-5 space-y-4">
+              {/* 이름 */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1.5">이름</label>
+                <input
+                  type="text"
+                  value={editForm.name}
+                  onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition"
+                />
+              </div>
+
+              {/* 부서 / 직책 */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1.5">부서</label>
+                  <input
+                    type="text"
+                    value={editForm.department}
+                    onChange={e => setEditForm(f => ({ ...f, department: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1.5">직책</label>
+                  <select
+                    value={editForm.position}
+                    onChange={e => setEditForm(f => ({ ...f, position: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition bg-white"
+                  >
+                    {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* 이메일 */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1.5">이메일</label>
+                <input
+                  type="email"
+                  value={editForm.email}
+                  onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition"
+                />
+              </div>
+
+              {/* 리더십 유형 */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1.5">리더십 유형</label>
+                <select
+                  value={editForm.leadershipType}
+                  onChange={e => setEditForm(f => ({ ...f, leadershipType: e.target.value as LeadershipType }))}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition bg-white"
+                >
+                  <optgroup label="긍정적 유형">
+                    {POSITIVE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </optgroup>
+                  <optgroup label="부정적 유형">
+                    {NEGATIVE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </optgroup>
+                </select>
+              </div>
+
+              {/* 진단 회차 / 발송 상태 */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1.5">진단 회차</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={editForm.assessmentRound}
+                    onChange={e => setEditForm(f => ({ ...f, assessmentRound: Number(e.target.value) }))}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1.5">발송 상태</label>
+                  <select
+                    value={editForm.deliveryStatus}
+                    onChange={e => setEditForm(f => ({ ...f, deliveryStatus: e.target.value as DeliveryStatus }))}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition bg-white"
+                  >
+                    {DELIVERY_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* 푸터 */}
+            <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100">
+              <button onClick={() => setEditOpen(false)} className="px-4 py-2 text-sm font-medium text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                취소
+              </button>
+              <button onClick={handleEditSave} className="px-4 py-2 text-sm font-bold text-white bg-[#55A4DA] hover:bg-[#3A8BC4] rounded-lg transition-colors">
+                저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

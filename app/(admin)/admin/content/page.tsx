@@ -50,6 +50,7 @@ type FormData = {
   tags: string[];
   thumbnail: string;
   body: string;
+  summary: string;
 };
 
 const EMPTY_FORM: FormData = {
@@ -62,6 +63,7 @@ const EMPTY_FORM: FormData = {
   tags: [],
   thumbnail: '',
   body: '',
+  summary: '',
 };
 
 function itemToForm(item: ContentPoolItem): FormData {
@@ -75,6 +77,7 @@ function itemToForm(item: ContentPoolItem): FormData {
     tags: [...item.tags],
     thumbnail: item.thumbnail,
     body: item.body,
+    summary: item.summary ?? '',
   };
 }
 
@@ -153,6 +156,7 @@ function ContentFormModal({
         tags: json.tags?.length ? json.tags : prev.tags,
         thumbnail: json.thumbnail || prev.thumbnail,
         body: json.body || prev.body,
+        summary: json.summary || prev.summary,
       }));
     } catch (e) {
       if ((e as Error).name === 'AbortError') return;
@@ -199,6 +203,7 @@ function ContentFormModal({
         tags: data.tags?.length ? data.tags : prev.tags,
         thumbnail: data.thumbnailUrl || prev.thumbnail,
         body: data.body || prev.body,
+        summary: data.summary || prev.summary,
       }));
       setUrlParsed(true);
     } catch (e) {
@@ -215,7 +220,6 @@ function ContentFormModal({
     form.duration !== '' &&
     Number(form.duration) > 0 &&
     form.author.trim().length > 0 &&
-    form.body.trim().length > 0 &&
     !urlParsing;
 
   function patch<K extends keyof FormData>(key: K, value: FormData[K]) {
@@ -249,6 +253,7 @@ function ContentFormModal({
         tags: form.tags,
         thumbnail: form.thumbnail.trim() || `https://picsum.photos/seed/${Date.now()}/400/225`,
         body: form.body.trim(),
+        summary: form.summary.trim(),
       });
     } finally {
       setSaving(false);
@@ -536,6 +541,31 @@ function ContentFormModal({
             />
           </div>
 
+          {/* AI 요약 */}
+          <div>
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-violet-50 text-violet-500">AI</span>
+              <label className={`${labelCls} mb-0`}>본문 요약</label>
+            </div>
+            {form.summary ? (
+              <div className="w-full px-3 py-2.5 border border-violet-100 rounded-xl bg-violet-50/50 text-sm text-gray-700 leading-relaxed whitespace-pre-line">
+                {form.summary}
+              </div>
+            ) : (parsing || urlParsing) ? (
+              <div className="flex items-center gap-2 px-3 py-2.5 border border-violet-100 rounded-xl bg-violet-50/50 text-xs text-violet-400">
+                <svg className="w-3.5 h-3.5 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                AI가 본문을 요약하는 중...
+              </div>
+            ) : (
+              <div className="px-3 py-2.5 border border-dashed border-gray-200 rounded-xl text-xs text-gray-300">
+                파일 업로드 또는 URL 입력 후 AI가 자동으로 요약합니다.
+              </div>
+            )}
+          </div>
+
           {/* 태그 */}
           <div>
             <label className={labelCls}>
@@ -580,17 +610,6 @@ function ContentFormModal({
             />
           </div>
 
-          {/* 본문 */}
-          <div>
-            <label className={labelCls}>본문 {requiredMark}</label>
-            <textarea
-              rows={7}
-              className={`${inputCls} resize-none`}
-              value={form.body}
-              onChange={e => patch('body', e.target.value)}
-              placeholder="본문 내용을 입력하세요 (마크다운 형식 사용 가능)"
-            />
-          </div>
         </div>
         </div>
 
@@ -791,10 +810,12 @@ function ContentCard({
 }) {
   const visibleTags = item.tags.slice(0, 3);
   const extraTags = item.tags.length - 3;
+  const summaryText = item.summary || (item.body ? item.body.slice(0, 160).trimEnd() + (item.body.length > 160 ? '…' : '') : null);
 
   return (
     <div
-      className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-lg hover:border-[#55A4DA]/40 transition-all overflow-hidden group"
+      onClick={() => onPreview(item)}
+      className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-lg hover:border-[#55A4DA]/40 transition-all overflow-hidden group cursor-pointer flex flex-col"
     >
       {/* 썸네일 */}
       <div className="relative aspect-video bg-gray-100 overflow-hidden">
@@ -812,7 +833,7 @@ function ContentCard({
         <div className="absolute bottom-2.5 right-2.5 bg-black/60 text-white text-[11px] font-semibold px-2 py-0.5 rounded-md">
           {item.duration}분
         </div>
-        {/* hover 액션 버튼 — stopPropagation으로 카드 클릭(미리보기)과 충돌 방지 */}
+        {/* hover 액션 버튼 */}
         <div className="absolute inset-0 bg-black/25 opacity-0 group-hover:opacity-100 transition-opacity flex items-start justify-end p-2 gap-1.5">
           <button
             onClick={e => { e.stopPropagation(); onEdit(item); }}
@@ -836,12 +857,13 @@ function ContentCard({
       </div>
 
       {/* 카드 바디 */}
-      <div className="p-4 space-y-3">
-        <h3 className="text-sm font-bold text-gray-800 leading-snug line-clamp-2 group-hover:text-[#2E7DB5] transition-colors">
+      <div className="p-4 flex flex-col flex-1">
+        <h3 className="text-sm font-bold text-gray-800 leading-snug line-clamp-2 group-hover:text-[#2E7DB5] transition-colors mb-2">
           {item.title}
         </h3>
         <p className="text-xs text-gray-400 truncate">{item.author}</p>
-        <div className="flex flex-wrap gap-1">
+        <div className="flex-1 min-h-3" />
+        <div className="flex flex-wrap items-center gap-1 mb-3">
           {visibleTags.map(tag => (
             <span
               key={tag}
@@ -853,18 +875,31 @@ function ContentCard({
           {extraTags > 0 && (
             <span className="text-[10px] text-gray-400 px-1.5 py-0.5">+{extraTags}</span>
           )}
+          {/* i 버튼 — 호버 시 개요/요약 툴팁 */}
+          {summaryText && (
+            <div
+              onClick={e => e.stopPropagation()}
+              className="relative ml-auto self-start"
+            >
+              <button
+                className="peer w-5 h-5 rounded-full border border-gray-300 bg-gray-50 text-gray-400 text-[10px] font-bold flex items-center justify-center hover:border-[#55A4DA] hover:text-[#55A4DA] hover:bg-[#55A4DA]/5 transition-colors"
+              >
+                i
+              </button>
+              {/* Attention Box */}
+              <div className="pointer-events-none peer-hover:pointer-events-auto opacity-0 peer-hover:opacity-100 transition-opacity duration-150 absolute bottom-full right-0 mb-2 w-64 z-20">
+                <div className="bg-gray-900 text-white rounded-xl shadow-xl p-3.5">
+                  <p className="text-[11px] font-semibold text-gray-300 mb-1.5">개요 / 요약</p>
+                  <p className="text-xs leading-relaxed text-gray-100 whitespace-pre-line">{summaryText}</p>
+                  {/* 말풍선 꼬리 */}
+                  <div className="absolute bottom-[-6px] right-3 w-3 h-3 bg-gray-900 rotate-45" />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-        <div className="pt-1 border-t border-gray-100 flex items-center justify-between">
+        <div className="pt-3 border-t border-gray-100 flex items-center">
           <span className="text-[11px] text-gray-400">{item.createdAt}</span>
-          <button
-            onClick={() => onPreview(item)}
-            title="요약본 보기"
-            className="w-8 h-8 bg-gray-50 border border-gray-200 rounded-lg flex items-center justify-center text-gray-500 hover:bg-[#55A4DA] hover:text-white hover:border-[#55A4DA] transition-colors"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-          </button>
         </div>
       </div>
     </div>
@@ -874,9 +909,8 @@ function ContentCard({
 // ── ContentPage (메인) ────────────────────────────────────────────
 export default function ContentPage() {
   const [allItems, setAllItems] = useState<ContentPoolItem[]>([]);
-  const [activeTab, setActiveTab] = useState<ContentSource>('original');
   const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<ContentCategory | ''>('');
+  const [categoryFilters, setCategoryFilters] = useState<Array<ContentCategory | 'original'>>([]);
   const [formModal, setFormModal] = useState<{
     mode: 'create' | 'edit';
     data?: ContentPoolItem;
@@ -895,9 +929,9 @@ export default function ContentPage() {
   }, []);
 
   // 상호 배타적 열기 헬퍼 — 미리보기↔수정모달 동시 열기 방지
-  function openCreate(sourceType: ContentSource) {
+  function openCreate() {
     setPreviewItem(null);
-    setFormModal({ mode: 'create', sourceType });
+    setFormModal({ mode: 'create', sourceType: 'original' });
   }
 
   function openEdit(item: ContentPoolItem) {
@@ -910,17 +944,16 @@ export default function ContentPage() {
     setPreviewItem(item);
   }
 
-  const countByType = useMemo(
-    () => ({
-      original: allItems.filter(i => i.type === 'original').length,
-      curation: allItems.filter(i => i.type === 'curation').length,
-    }),
-    [allItems],
-  );
-
   const filtered = useMemo(() => {
-    let items = allItems.filter(i => i.type === activeTab);
-    if (categoryFilter) items = items.filter(i => i.category === categoryFilter);
+    let items = [...allItems];
+    if (categoryFilters.length > 0) {
+      const hasOriginal = categoryFilters.includes('original');
+      const cats = categoryFilters.filter((f): f is ContentCategory => f !== 'original');
+      items = items.filter(i =>
+        (hasOriginal && i.type === 'original') ||
+        cats.includes(i.category as ContentCategory),
+      );
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       items = items.filter(
@@ -930,12 +963,11 @@ export default function ContentPage() {
       );
     }
     return items;
-  }, [allItems, activeTab, categoryFilter, searchQuery]);
+  }, [allItems, categoryFilters, searchQuery]);
 
   async function handleSave(data: Omit<ContentPoolItem, 'id' | 'createdAt'>) {
     if (formModal?.mode === 'create') {
       await addContent(data);
-      setActiveTab(data.type);
     } else if (formModal?.data) {
       await updateContent(formModal.data.id, data);
     }
@@ -960,7 +992,7 @@ export default function ContentPage() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => openCreate(activeTab)}
+            onClick={() => openCreate()}
             className="flex items-center gap-2 bg-[#55A4DA] text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-[#3A8BC4] transition-colors shadow-sm"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -971,37 +1003,8 @@ export default function ContentPage() {
         </div>
       </div>
 
-      {/* ── 탭 + 필터 ── */}
+      {/* ── 필터 ── */}
       <div className="bg-white border-b border-gray-200 px-8 flex-shrink-0">
-        <div className="flex gap-6 border-b border-gray-100">
-          {SOURCES.map(tab => (
-            <button
-              key={tab}
-              onClick={() => {
-                setActiveTab(tab);
-                setCategoryFilter('');
-                setSearchQuery('');
-              }}
-              className={`pb-3 pt-3 text-sm font-semibold transition-colors border-b-2 -mb-px flex items-center gap-1.5 ${
-                activeTab === tab
-                  ? 'border-[#55A4DA] text-[#55A4DA]'
-                  : 'border-transparent text-gray-400 hover:text-gray-600'
-              }`}
-            >
-              {SOURCE_LABELS[tab]}
-              <span
-                className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
-                  activeTab === tab
-                    ? 'bg-[#55A4DA]/10 text-[#55A4DA]'
-                    : 'bg-gray-100 text-gray-400'
-                }`}
-              >
-                {countByType[tab]}
-              </span>
-            </button>
-          ))}
-        </div>
-
         <div className="py-3 space-y-2">
           <div className="relative">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1016,19 +1019,26 @@ export default function ContentPage() {
             />
           </div>
           <div className="flex gap-1.5 overflow-x-auto pb-0.5">
-            {CATEGORIES.map(cat => (
-              <button
-                key={cat}
-                onClick={() => setCategoryFilter(categoryFilter === cat ? '' : cat)}
-                className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                  categoryFilter === cat
-                    ? 'bg-[#55A4DA] text-white'
-                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
+            {(['original', ...CATEGORIES] as const).map(cat => {
+              const active = categoryFilters.includes(cat);
+              return (
+                <button
+                  key={cat}
+                  onClick={() =>
+                    setCategoryFilters(prev =>
+                      active ? prev.filter(f => f !== cat) : [...prev, cat],
+                    )
+                  }
+                  className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                    active
+                      ? 'bg-[#55A4DA] text-white'
+                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  }`}
+                >
+                  {cat === 'original' ? 'J& 오리지널' : cat}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
