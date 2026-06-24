@@ -428,6 +428,62 @@ function ConfigureContent() {
     });
   }
 
+  // ── 실시간 미리보기 인라인 편집 핸들러 ──
+  function handleInlineEdit(field: string, value: string) {
+    const r = rounds[activeRoundIdx];
+    if (!r) return;
+    const activeGroups = r.customGroups.filter(g => g.types.length > 0);
+    const tabs = [{ id: 'general', label: '일반형' }, ...activeGroups.map((g, gi) => ({ id: g.id, label: `그룹 ${gi + 1}` }))];
+    const currentTarget = tabs.some(t => t.id === previewTargetId) ? previewTargetId : (tabs[0]?.id ?? 'general');
+    const key = `${activeRoundIdx}:${currentTarget}`;
+    setLivePreviewContent(prev => {
+      const gen = prev[key];
+      if (!gen) return prev;
+      const updated = JSON.parse(JSON.stringify(gen)) as typeof gen;
+      // 최상위 필드
+      if (field === 'subject' || field === 'headline' || field === 'intro' || field === 'closing') {
+        (updated as Record<string, unknown>)[field] = value;
+      }
+      // 섹션 필드: section.{idx}.{field} 또는 section.{idx}.body.{paraIdx} 등
+      const secMatch = field.match(/^section\.(\d+)\.(.+)$/);
+      if (secMatch) {
+        const secIdx = parseInt(secMatch[1]);
+        const secField = secMatch[2];
+        const sec = updated.sections[secIdx];
+        if (sec) {
+          if (secField === 'contentTitle') {
+            // 이모지가 앞에 붙어 있으므로 기존 이모지 보존
+            const emojiMatch = value.match(/^(\S+)\s+(.*)$/);
+            if (emojiMatch) {
+              sec.emoji = emojiMatch[1];
+              sec.contentTitle = emojiMatch[2];
+            } else {
+              sec.contentTitle = value;
+            }
+          } else if (secField.startsWith('body.')) {
+            const paraIdx = parseInt(secField.split('.')[1]);
+            if (!sec.body) sec.body = [];
+            sec.body[paraIdx] = value;
+          } else if (secField === 'dataStat.value') {
+            if (!sec.dataStat) sec.dataStat = { value: '', description: '' };
+            // 📊 접두사 제거
+            sec.dataStat.value = value.replace(/^📊\s*/, '');
+          } else if (secField === 'dataStat.description') {
+            if (!sec.dataStat) sec.dataStat = { value: '', description: '' };
+            sec.dataStat.description = value;
+          } else if (secField.startsWith('actionPlan.')) {
+            const apIdx = parseInt(secField.split('.')[1]);
+            if (!sec.actionPlan) sec.actionPlan = [];
+            sec.actionPlan[apIdx] = value;
+          } else {
+            (sec as Record<string, unknown>)[secField] = value;
+          }
+        }
+      }
+      return { ...prev, [key]: updated };
+    });
+  }
+
   // 생성 결과 섹션에 콘텐츠 썸네일 매핑 (contentId 매칭)
   // thumbnail = 1순위(직접 등록), thumbnailUrl = 2순위(웹서칭 이미지) → 3순위(주제 Unsplash)
   function attachSectionThumbnails(data: GeneratedNewsletter, contents: ContentPoolItem[]): GeneratedNewsletter {
@@ -1250,7 +1306,7 @@ function ConfigureContent() {
     if (livePreviewMode === 'email') {
       return renderNewsletterEmailPreview(generated, { vol: activeRoundIdx + 1, dateLabel: '발송일 미정', firstThumbnail, onReadFull: () => setLivePreviewMode('full') });
     }
-    return renderGeneratedFullBody(generated, { vol: activeRoundIdx + 1, dateLabel: '발송일 미정', leadershipLabel, firstThumbnail, templateInteractions: interactions, templateSurveys: surveys });
+    return renderGeneratedFullBody(generated, { vol: activeRoundIdx + 1, dateLabel: '발송일 미정', leadershipLabel, firstThumbnail, templateInteractions: interactions, templateSurveys: surveys, onInlineEdit: handleInlineEdit });
   }
 
   // ── 본문 편집 패널 (미리보기 모달) ──
@@ -1454,7 +1510,7 @@ function ConfigureContent() {
       )}
 
       {/* ── 스테퍼 ── */}
-      {configDraft.companyIds.length > 0 && <div className="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-center flex-shrink-0">
+      {configDraft.companyIds.length > 0 && <div className="bg-white border-b border-gray-200 px-8 py-2.5 flex items-center justify-center flex-shrink-0">
         <div className="flex items-center">
           {WIZARD_STEPS.map((s, i) => {
             const isDone = s.n < wizardStep;
@@ -1923,8 +1979,8 @@ function ConfigureContent() {
             </div>
           ) : (
           <>
-            {/* 상단: 회차 탭 (Step 3 스타일) */}
-            <div className="bg-white border-b border-gray-200 px-6 py-3 flex-shrink-0">
+            {/* 상단: 회차 탭 + 그룹/일반형 탭 통합 */}
+            <div className="bg-white border-b border-gray-200 px-6 py-2 flex-shrink-0 flex items-center gap-4 flex-wrap">
               <div className="flex gap-2 flex-wrap">
                 {rounds.map((r, idx) => {
                   const s = customStoryline[r.stepIndex];
@@ -1937,7 +1993,7 @@ function ConfigureContent() {
                     <button
                       key={idx}
                       onClick={() => switchRound(idx)}
-                      className={`px-4 py-2 rounded-xl text-xs font-semibold border-2 transition-all flex items-center gap-1.5 ${
+                      className={`px-4 py-1.5 rounded-xl text-xs font-semibold border-2 transition-all flex items-center gap-1.5 ${
                         isActive ? 'border-[#55A4DA] bg-[#55A4DA]/5 text-[#2E7DB5]' : 'border-gray-200 text-gray-500 hover:border-gray-300 bg-white'
                       }`}
                     >
@@ -1950,30 +2006,30 @@ function ConfigureContent() {
                   );
                 })}
               </div>
-            </div>
 
-            {/* 그룹/일반형 탭 (좌우 공용) */}
-            {(() => {
-              const r = rounds[activeRoundIdx];
-              if (!r) return null;
-              const activeGroups = r.customGroups.filter(g => g.types.length > 0);
-              const tabs = [{ id: 'general', label: '일반형' }, ...activeGroups.map((g, gi) => ({ id: g.id, label: `그룹 ${gi + 1}` }))];
-              const currentTarget = tabs.some(t => t.id === previewTargetId) ? previewTargetId : (tabs[0]?.id ?? 'general');
-              return (
-                <div className="bg-white border-b border-gray-200 px-6 py-2.5 flex-shrink-0">
+              <div className="h-5 w-px bg-gray-200 flex-shrink-0" />
+
+              {/* 그룹/일반형 탭 (인라인) */}
+              {(() => {
+                const r = rounds[activeRoundIdx];
+                if (!r) return null;
+                const activeGroups = r.customGroups.filter(g => g.types.length > 0);
+                const tabs = [{ id: 'general', label: '일반형' }, ...activeGroups.map((g, gi) => ({ id: g.id, label: `그룹 ${gi + 1}` }))];
+                const currentTarget = tabs.some(t => t.id === previewTargetId) ? previewTargetId : (tabs[0]?.id ?? 'general');
+                return (
                   <div className="flex gap-1.5 flex-wrap">
                     {tabs.map(t => (
                       <button key={t.id} onClick={() => setPreviewTargetId(t.id)} className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${currentTarget === t.id ? 'bg-[#55A4DA] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>{t.label}</button>
                     ))}
                   </div>
-                </div>
-              );
-            })()}
+                );
+              })()}
+            </div>
 
             {/* 본문: 좌우 2분할 */}
             <div className="flex-1 flex overflow-hidden">
               {/* 좌측: 실시간 미리보기 */}
-              <div className="w-1/2 flex-shrink-0 border-r border-gray-200 overflow-y-auto px-6 py-4">
+              <div className="w-3/5 flex-shrink-0 border-r border-gray-200 overflow-y-auto px-6 py-4">
                 {(() => {
                   const r = rounds[activeRoundIdx];
                   if (!r) return null;
@@ -2029,7 +2085,7 @@ function ConfigureContent() {
               </div>
 
               {/* 우측: 콘텐츠 편집 (선택한 탭만) */}
-              <div className="w-1/2 flex-shrink-0 overflow-y-auto px-6 py-4">
+              <div className="w-2/5 flex-shrink-0 overflow-y-auto px-6 py-4">
                 {(() => {
               const r = rounds[activeRoundIdx];
               if (!r) return null;

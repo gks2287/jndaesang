@@ -1,6 +1,61 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+
+// ── 인라인 편집 가능한 텍스트 컴포넌트 ──
+function EditableText({ value, field, onEdit, className, tag: Tag = 'span', multiline = false, style }: {
+  value: string;
+  field: string;
+  onEdit?: (field: string, value: string) => void;
+  className?: string;
+  tag?: 'span' | 'p' | 'h1' | 'div';
+  multiline?: boolean;
+  style?: React.CSSProperties;
+}) {
+  const ref = useRef<HTMLElement>(null);
+  const [editing, setEditing] = useState(false);
+
+  const handleBlur = useCallback(() => {
+    setEditing(false);
+    if (!ref.current || !onEdit) return;
+    const text = ref.current.innerText.trim();
+    if (text !== value) onEdit(field, text);
+  }, [field, value, onEdit]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (!multiline && e.key === 'Enter') {
+      e.preventDefault();
+      ref.current?.blur();
+    }
+    if (e.key === 'Escape') {
+      if (ref.current) ref.current.innerText = value;
+      ref.current?.blur();
+    }
+  }, [multiline, value]);
+
+  useEffect(() => {
+    if (ref.current && !editing) {
+      ref.current.innerText = value;
+    }
+  }, [value, editing]);
+
+  if (!onEdit) {
+    return <Tag className={className} style={style}>{value}</Tag>;
+  }
+
+  return (
+    <Tag
+      ref={ref as React.RefObject<HTMLElement & HTMLSpanElement & HTMLParagraphElement & HTMLHeadingElement & HTMLDivElement>}
+      className={`${className ?? ''} cursor-text outline-none rounded transition-colors hover:bg-[#55A4DA]/5 focus:bg-[#55A4DA]/10 focus:ring-1 focus:ring-[#55A4DA]/30`}
+      contentEditable
+      suppressContentEditableWarning
+      onFocus={() => setEditing(true)}
+      onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
+      style={style}
+    />
+  );
+}
 
 // ── 생성된 뉴스레터 데이터 타입 (configure 페이지와 공유) ──
 export type GeneratedNewsletterSection = {
@@ -284,6 +339,8 @@ export function renderSurveyTemplates(types: SurveyTypeKey[]) {
   );
 }
 
+export type InlineEditCallback = (field: string, value: string) => void;
+
 export interface FullBodyOpts {
   vol: number;
   dateLabel: string;
@@ -291,6 +348,8 @@ export interface FullBodyOpts {
   firstThumbnail?: string;
   templateInteractions?: InteractionTypeKey[];
   templateSurveys?: SurveyTypeKey[];
+  /** 인라인 편집 콜백 — 전달 시 텍스트를 직접 클릭하여 수정 가능 */
+  onInlineEdit?: InlineEditCallback;
 }
 
 // 썸네일 — 오류 없이 항상 표시. 후보 URL을 순서대로 시도(onError 시 다음 후보) →
@@ -330,14 +389,15 @@ function Thumbnail({ sources, label, aspectClass, wrapClass }: {
 
 // 전체 본문 렌더 (실시간 미리보기·미리보기 모달·제작완료 미리보기 공통)
 export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: FullBodyOpts) {
-  const { vol, dateLabel, leadershipLabel, templateInteractions, templateSurveys } = opts;
+  const { vol, dateLabel, leadershipLabel, templateInteractions, templateSurveys, onInlineEdit } = opts;
   const useTemplateInteractions = templateInteractions !== undefined;
   const useTemplateSurveys = templateSurveys !== undefined;
+  const e = onInlineEdit; // shorthand
   return (
     <div className="bg-white max-w-2xl mx-auto rounded-2xl overflow-hidden shadow-sm border border-gray-100 break-keep break-words">
       {/* 상단 네비게이션 */}
       <div className="px-6 sm:px-8 py-4 flex items-center justify-between border-b border-gray-100">
-        <img src="/logo-jc.png" alt="J&Company" className="h-9 object-contain" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+        <img src="/logo-jc.png" alt="J&Company" className="h-9 object-contain" onError={ev => { (ev.target as HTMLImageElement).style.display = 'none'; }} />
         <div className="flex items-center gap-4">
           <span className="text-xs text-[#6B7280] hover:text-[#2B9EE8] cursor-pointer transition-colors">뉴스레터 알아보기</span>
           <span className="text-xs text-[#6B7280] hover:text-[#2B9EE8] cursor-pointer transition-colors">지난 호 보기</span>
@@ -349,10 +409,10 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
       <div className="px-6 sm:px-8 py-10">
         {/* 헤더 영역 */}
         <div className="text-center mb-2">
-          {generated.subject && <p className="text-xs font-bold text-[#2B9EE8] tracking-wide uppercase mb-3">{generated.subject}</p>}
+          {generated.subject && <EditableText tag="p" value={generated.subject} field="subject" onEdit={e} className="text-xs font-bold text-[#2B9EE8] tracking-wide uppercase mb-3" />}
           <p className="text-xs text-[#6B7280] tracking-wide mb-4">Vol.{vol} · {dateLabel}{leadershipLabel ? ` · ${leadershipLabel}` : ''}</p>
-          <h1 className="text-2xl sm:text-3xl font-bold text-[#2C2C2C] leading-snug whitespace-pre-line break-keep">{formatHeadline(generated.headline)}</h1>
-          <p className="text-base text-[#6B7280] leading-[1.8] text-left mt-4">{generated.intro}</p>
+          <EditableText tag="h1" value={formatHeadline(generated.headline)} field="headline" onEdit={e} className="text-2xl sm:text-3xl font-bold text-[#2C2C2C] leading-snug whitespace-pre-line break-keep" />
+          <EditableText tag="p" value={generated.intro} field="intro" onEdit={e} className="text-base text-[#6B7280] leading-[1.8] text-left mt-4" multiline />
         </div>
 
         {/* 콘텐츠 */}
@@ -375,47 +435,47 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
                 {/* 카테고리 라벨 + 제목 + 부제 */}
                 <span className="inline-flex items-center gap-1 text-xs font-bold text-[#2B9EE8] bg-[#EAF4FC] px-2.5 py-1 rounded-full mb-3">📌 리더십 인사이트</span>
                 <div className="border-l-4 border-[#2B9EE8] pl-4 mb-2">
-                  <p className="text-2xl font-bold text-[#2C2C2C] leading-snug">{sec.emoji} {sec.contentTitle}</p>
-                  {sec.subtitle && <p className="text-sm text-[#6B7280] mt-1">{sec.subtitle}</p>}
+                  <EditableText tag="p" value={`${sec.emoji} ${sec.contentTitle}`} field={`section.${idx}.contentTitle`} onEdit={e} className="text-2xl font-bold text-[#2C2C2C] leading-snug" />
+                  {sec.subtitle && <EditableText tag="p" value={sec.subtitle} field={`section.${idx}.subtitle`} onEdit={e} className="text-sm text-[#6B7280] mt-1" />}
                 </div>
                 {/* 큰 썸네일 (16:9) — 항상 표시 (등록→웹서칭/주제URL→그라데이션) */}
                 <Thumbnail sources={[sec.thumbnail, sec.thumbnailUrl]} label={sec.contentTitle} aspectClass="aspect-video" wrapClass="my-5" />
                 {/* 도입 */}
-                {sec.intro && <p className="text-base text-[#4B5563] leading-[1.8] mb-4">{sec.intro}</p>}
+                {sec.intro && <EditableText tag="p" value={sec.intro} field={`section.${idx}.intro`} onEdit={e} className="text-base text-[#4B5563] leading-[1.8] mb-4" multiline />}
                 {/* 본문1 */}
-                {paras[0] && <p className="text-base text-[#4B5563] leading-[1.8] mb-4">{paras[0]}</p>}
+                {paras[0] && <EditableText tag="p" value={paras[0]} field={`section.${idx}.body.0`} onEdit={e} className="text-base text-[#4B5563] leading-[1.8] mb-4" multiline />}
                 {/* 인용구 박스 */}
                 {sec.quote && (
                   <blockquote className="my-6 border-l-4 border-[#2B9EE8] pl-5 py-1">
-                    <p className="text-xl italic font-medium text-[#2C2C2C] leading-relaxed whitespace-pre-line break-keep">{sec.quote}</p>
+                    <EditableText tag="p" value={sec.quote} field={`section.${idx}.quote`} onEdit={e} className="text-xl italic font-medium text-[#2C2C2C] leading-relaxed whitespace-pre-line break-keep" />
                   </blockquote>
                 )}
                 {/* 본문2 */}
-                {paras[1] && <p className="text-base text-[#4B5563] leading-[1.8] mb-4">{paras[1]}</p>}
+                {paras[1] && <EditableText tag="p" value={paras[1]} field={`section.${idx}.body.1`} onEdit={e} className="text-base text-[#4B5563] leading-[1.8] mb-4" multiline />}
                 {/* 데이터 박스 */}
                 {sec.dataStat && (sec.dataStat.value || sec.dataStat.description) && (
                   <div className="my-6 rounded-xl p-6" style={{ backgroundColor: '#F0F7FF' }}>
-                    <p className="text-3xl font-black text-[#2B9EE8] leading-tight whitespace-pre-line break-keep">📊 {sec.dataStat.value}</p>
-                    <p className="text-base text-[#4B5563] leading-[1.7] mt-2">{sec.dataStat.description}</p>
+                    <EditableText tag="p" value={`📊 ${sec.dataStat.value}`} field={`section.${idx}.dataStat.value`} onEdit={e} className="text-3xl font-black text-[#2B9EE8] leading-tight whitespace-pre-line break-keep" />
+                    <EditableText tag="p" value={sec.dataStat.description} field={`section.${idx}.dataStat.description`} onEdit={e} className="text-base text-[#4B5563] leading-[1.7] mt-2" multiline />
                   </div>
                 )}
                 {/* 본문3 */}
-                {paras[2] && <p className="text-base text-[#4B5563] leading-[1.8] mb-4">{paras[2]}</p>}
+                {paras[2] && <EditableText tag="p" value={paras[2]} field={`section.${idx}.body.2`} onEdit={e} className="text-base text-[#4B5563] leading-[1.8] mb-4" multiline />}
                 {/* 사례 박스 */}
                 {sec.caseStudy && (
                   <div className="my-6 rounded-xl p-5 border-l-4 border-gray-300" style={{ backgroundColor: '#F9FAFB' }}>
                     <p className="text-xs font-bold text-gray-500 mb-1.5">💼 실제 사례</p>
-                    <p className="text-sm text-[#4B5563] leading-[1.8]">{sec.caseStudy}</p>
+                    <EditableText tag="p" value={sec.caseStudy} field={`section.${idx}.caseStudy`} onEdit={e} className="text-sm text-[#4B5563] leading-[1.8]" multiline />
                   </div>
                 )}
                 {/* 나머지 본문 단락 */}
                 {paras.slice(3).map((p, i) => (
-                  <p key={i} className="text-base text-[#4B5563] leading-[1.8] mb-4">{p}</p>
+                  <EditableText key={i} tag="p" value={p} field={`section.${idx}.body.${i + 3}`} onEdit={e} className="text-base text-[#4B5563] leading-[1.8] mb-4" multiline />
                 ))}
                 {/* 핵심 포인트 */}
                 <div className="mt-5 rounded-xl p-4 border-l-4 border border-emerald-100 border-l-emerald-400" style={{ backgroundColor: '#F0FDF4' }}>
                   <p className="text-xs font-bold text-emerald-700 mb-1.5">💡 핵심 포인트</p>
-                  <p className="text-base font-semibold text-[#2C2C2C] leading-[1.8]">{sec.keyTakeaway}</p>
+                  <EditableText tag="p" value={sec.keyTakeaway} field={`section.${idx}.keyTakeaway`} onEdit={e} className="text-base font-semibold text-[#2C2C2C] leading-[1.8]" />
                 </div>
                 {/* Action Plan — 체크박스 형태 */}
                 {sec.actionPlan && sec.actionPlan.length > 0 && (
@@ -426,7 +486,7 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
                       {sec.actionPlan.map((act, i) => (
                         <li key={i} className="flex items-start gap-2.5">
                           <span className="flex-shrink-0 w-5 h-5 rounded-md border-2 border-[#2B9EE8] bg-white mt-0.5" />
-                          <p className="text-base text-[#2C2C2C] leading-[1.7]">{act}</p>
+                          <EditableText tag="p" value={act} field={`section.${idx}.actionPlan.${i}`} onEdit={e} className="text-base text-[#2C2C2C] leading-[1.7]" />
                         </li>
                       ))}
                     </ul>
@@ -627,7 +687,7 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
 
         {/* 클로징 — 다음 호 안내 + 마이페이지 큰 버튼 */}
         <div className="mt-12 pt-8 border-t border-gray-100">
-          <p className="text-base text-[#6B7280] leading-[1.8] italic border-l-2 border-[#2B9EE8]/30 pl-4 mb-4">{generated.closing}</p>
+          <EditableText tag="p" value={generated.closing} field="closing" onEdit={e} className="text-base text-[#6B7280] leading-[1.8] italic border-l-2 border-[#2B9EE8]/30 pl-4 mb-4" multiline />
           <div className="rounded-2xl px-6 py-7 text-center" style={{ backgroundColor: '#EAF4FC' }}>
             <p className="text-base font-bold text-[#2C2C2C]">다음 호에서 만나요 👋</p>
             <p className="text-sm text-[#6B7280] mt-1 mb-5">J&Company 코칭팀 드림</p>
