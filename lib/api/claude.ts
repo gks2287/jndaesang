@@ -7,7 +7,8 @@ const client = new Anthropic({
 export async function callClaude(prompt: string, systemPrompt?: string): Promise<string> {
   const message = await client.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 4096,
+    // 본문 분량 상향(섹션당 2500~3500자)으로 출력 토큰이 커져, 잘림(JSON truncate) 방지 위해 8192로 상향
+    max_tokens: 8192,
     system: systemPrompt,
     messages: [{ role: 'user', content: prompt }],
   });
