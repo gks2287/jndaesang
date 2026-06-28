@@ -34,6 +34,11 @@ export interface Participant {
   lastOpenedAt: string | null;
   stepCurrent: number;
   stepTotal: number;
+  token?: string;
+}
+
+export function participantToken(p: Participant): string {
+  return p.token ?? `nl-${p.id}`;
 }
 
 const MOCK: Participant[] = [

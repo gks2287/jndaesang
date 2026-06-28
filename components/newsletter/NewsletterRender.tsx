@@ -400,8 +400,6 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
         <img src="/logo-jc.png" alt="J&Company" className="h-9 object-contain" onError={ev => { (ev.target as HTMLImageElement).style.display = 'none'; }} />
         <div className="flex items-center gap-4">
           <span className="text-xs text-[#6B7280] hover:text-[#2B9EE8] cursor-pointer transition-colors">뉴스레터 알아보기</span>
-          <span className="text-xs text-[#6B7280] hover:text-[#2B9EE8] cursor-pointer transition-colors">지난 호 보기</span>
-          <span className="text-xs text-[#6B7280] hover:text-[#2B9EE8] cursor-pointer transition-colors">마이페이지</span>
         </div>
       </div>
 
@@ -690,13 +688,7 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
           <EditableText tag="p" value={generated.closing} field="closing" onEdit={e} className="text-base text-[#6B7280] leading-[1.8] italic border-l-2 border-[#2B9EE8]/30 pl-4 mb-4" multiline />
           <div className="rounded-2xl px-6 py-7 text-center" style={{ backgroundColor: '#EAF4FC' }}>
             <p className="text-base font-bold text-[#2C2C2C]">다음 호에서 만나요 👋</p>
-            <p className="text-sm text-[#6B7280] mt-1 mb-5">J&Company 코칭팀 드림</p>
-            <button className="inline-flex items-center gap-2 px-7 py-3.5 bg-[#2B9EE8] hover:bg-[#1a8ad4] text-white text-sm font-semibold rounded-xl transition-colors shadow-sm">
-              내 마이페이지 바로가기
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
+            <p className="text-sm text-[#6B7280] mt-1">J&Company 코칭팀 드림</p>
           </div>
         </div>
       </div>
@@ -705,7 +697,6 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
       <div className="px-6 sm:px-8 py-6 border-t border-gray-100 flex items-center justify-between">
         <p className="text-xs text-[#6B7280] font-semibold">J&Company 코칭팀</p>
         <div className="flex gap-4">
-          <span className="text-xs text-[#6B7280] hover:text-[#2B9EE8] cursor-pointer transition-colors">마이페이지</span>
           <span className="text-xs text-[#6B7280] hover:text-[#2B9EE8] cursor-pointer transition-colors">문의하기</span>
         </div>
       </div>
@@ -733,9 +724,6 @@ export function renderNewsletterEmailPreview(generated: GeneratedNewsletter, opt
           전체 뉴스레터 읽기 →
         </button>
       )}
-      <button className="w-full py-3 bg-white border border-[#2B9EE8] text-[#2B9EE8] hover:bg-[#2B9EE8]/5 text-sm font-semibold rounded-xl transition-colors">
-        마이페이지 바로가기
-      </button>
     </div>
   );
   return (
@@ -781,7 +769,6 @@ export function renderNewsletterEmailPreview(generated: GeneratedNewsletter, opt
       <div className="px-6 py-5 mt-8 border-t border-gray-100 flex items-center justify-between">
         <img src="/logo-jc.png" alt="J&Company" className="h-5 object-contain opacity-70" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
         <div className="flex gap-4">
-          <span className="text-xs text-[#6B7280] hover:text-[#2B9EE8] cursor-pointer transition-colors">마이페이지</span>
           <span className="text-xs text-[#6B7280] hover:text-[#2B9EE8] cursor-pointer transition-colors">문의하기</span>
         </div>
       </div>
