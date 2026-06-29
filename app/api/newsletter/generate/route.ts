@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callClaude } from '@/lib/api/claude';
 import { safeParseJson } from '@/lib/repairJson';
+import {
+  PERIODIC_SURVEY_TITLE,
+  PERIODIC_SURVEY_DESCRIPTION,
+  INTERACTION_SURVEY_LABELS,
+  buildPeriodicSurveyQuestions,
+} from '@/lib/periodicSurvey';
 
 // ── 타입 ──────────────────────────────────────────────────────────────
 type GeneratedSection = {
@@ -36,6 +42,8 @@ type GeneratedInteraction = {
 
 type GeneratedSurvey = {
   type: 'always' | 'periodic';
+  title?: string;
+  description?: string;
   questions: unknown[];
 };
 
@@ -97,17 +105,15 @@ function buildAlwaysSurvey(): GeneratedSurvey {
   };
 }
 
-function buildPeriodicSurvey(): GeneratedSurvey {
+// 정기 만족도 조사 — 확정 12문항. Q5/Q6 선택지는 해당 회차의 실제 콘텐츠·인터랙션으로 채운다.
+function buildPeriodicSurvey(round: RoundPayload): GeneratedSurvey {
+  const contentLabels = round.contents.map(c => c.title).filter(Boolean);
+  const interactionLabels = round.interactions.map(k => INTERACTION_SURVEY_LABELS[k] ?? k);
   return {
     type: 'periodic',
-    questions: [
-      { type: 'scale', question: '이 뉴스레터가 전반적으로 만족스러우셨나요?', scale: 5 },
-      { type: 'scale', question: '콘텐츠가 업무에 도움이 되었나요?', scale: 5 },
-      { type: 'multiple', question: '가장 유익했던 콘텐츠 유형은?', options: ['아티클', '인터뷰', '책 추천', '성공 사례', '카드뉴스', '웹툰'] },
-      { type: 'multiple', question: '인터랙션 활동 중 가장 좋았던 것은?', options: ['퀴즈', '선택형 시나리오', '셀프 진단', '회고 질문', "Do&Don't"] },
-      { type: 'scale', question: '뉴스레터 분량이 적절했나요?', scale: 5 },
-      { type: 'open', question: '개선되었으면 하는 점이 있다면 자유롭게 적어주세요.' },
-    ],
+    title: PERIODIC_SURVEY_TITLE,
+    description: PERIODIC_SURVEY_DESCRIPTION,
+    questions: buildPeriodicSurveyQuestions({ contentLabels, interactionLabels }),
   };
 }
 
@@ -241,7 +247,7 @@ ${interactionSchema}` : ''}
     });
 
     const surveys: GeneratedSurvey[] = round.surveys.map(s =>
-      s === 'always' ? buildAlwaysSurvey() : buildPeriodicSurvey()
+      s === 'always' ? buildAlwaysSurvey() : buildPeriodicSurvey(round)
     );
 
     return NextResponse.json({ ...parsed, sections, surveys } satisfies GeneratedNewsletter);

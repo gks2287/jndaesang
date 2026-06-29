@@ -1,6 +1,14 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import {
+  PERIODIC_SURVEY_TITLE,
+  PERIODIC_SURVEY_DESCRIPTION,
+  SURVEY_TYPE_BADGE,
+  INTERACTION_SURVEY_LABELS,
+  buildPeriodicSurveyQuestions,
+  type PeriodicSurveyQuestion,
+} from '@/lib/periodicSurvey';
 
 // ── 인라인 편집 가능한 텍스트 컴포넌트 ──
 function EditableText({ value, field, onEdit, className, tag: Tag = 'span', multiline = false, style }: {
@@ -92,13 +100,12 @@ export type AlwaysSurveyQuestion = {
   openQuestion: string;
 };
 
-export type PeriodicSurveyQuestion =
-  | { type: 'scale'; question: string; scale: number }
-  | { type: 'multiple'; question: string; options: string[] }
-  | { type: 'open'; question: string };
+export type { PeriodicSurveyQuestion } from '@/lib/periodicSurvey';
 
 export type GeneratedSurvey = {
   type: 'always' | 'periodic';
+  title?: string;        // 정기 설문 제목
+  description?: string;  // 정기 설문 안내문
   questions: (AlwaysSurveyQuestion | PeriodicSurveyQuestion)[];
 };
 
@@ -253,16 +260,100 @@ export function renderInteractionTemplates(types: InteractionTypeKey[]) {
 }
 
 // 만족도 템플릿: 선택된 타입을 AI 생성과 무관하게 예시 UI로 즉시 렌더
-export function renderSurveyTemplates(types: SurveyTypeKey[]) {
+// 복수 선택(multiple) 미리보기 — minSelect~maxSelect 제한 적용. 초과 선택 차단 + 안내 문구 표시.
+function MultiSelectPreview({ options, minSelect, maxSelect }: { options: string[]; minSelect: number; maxSelect: number }) {
+  const [selected, setSelected] = useState<number[]>([]);
+  const [overflow, setOverflow] = useState(false);
+  const toggle = (j: number) => {
+    setSelected(prev => {
+      if (prev.includes(j)) { setOverflow(false); return prev.filter(x => x !== j); }
+      if (prev.length >= maxSelect) { setOverflow(true); return prev; }
+      setOverflow(false);
+      return [...prev, j];
+    });
+  };
+  return (
+    <div>
+      <div className="flex flex-wrap gap-2">
+        {options.map((opt, j) => {
+          const on = selected.includes(j);
+          return (
+            <button
+              key={j}
+              type="button"
+              onClick={() => toggle(j)}
+              aria-pressed={on}
+              className={`px-3.5 py-1.5 text-sm rounded-lg border transition-colors ${on ? 'bg-[#2B9EE8] text-white border-[#2B9EE8]' : 'bg-white text-[#2C2C2C] border-[#E1EFFB] hover:border-[#2B9EE8]'}`}
+            >
+              {opt}
+            </button>
+          );
+        })}
+      </div>
+      <p className={`text-xs mt-1.5 ${overflow ? 'text-red-500' : 'text-gray-400'}`}>
+        {overflow ? `최대 ${maxSelect}개까지만 선택할 수 있어요.` : `최소 ${minSelect}개, 최대 ${maxSelect}개까지 선택할 수 있어요.`}
+      </p>
+    </div>
+  );
+}
+
+// 정기 만족도 조사 카드 — 즉시 미리보기/AI 생성 결과 양쪽에서 공용으로 사용.
+// 제목·안내문 + 영역별 그룹 + 유형 텍스트 뱃지 + 필수(*) 표시.
+function renderPeriodicSurveyCard(questions: PeriodicSurveyQuestion[], key?: string) {
+  let lastArea = '';
+  return (
+    <div key={key} className="rounded-2xl p-6 space-y-4 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+      <div>
+        <p className="text-base font-semibold text-[#2C2C2C]">{PERIODIC_SURVEY_TITLE}</p>
+        <p className="text-xs text-[#6B7280] mt-1 leading-relaxed">{PERIODIC_SURVEY_DESCRIPTION}</p>
+      </div>
+      {questions.map((q, i) => {
+        const showArea = q.area !== lastArea;
+        lastArea = q.area;
+        return (
+          <div key={i} className={showArea ? 'pt-2' : ''}>
+            {showArea && <p className="text-xs font-bold text-[#2B9EE8] mb-2">{q.area}</p>}
+            <div className="flex items-start gap-1.5 mb-2">
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#E1EFFB] text-[#2B9EE8] flex-shrink-0 mt-0.5">{SURVEY_TYPE_BADGE[q.type]}</span>
+              <p className="text-sm font-semibold text-[#2C2C2C]">
+                Q{i + 1}. {q.question}
+                {q.required
+                  ? <span className="text-red-500 ml-0.5">*</span>
+                  : <span className="text-gray-400 text-xs font-normal ml-1">(선택)</span>}
+              </p>
+            </div>
+            {q.type === 'single' && (
+              <div className="space-y-2">
+                {q.options.map((opt, j) => (
+                  <div key={j} className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded-full border-2 border-[#2B9EE8]/40 flex-shrink-0 bg-white" />
+                    <p className="text-sm text-[#2C2C2C]">{opt}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {q.type === 'multiple' && (
+              <MultiSelectPreview options={q.options} minSelect={q.minSelect} maxSelect={q.maxSelect} />
+            )}
+            {q.type === 'short' && (
+              <div className="w-full h-10 bg-white rounded-xl border border-[#E1EFFB] px-3 py-2 text-sm text-gray-400 flex items-center">답변을 입력해 주세요...</div>
+            )}
+            {q.type === 'long' && (
+              <div className="w-full h-16 bg-white rounded-xl border border-[#E1EFFB] px-3 py-2 text-sm text-gray-400 flex items-start">답변을 입력해 주세요...</div>
+            )}
+          </div>
+        );
+      })}
+      <button className="w-full py-3 bg-[#2B9EE8] hover:bg-[#1a8ad4] text-white text-sm font-semibold rounded-xl transition-colors">제출하기</button>
+    </div>
+  );
+}
+
+export function renderSurveyTemplates(
+  types: SurveyTypeKey[],
+  opts?: { contentLabels?: string[]; interactionLabels?: string[] },
+) {
   if (types.length === 0) return null;
-  const periodicQuestions = [
-    { q: '이번 호 콘텐츠가 업무에 도움이 되었나요?', kind: 'scale' as const },
-    { q: '콘텐츠 분량은 적절했나요?', kind: 'scale' as const },
-    { q: '가장 유익했던 콘텐츠는 무엇인가요?', kind: 'multiple' as const, options: ['콘텐츠 1', '콘텐츠 2', '인터랙션'] },
-    { q: '실천으로 옮길 만한 내용이 있었나요?', kind: 'scale' as const },
-    { q: '앞으로 다루었으면 하는 주제가 있나요?', kind: 'open' as const },
-    { q: '동료에게 추천하고 싶으신가요?', kind: 'scale' as const },
-  ];
   return (
     <>
       {renderSectionHeader('💬', '의견 들려주세요')}
@@ -298,41 +389,8 @@ export function renderSurveyTemplates(types: SurveyTypeKey[]) {
               </div>
             );
           }
-          // periodic
-          return (
-            <div key={type} className="rounded-2xl p-6 space-y-5 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
-              <p className="text-base font-semibold text-[#2C2C2C]">정기 만족도 조사</p>
-              {periodicQuestions.map((item, i) => (
-                <div key={i}>
-                  <p className="text-sm font-semibold text-[#2C2C2C] mb-2">Q{i + 1}. {item.q}</p>
-                  {item.kind === 'scale' && (
-                    <div>
-                      <div className="flex gap-1.5">
-                        {Array.from({ length: 5 }, (_, n) => (
-                          <button key={n} className="flex-1 py-2 text-sm bg-white border border-[#E1EFFB] rounded-lg hover:border-[#2B9EE8] transition-colors">{n + 1}</button>
-                        ))}
-                      </div>
-                      <div className="flex justify-between mt-1">
-                        <span className="text-xs text-gray-400">매우 불만족</span>
-                        <span className="text-xs text-gray-400">매우 만족</span>
-                      </div>
-                    </div>
-                  )}
-                  {item.kind === 'multiple' && (
-                    <div className="flex flex-wrap gap-2">
-                      {item.options.map((opt, j) => (
-                        <button key={j} className="px-3.5 py-1.5 text-sm bg-white border border-[#E1EFFB] rounded-lg hover:border-[#2B9EE8] transition-colors">{opt}</button>
-                      ))}
-                    </div>
-                  )}
-                  {item.kind === 'open' && (
-                    <div className="w-full h-16 bg-white rounded-xl border border-[#E1EFFB] px-3 py-2 text-sm text-gray-400 flex items-start">답변을 입력해 주세요...</div>
-                  )}
-                </div>
-              ))}
-              <button className="w-full py-3 bg-[#2B9EE8] hover:bg-[#1a8ad4] text-white text-sm font-semibold rounded-xl transition-colors">제출하기</button>
-            </div>
-          );
+          // periodic — 확정 12문항(동적 선택지 포함)
+          return renderPeriodicSurveyCard(buildPeriodicSurveyQuestions(opts), type);
         })}
       </div>
     </>
@@ -348,6 +406,10 @@ export interface FullBodyOpts {
   firstThumbnail?: string;
   templateInteractions?: InteractionTypeKey[];
   templateSurveys?: SurveyTypeKey[];
+  /** 정기 설문 Q5(콘텐츠) 동적 선택지 — 회차의 실제 콘텐츠 제목 */
+  templateSurveyContentLabels?: string[];
+  /** 정기 설문 Q6(인터랙션) 동적 선택지 — 회차의 실제 활동 요소 라벨 */
+  templateSurveyInteractionLabels?: string[];
   /** 인라인 편집 콜백 — 전달 시 텍스트를 직접 클릭하여 수정 가능 */
   onInlineEdit?: InlineEditCallback;
 }
@@ -389,7 +451,7 @@ function Thumbnail({ sources, label, aspectClass, wrapClass }: {
 
 // 전체 본문 렌더 (실시간 미리보기·미리보기 모달·제작완료 미리보기 공통)
 export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: FullBodyOpts) {
-  const { vol, dateLabel, leadershipLabel, templateInteractions, templateSurveys, onInlineEdit } = opts;
+  const { vol, dateLabel, leadershipLabel, templateInteractions, templateSurveys, templateSurveyContentLabels, templateSurveyInteractionLabels, onInlineEdit } = opts;
   const useTemplateInteractions = templateInteractions !== undefined;
   const useTemplateSurveys = templateSurveys !== undefined;
   const e = onInlineEdit; // shorthand
@@ -605,7 +667,7 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
         )}
 
         {/* 만족도 — 템플릿 override 시 선택된 타입을 즉시 렌더 */}
-        {useTemplateSurveys && renderSurveyTemplates(templateSurveys!)}
+        {useTemplateSurveys && renderSurveyTemplates(templateSurveys!, { contentLabels: templateSurveyContentLabels, interactionLabels: templateSurveyInteractionLabels })}
         {!useTemplateSurveys && generated.surveys.length > 0 && (
           <>
             {renderSectionHeader('💬', '의견 들려주세요')}
@@ -643,41 +705,7 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
                   );
                 }
                 if (survey.type === 'periodic') {
-                  const questions = survey.questions as PeriodicSurveyQuestion[];
-                  return (
-                    <div key={idx} className="rounded-2xl p-6 space-y-5 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
-                      <p className="text-base font-semibold text-[#2C2C2C]">정기 만족도 조사</p>
-                      {questions.map((q, i) => (
-                        <div key={i}>
-                          <p className="text-sm font-semibold text-[#2C2C2C] mb-2">Q{i + 1}. {q.question}</p>
-                          {q.type === 'scale' && (
-                            <div>
-                              <div className="flex gap-1.5">
-                                {Array.from({ length: q.scale }, (_, n) => (
-                                  <button key={n} className="flex-1 py-2 text-sm bg-white border border-[#E1EFFB] rounded-lg hover:border-[#2B9EE8] transition-colors">{n + 1}</button>
-                                ))}
-                              </div>
-                              <div className="flex justify-between mt-1">
-                                <span className="text-xs text-gray-400">매우 불만족</span>
-                                <span className="text-xs text-gray-400">매우 만족</span>
-                              </div>
-                            </div>
-                          )}
-                          {q.type === 'multiple' && (
-                            <div className="flex flex-wrap gap-2">
-                              {q.options.map((opt, j) => (
-                                <button key={j} className="px-3.5 py-1.5 text-sm bg-white border border-[#E1EFFB] rounded-lg hover:border-[#2B9EE8] transition-colors">{opt}</button>
-                              ))}
-                            </div>
-                          )}
-                          {q.type === 'open' && (
-                            <div className="w-full h-16 bg-white rounded-xl border border-[#E1EFFB] px-3 py-2 text-sm text-gray-400 flex items-start">답변을 입력해 주세요...</div>
-                          )}
-                        </div>
-                      ))}
-                      <button className="w-full py-3 bg-[#2B9EE8] hover:bg-[#1a8ad4] text-white text-sm font-semibold rounded-xl transition-colors">제출하기</button>
-                    </div>
-                  );
+                  return renderPeriodicSurveyCard(survey.questions as PeriodicSurveyQuestion[], String(idx));
                 }
                 return null;
               })}
@@ -857,6 +885,8 @@ export function SavedNewsletterPreviewModal({
                 leadershipLabel: round.leadershipLabel,
                 templateInteractions: round.interactions,
                 templateSurveys: round.surveys,
+                templateSurveyContentLabels: round.generated.sections.map(s => s.contentTitle).filter(Boolean),
+                templateSurveyInteractionLabels: round.interactions.map(k => INTERACTION_SURVEY_LABELS[k] ?? k),
               })
             : renderNewsletterEmailPreview(round.generated, {
                 vol: round.vol,

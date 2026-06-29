@@ -1300,7 +1300,7 @@ function ConfigureContent() {
               <p className="text-xs text-gray-400">본문을 생성하고 있어요 (약 1분 소요)</p>
             </div>
             {renderInteractionTemplates(interactions)}
-            {renderSurveyTemplates(surveys)}
+            {renderSurveyTemplates(surveys, { contentLabels: contents.map(c => c.title), interactionLabels: interactions.map(k => INTERACTION_LABELS[k] ?? k) })}
           </div>
         </div>
       );
@@ -1309,7 +1309,7 @@ function ConfigureContent() {
     if (livePreviewMode === 'email') {
       return renderNewsletterEmailPreview(generated, { vol: activeRoundIdx + 1, dateLabel: '발송일 미정', firstThumbnail, onReadFull: () => setLivePreviewMode('full') });
     }
-    return renderGeneratedFullBody(generated, { vol: activeRoundIdx + 1, dateLabel: '발송일 미정', leadershipLabel, firstThumbnail, templateInteractions: interactions, templateSurveys: surveys, onInlineEdit: handleInlineEdit });
+    return renderGeneratedFullBody(generated, { vol: activeRoundIdx + 1, dateLabel: '발송일 미정', leadershipLabel, firstThumbnail, templateInteractions: interactions, templateSurveys: surveys, templateSurveyContentLabels: contents.map(c => c.title), templateSurveyInteractionLabels: interactions.map(k => INTERACTION_LABELS[k] ?? k), onInlineEdit: handleInlineEdit });
   }
 
   // ── 본문 편집 패널 (미리보기 모달) ──
@@ -2881,6 +2881,8 @@ function ConfigureContent() {
                               firstThumbnail,
                               templateInteractions: activeRound.interactions,
                               templateSurveys: activeRound.surveys,
+                              templateSurveyContentLabels: activeRound.contents.map(c => c.title),
+                              templateSurveyInteractionLabels: activeRound.interactions.map(k => INTERACTION_LABELS[k] ?? k),
                             })}
                           </>
                         )}
