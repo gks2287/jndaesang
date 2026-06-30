@@ -93,7 +93,7 @@ export default function NewCompanyPage() {
       return;
     }
     if (draftParticipants.length > 0) {
-      addParticipants(draftParticipants.map(p => ({
+      await addParticipants(draftParticipants.map(p => ({
         ...p,
         companyId: created.id,
         year: currentYear,

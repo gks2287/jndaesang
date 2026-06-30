@@ -1,8 +1,8 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { useMemo, useState } from 'react';
-import { useParticipantStore, participantToken, type LeadershipType } from '@/store/participantStore';
+import { useEffect, useMemo, useState } from 'react';
+import { type Participant } from '@/store/participantStore';
 import { useNewsletterStore } from '@/store/newsletterStore';
 import { renderGeneratedFullBody } from '@/components/newsletter/NewsletterRender';
 import { DEFAULT_STORYLINE, STEP_COLORS } from '@/lib/storyline';
@@ -81,13 +81,32 @@ type Tab = 'newsletter' | 'mypage';
 
 export default function ParticipantNewsletterPage() {
   const { token } = useParams<{ token: string }>();
-  const participants = useParticipantStore(s => s.participants);
   const newsletters = useNewsletterStore(s => s.newsletters);
 
-  const participant = useMemo(
-    () => participants.find(p => participantToken(p) === token),
-    [participants, token],
-  );
+  // 공개 토큰으로 본인 정보 + 동료 비교 평균만 조회 (undefined=로딩, null=없음)
+  const [participant, setParticipant] = useState<Participant | null | undefined>(undefined);
+  const [peers, setPeers] = useState<{ positionParticipationAvg: number | null; typeParticipationAvg: number | null; positionGroupCount: number; typeGroupCount: number }>({
+    positionParticipationAvg: null,
+    typeParticipationAvg: null,
+    positionGroupCount: 0,
+    typeGroupCount: 0,
+  });
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch(`/api/newsletter/by-token/${token}`);
+        if (!alive) return;
+        if (!res.ok) { setParticipant(null); return; }
+        const data = (await res.json()) as { participant: Participant; peers: { positionParticipationAvg: number | null; typeParticipationAvg: number | null; positionGroupCount: number; typeGroupCount: number } };
+        setParticipant(data.participant);
+        setPeers(data.peers);
+      } catch {
+        if (alive) setParticipant(null);
+      }
+    })();
+    return () => { alive = false; };
+  }, [token]);
 
   const newsletter = useMemo(() => {
     if (!participant) return null;
@@ -105,6 +124,14 @@ export default function ParticipantNewsletterPage() {
   );
   const [expandedLog, setExpandedLog] = useState<number | null>(null);
   const [activeLogRound, setActiveLogRound] = useState<number | null>(null);
+
+  if (participant === undefined) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <svg className="w-8 h-8 text-[#55A4DA] animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+      </div>
+    );
+  }
 
   if (!participant) {
     return (
@@ -127,28 +154,12 @@ export default function ParticipantNewsletterPage() {
   const activeAvailableRounds = hasStarted ? AVAILABLE_ROUNDS : [];
   const progressPct = Math.round((participant.stepCurrent / participant.stepTotal) * 100);
 
-  // ── 동료 비교 지표 계산 ──
-  // 참여율 = stepCurrent / stepTotal, 인터랙션율 = 참여율 * 0.88 (mock 비례 계산)
-  const calcRate = (p: typeof participant) =>
-    p.stepTotal > 0 && p.deliveryStatus !== '미발송' ? (p.stepCurrent / p.stepTotal) * 100 : null;
-
+  // ── 동료 비교 지표 (서버에서 집계된 평균 사용) ──
   const myParticipationRate = Math.round((participant.stepCurrent / participant.stepTotal) * 100);
   const myInteractionRate = Math.round(myParticipationRate * 0.88);
 
-  const samePositionGroup = participants.filter(
-    p => p.id !== participant.id && p.position === participant.position && p.deliveryStatus !== '미발송' && p.stepTotal > 0,
-  );
-  const sameTypeGroup = participants.filter(
-    p => p.id !== participant.id && p.leadershipType === participant.leadershipType && p.deliveryStatus !== '미발송' && p.stepTotal > 0,
-  );
-
-  const avgRate = (group: typeof participants) => {
-    const vals = group.map(calcRate).filter((v): v is number => v !== null);
-    return vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
-  };
-
-  const positionParticipationAvg = avgRate(samePositionGroup);
-  const typeParticipationAvg = avgRate(sameTypeGroup);
+  const positionParticipationAvg = peers.positionParticipationAvg;
+  const typeParticipationAvg = peers.typeParticipationAvg;
   const positionInteractionAvg = positionParticipationAvg !== null ? Math.round(positionParticipationAvg * 0.88) : null;
   const typeInteractionAvg = typeParticipationAvg !== null ? Math.round(typeParticipationAvg * 0.88) : null;
 
@@ -271,8 +282,8 @@ export default function ParticipantNewsletterPage() {
                     label="참여율"
                     myValue={myParticipationRate}
                     comparisons={[
-                      { label: `동일 직급(${participant.position})`, value: positionParticipationAvg, count: samePositionGroup.length },
-                      { label: `${participant.leadershipType} 평균`, value: typeParticipationAvg, count: sameTypeGroup.length },
+                      { label: `동일 직급(${participant.position})`, value: positionParticipationAvg, count: peers.positionGroupCount },
+                      { label: `${participant.leadershipType} 평균`, value: typeParticipationAvg, count: peers.typeGroupCount },
                     ]}
                     color="#2B9EE8"
                   />
@@ -281,8 +292,8 @@ export default function ParticipantNewsletterPage() {
                     label="인터랙션율"
                     myValue={myInteractionRate}
                     comparisons={[
-                      { label: `동일 직급(${participant.position})`, value: positionInteractionAvg, count: samePositionGroup.length },
-                      { label: `${participant.leadershipType} 평균`, value: typeInteractionAvg, count: sameTypeGroup.length },
+                      { label: `동일 직급(${participant.position})`, value: positionInteractionAvg, count: peers.positionGroupCount },
+                      { label: `${participant.leadershipType} 평균`, value: typeInteractionAvg, count: peers.typeGroupCount },
                     ]}
                     color="#7C3AED"
                   />
