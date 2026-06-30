@@ -172,6 +172,11 @@ function ConfigureContent() {
   const [previewTargetId, setPreviewTargetId] = useState<string>('general');
   // 좌측 실시간 미리보기 표시 모드 (전체 본문 / 요약본)
   const [livePreviewMode, setLivePreviewMode] = useState<'full' | 'email'>('full');
+  // '구성 완료' 버튼으로 공개된 미리보기 대상 (`${roundIdx}:${targetId}`) — 클릭 전까지 미리보기 숨김
+  const [revealedPreviews, setRevealedPreviews] = useState<Set<string>>(new Set());
+  // 하단 고정 프롬프트 바: 입력값 + 수정 진행 중 여부
+  const [promptInput, setPromptInput] = useState('');
+  const [refining, setRefining] = useState(false);
   // AI 자동 채움 중복 실행 가드 (`${roundIdx}:${targetId}`)
   const autoFilledRef = useRef<Set<string>>(new Set());
   // 세션 단위 클라이언트 캐시 (기업 선택 시 초기화) — API 비용 절감
@@ -560,6 +565,45 @@ function ConfigureContent() {
       console.error('미리보기 생성 오류:', e);
     } finally {
       setLivePreviewGenerating(prev => { const s = new Set(prev); s.delete(key); return s; });
+    }
+  }
+
+  // 우측 '구성 완료' 버튼: 해당 대상의 미리보기를 공개하고, 아직 본문이 없으면 즉시 생성 트리거
+  function revealPreview(roundIdx: number, targetId: string) {
+    const key = `${roundIdx}:${targetId}`;
+    setRevealedPreviews(prev => new Set(prev).add(key));
+    if (!livePreviewContent[key] && !livePreviewGenerating.has(key)) {
+      void generateLivePreview(roundIdx, targetId);
+    }
+  }
+
+  // 하단 프롬프트 바: 현재 미리보기 대상의 본문을 프롬프트로 수정 (refine API)
+  async function refinePreview(targetId: string) {
+    const key = `${activeRoundIdx}:${targetId}`;
+    const current = livePreviewContent[key];
+    const text = promptInput.trim();
+    if (!current || !text || refining) return;
+    setRefining(true);
+    try {
+      const res = await fetch('/api/newsletter/refine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current, prompt: text }),
+      });
+      if (!res.ok) throw new Error('수정 실패');
+      const data = await res.json() as GeneratedNewsletter;
+      setLivePreviewContent(prev => ({ ...prev, [key]: data }));
+      // 일반형이면 미리보기 모달 캐시·편집 표시에도 반영
+      if (targetId === 'general') {
+        generatedContentRef.current = { ...generatedContentRef.current, [activeRoundIdx]: data };
+        setGeneratedContent(prev => ({ ...prev, [activeRoundIdx]: data }));
+        editedRoundsRef.current.add(activeRoundIdx);
+      }
+      setPromptInput('');
+    } catch (e) {
+      console.error('프롬프트 수정 오류:', e);
+    } finally {
+      setRefining(false);
     }
   }
 
@@ -1282,6 +1326,17 @@ function ConfigureContent() {
     const generated = livePreviewContent[key];
     // 백그라운드 준비 중(주제 추천·콘텐츠 서칭) 또는 본문 생성 중 여부
     const preparing = preparingTargets.has(key) || livePreviewGenerating.has(key);
+    // '구성 완료' 버튼을 누르기 전에는 미리보기를 표시하지 않음 (우측 구성 패널 하단 버튼으로 공개)
+    const revealed = revealedPreviews.has(key);
+    if (!revealed) {
+      return (
+        <div className="h-full min-h-[480px] rounded-2xl shadow-md border border-[#D6EAF8] bg-white flex flex-col items-center justify-center py-20 px-6 gap-3 text-center">
+          <svg className="w-9 h-9 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+          <p className="text-sm font-semibold text-gray-700">구성을 완료하면 미리보기가 표시됩니다</p>
+          <p className="text-xs text-gray-400 leading-relaxed">오른쪽에서 주제·콘텐츠를 구성한 뒤<br />하단의 &lsquo;구성 완료 · 미리보기 보기&rsquo; 버튼을 눌러주세요</p>
+        </div>
+      );
+    }
 
     if (!hasConfig) {
       // 준비 중이면 로딩 안내, 아니면 빈 상태
@@ -2049,8 +2104,8 @@ function ConfigureContent() {
 
             {/* 본문: 좌우 2분할 */}
             <div className="flex-1 flex overflow-hidden">
-              {/* 좌측: 실시간 미리보기 */}
-              <div className="w-3/5 flex-shrink-0 border-r border-gray-200 overflow-y-auto px-6 py-4">
+              {/* 좌측: 미리보기 (스크롤) + 하단 고정 프롬프트 바 */}
+              <div className="w-3/5 flex-shrink-0 border-r border-gray-200 flex flex-col overflow-hidden">
                 {(() => {
                   const r = rounds[activeRoundIdx];
                   if (!r) return null;
@@ -2074,33 +2129,70 @@ function ConfigureContent() {
                     const g = activeGroups[gi];
                     return { title: `맞춤형 그룹 ${gi + 1}`, detail: g ? g.types.join('+') : '', count: g?.leaderIds.length ?? 0 };
                   })();
+                  const previewKey = `${activeRoundIdx}:${current}`;
+                  const canRefine = revealedPreviews.has(previewKey) && !!livePreviewContent[previewKey];
                   return (
-                    <div className="flex flex-col h-full">
-                      <div className="pb-3 flex-shrink-0 flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-base font-bold text-gray-800">실시간 미리보기</p>
-                          <p className="text-[11px] mt-0.5">
-                            <span className="font-semibold text-[#2E7DB5]">{targetDesc.title}</span>
-                            <span className="text-gray-400">{targetDesc.detail ? ` · ${targetDesc.detail}` : ''} ({targetDesc.count}명)</span>
-                          </p>
+                    <>
+                      {/* 스크롤 영역 (헤더 + 본문 미리보기) */}
+                      <div className="flex-1 overflow-y-auto px-6 py-4">
+                        <div className="pb-3 flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-base font-bold text-gray-800">미리보기</p>
+                            <p className="text-[11px] mt-0.5">
+                              <span className="font-semibold text-[#2E7DB5]">{targetDesc.title}</span>
+                              <span className="text-gray-400">{targetDesc.detail ? ` · ${targetDesc.detail}` : ''} ({targetDesc.count}명)</span>
+                            </p>
+                          </div>
+                          {/* 전체본문 / 요약본 전환 토글 */}
+                          <div className="flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-lg flex-shrink-0">
+                            {([['full', '전체본문'], ['email', '요약본']] as const).map(([mode, label]) => (
+                              <button
+                                key={mode}
+                                onClick={() => setLivePreviewMode(mode)}
+                                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${livePreviewMode === mode ? 'bg-white text-[#2E7DB5] shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                        {/* 전체본문 / 요약본 전환 토글 */}
-                        <div className="flex items-center gap-0.5 p-0.5 bg-gray-100 rounded-lg flex-shrink-0">
-                          {([['full', '전체본문'], ['email', '요약본']] as const).map(([mode, label]) => (
-                            <button
-                              key={mode}
-                              onClick={() => setLivePreviewMode(mode)}
-                              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${livePreviewMode === mode ? 'bg-white text-[#2E7DB5] shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
-                            >
-                              {label}
-                            </button>
-                          ))}
+                        <div className="w-full">
+                          {renderLivePreview(current)}
                         </div>
                       </div>
-                      <div className="w-full flex-1">
-                        {renderLivePreview(current)}
+                      {/* 하단 고정 프롬프트 바 — 스크롤해도 위치 고정 (배경/보더 없이 입력창·전송만) */}
+                      <div className="flex-shrink-0 px-6 py-3">
+                        <form
+                          onSubmit={e => { e.preventDefault(); void refinePreview(current); }}
+                          className="flex items-center gap-2"
+                        >
+                          <div className="relative flex-1">
+                            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#55A4DA]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" /></svg>
+                            <input
+                              type="text"
+                              value={promptInput}
+                              onChange={e => setPromptInput(e.target.value)}
+                              disabled={!canRefine || refining}
+                              placeholder={canRefine ? '프롬프트로 콘텐츠를 수정하세요 (예: 더 짧고 간결하게, 전문적인 톤으로)' : '미리보기를 먼저 표시하면 프롬프트로 수정할 수 있어요'}
+                              className="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-300 rounded-xl focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition-colors disabled:bg-gray-50 disabled:text-gray-400 disabled:placeholder-gray-400"
+                            />
+                          </div>
+                          <button
+                            type="submit"
+                            disabled={!canRefine || refining || !promptInput.trim()}
+                            aria-label="프롬프트로 수정"
+                            className="flex-shrink-0 w-10 h-10 rounded-xl bg-[#55A4DA] text-white flex items-center justify-center hover:bg-[#3A8BC4] disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
+                          >
+                            {refining ? (
+                              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" /></svg>
+                            )}
+                          </button>
+                        </form>
+                        {refining && <p className="text-[11px] text-gray-400 mt-1.5 pl-1">AI가 요청을 반영해 본문을 수정하고 있어요...</p>}
                       </div>
-                    </div>
+                    </>
                   );
                 })()}
               </div>
@@ -2245,6 +2337,40 @@ function ConfigureContent() {
                       openPool: () => openContentPool(false, null),
                     })}
                   </div>
+                    );
+                  })()}
+
+                  {/* 구성 완료 → 좌측 실시간 미리보기 공개 */}
+                  {(() => {
+                    const isCustom = currentTarget !== 'general';
+                    const grp = isCustom ? activeGroups.find(g => g.id === currentTarget) : undefined;
+                    const tTopic = isCustom ? (grp?.topic ?? '') : r.topic;
+                    const tContents = isCustom ? (grp?.contents ?? []) : r.contents;
+                    const canReveal = tTopic.trim().length > 0 || tContents.length > 0;
+                    const isRevealed = revealedPreviews.has(`${activeRoundIdx}:${currentTarget}`);
+                    return (
+                      <div className="pt-2 pb-1">
+                        {isRevealed ? (
+                          <div className="w-full flex items-center justify-center gap-1.5 py-3 rounded-xl bg-emerald-50 text-emerald-600 text-sm font-semibold">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                            미리보기 표시 중 · 수정하면 자동 반영됩니다
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              disabled={!canReveal}
+                              onClick={() => revealPreview(activeRoundIdx, currentTarget)}
+                              className={`w-full py-3 rounded-xl text-sm font-bold transition-colors ${canReveal ? 'bg-[#55A4DA] text-white hover:bg-[#3A8BC4]' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+                            >
+                              구성 완료 · 미리보기 보기
+                            </button>
+                            {!canReveal && (
+                              <p className="text-xs text-gray-400 text-center mt-2">주제를 입력하거나 콘텐츠를 1개 이상 추가하면 미리보기를 볼 수 있어요</p>
+                            )}
+                          </>
+                        )}
+                      </div>
                     );
                   })()}
 
