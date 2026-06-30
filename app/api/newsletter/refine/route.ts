@@ -67,10 +67,11 @@ const EMAIL_SYSTEM_PROMPT = `당신은 B2B 리더십 코칭 뉴스레터의 '요
 
 export async function POST(req: NextRequest) {
   try {
-    const { current, prompt, mode } = (await req.json()) as {
+    const { current, prompt, mode, referenceData } = (await req.json()) as {
       current: Newsletter;
       prompt: string;
       mode?: 'full' | 'email';
+      referenceData?: string;
     };
 
     if (!current || !prompt?.trim()) {
@@ -80,6 +81,15 @@ export async function POST(req: NextRequest) {
     // 요약본(email) 모드 = 요약 필드만 손대고 본문 상세는 보존
     const isEmail = mode === 'email';
 
+    // 관리자가 '본문에 반영' 체크한 조직 진단 자료에서 추출된 데이터 (있을 때만)
+    const referenceBlock = referenceData?.trim()
+      ? `
+
+[조직 진단 데이터 — 참고]
+아래는 이 대상의 실제 진단 자료에서 추출한 데이터입니다. 수정 시 수치를 인용한다면 아래 값만 사용하고, 여기에 없는 수치는 지어내지 마세요(환각 금지). 값을 바꾸거나 보정하지 마세요.
+${referenceData.trim()}`
+      : '';
+
     // surveys는 서버에서 결정적으로 생성되는 큰 구조 → AI에 보내지 않고 그대로 보존
     const { surveys, ...editable } = current;
 
@@ -87,6 +97,7 @@ export async function POST(req: NextRequest) {
 ${JSON.stringify(editable)}
 
 수정 요청: ${prompt.trim()}
+${referenceBlock}
 
 위 수정 요청을 반영해 동일한 JSON 구조로만 응답하세요.`;
 

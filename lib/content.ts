@@ -15,6 +15,23 @@ export interface CustomGroup {
   contents: ContentPoolItem[];
   interactions: InteractionType[];
   surveys: SurveyType[];
+  // 그룹별 추가 자료 (선택) — 기존 드래프트 호환을 위해 optional
+  attachments?: RoundAttachment[];
+}
+
+// 타깃(일반형/그룹)별 추가 자료 (조직 진단 결과 파일 등 직접 첨부).
+// 업로드 즉시 AI 파싱해 추출 텍스트만 보관 (파일 바이트는 저장하지 않음 → 새로고침·재생성에도 유지).
+export interface RoundAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;        // bytes
+  note: string;        // 관리자 메모 (예: "2024 조직 진단 결과")
+  uploadedAt: string;  // ISO
+  useForGeneration: boolean;                    // '본문에 반영' 체크 — 체크된 자료만 generate/refine 입력에 포함
+  parseStatus: 'parsing' | 'done' | 'error';    // AI 파싱 상태
+  extractedText?: string;                       // 추출된 핵심 데이터(수치·분포 등). done일 때만 존재
+  parseError?: string;                          // error일 때 사유
 }
 
 export interface Round {
@@ -30,10 +47,12 @@ export interface Round {
   generalLeaderIds: number[];
   // 맞춤형 그룹 (기존 customTypes/customTopic/customContents/... 대체)
   customGroups: CustomGroup[];
+  // 회차별 추가 자료 (선택) — 기존 드래프트 호환을 위해 optional
+  attachments?: RoundAttachment[];
 }
 
 export function makeCustomGroup(id: string, types: string[] = [], leaderIds: number[] = []): CustomGroup {
-  return { id, types, leaderIds, topic: '', contents: [], interactions: [], surveys: [] };
+  return { id, types, leaderIds, topic: '', contents: [], interactions: [], surveys: [], attachments: [] };
 }
 
 export interface ContentItem {

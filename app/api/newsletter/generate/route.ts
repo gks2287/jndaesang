@@ -141,11 +141,24 @@ function buildInteractionPrompt(types: string[]): string {
 // ── POST 핸들러 ───────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
-    const { round, leadershipType, companyName } = await req.json() as {
+    const { round, leadershipType, companyName, referenceData } = await req.json() as {
       round: RoundPayload;
       leadershipType: string;
       companyName: string;
+      referenceData?: string;
     };
+
+    // 관리자가 첨부하고 '본문에 반영' 체크한 조직 진단 자료에서 추출된 데이터 (있을 때만)
+    const referenceBlock = referenceData?.trim()
+      ? `
+
+[조직 진단 데이터 — 반드시 본문에 반영]
+아래는 이 대상의 실제 진단 자료에서 추출한 데이터입니다. 본문(특히 dataStat, intro, 본론)에 자연스럽게 인용하세요.
+- 아래에 명시된 수치·비율·분포만 사용하세요. 여기에 없는 수치는 절대 지어내지 마세요(환각 금지).
+- 값을 바꾸거나 반올림 보정하지 말고 추출된 그대로 쓰세요.
+- 데이터가 주제와 무관하면 억지로 끼워넣지 말고, 관련된 값만 활용하세요.
+${referenceData.trim()}`
+      : '';
 
     const contentSummary = round.contents.length > 0
       ? round.contents.map((c, i) =>
@@ -167,6 +180,7 @@ export async function POST(req: NextRequest) {
 
 [이번 호 콘텐츠]
 ${contentSummary}
+${referenceBlock}
 
 [줄바꿈 규칙 — 가독성을 위해 반드시 적용]
 - headline: 18자 이상이면 의미 단위(조사/접속사/쉼표 앞뒤)에서 줄바꿈(\\n). 한 줄 15~20자 내외

@@ -8,7 +8,7 @@ import { useCompanyStore } from '@/store/companyStore';
 import CompanyLogo from '@/components/CompanyLogo';
 import { DEFAULT_STORYLINE, type StorylineStep } from '@/lib/storyline';
 import { LEADERSHIP_COLOR } from '@/lib/constants/leadershipColors';
-import { type Round, type CustomGroup, makeCustomGroup } from '@/lib/content';
+import { type Round, type CustomGroup, type RoundAttachment, makeCustomGroup } from '@/lib/content';
 import { getContentList, type ContentPoolItem, type ContentCategory } from '@/lib/api/contentPool';
 import { useNewNewsletterDraftStore, type TopicSuggestion as DraftTopicSuggestion } from '@/store/newNewsletterDraftStore';
 import { useParticipantStore, POSITIVE_TYPES, NEGATIVE_TYPES } from '@/store/participantStore';
@@ -44,6 +44,12 @@ const WIZARD_STEPS: Array<{ n: WizardStep; label: string }> = [
 
 const POSITIVE_LEADERSHIP_TYPES = new Set(['코칭형', '민주형', '서번트형', '비전형', '관계중심형']);
 
+// 추가 자료 업로드 제한
+const ATTACH_MAX_PER_TARGET = 5;
+const ATTACH_MAX_BYTES = 10 * 1024 * 1024; // 10MB
+const ATTACH_ACCEPT = '.pdf,.docx,.txt,.xlsx,.csv';
+const ATTACH_ALLOWED_EXT = ['pdf', 'docx', 'txt', 'xlsx', 'csv'];
+
 const INTERACTION_LABELS: Record<string, string> = {
   quiz: '퀴즈',
   scenario: '선택형 시나리오',
@@ -77,6 +83,7 @@ function makeRoundsFromDistribution(dist: { stepIndex: number; count: number }[]
       customLeaderIds: [],
       generalLeaderIds: [],
       customGroups: [],
+      attachments: [],
     }))
   );
 }
@@ -164,6 +171,10 @@ function ConfigureContent() {
   // ── 3단계: 리더십 유형 배분 ──
   const [distributionRoundIdx, setDistributionRoundIdx] = useState(0);
   const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
+  // Step 3: '이전 회차와 동일하게' 배분 복사 메뉴 열림 상태
+  const [copyDistMenuOpen, setCopyDistMenuOpen] = useState(false);
+  // Step 4 추가 자료: 드래그오버 중인 타깃 id (시각 피드백)
+  const [attachDragTarget, setAttachDragTarget] = useState<string | null>(null);
 
   // ── 4단계: 콘텐츠 구성 (회차별 통합) ──
   const [rounds, setRounds] = useState<Round[]>(configDraft.rounds);
@@ -539,6 +550,8 @@ function ConfigureContent() {
     const interactions = isCustom ? (group?.interactions ?? []) : r.interactions;
     const surveys = isCustom ? (group?.surveys ?? []) : r.surveys;
     if (!topic.trim() && contents.length === 0) return;
+    // '본문에 반영' 체크 + 파싱 성공한 추가 자료만 컨텍스트로 주입 (미체크·실패 자료는 제외)
+    const referenceData = buildReferenceData(roundIdx, targetId);
     const key = `${roundIdx}:${targetId}`;
     setLivePreviewGenerating(prev => new Set([...prev, key]));
     try {
@@ -556,6 +569,7 @@ function ConfigureContent() {
           },
           leadershipType: isCustom && group && group.types.length > 0 ? group.types.join(', ') : '일반형',
           companyName: targetCompanies.map(c => c.name).join(', ') || '대상 기업',
+          referenceData,
         }),
       });
       if (!res.ok) throw new Error('생성 실패');
@@ -583,13 +597,15 @@ function ConfigureContent() {
     const current = livePreviewContent[key];
     const text = promptInput.trim();
     if (!current || !text || refining) return;
+    // 수정 시에도 '반영' 체크된 추가 자료를 컨텍스트로 함께 전달
+    const referenceData = buildReferenceData(activeRoundIdx, targetId);
     setRefining(true);
     try {
       const res = await fetch('/api/newsletter/refine', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // 현재 보고 있는 모드 전달 — 요약본(email)이면 요약 필드를, 전체본문(full)이면 본문을 수정
-        body: JSON.stringify({ current, prompt: text, mode: livePreviewMode }),
+        body: JSON.stringify({ current, prompt: text, mode: livePreviewMode, referenceData }),
       });
       if (!res.ok) throw new Error('수정 실패');
       const data = await res.json() as GeneratedNewsletter;
@@ -1149,6 +1165,107 @@ function ConfigureContent() {
     setTopicError(null);
   }
 
+  // ── Step 3: 선택한 이전 회차의 유형 배분(맞춤형 그룹 구성)을 현재 회차에 동일하게 적용 ──
+  // 그룹의 유형 묶음만 복사하고 인원(leaderIds)은 현재 대상자 기준으로 재계산. 콘텐츠는 복사하지 않음.
+  function applyDistributionFrom(sourceIdx: number) {
+    setRounds(prev => {
+      const src = prev[sourceIdx];
+      if (!src) return prev;
+      return prev.map((round, i) => {
+        if (i !== distributionRoundIdx) return round;
+        const newGroups = src.customGroups.map(g =>
+          makeCustomGroup(
+            `g-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            [...g.types],
+            negativeParticipants.filter(p => g.types.includes(p.leadershipType)).map(p => p.id),
+          ),
+        );
+        return { ...round, customGroups: newGroups };
+      });
+    });
+    setCopyDistMenuOpen(false);
+  }
+
+  // ── Step 4: 타깃(일반형/그룹)별 추가 자료(파일) 업로드/파싱/삭제 ──
+  // targetId === 'general' → Round.attachments, 그 외 → 해당 CustomGroup.attachments
+  function patchTargetAttachments(
+    roundIdx: number,
+    targetId: string,
+    updater: (list: RoundAttachment[]) => RoundAttachment[],
+  ) {
+    setRounds(prev => prev.map((r, i) => {
+      if (i !== roundIdx) return r;
+      if (targetId === 'general') return { ...r, attachments: updater(r.attachments ?? []) };
+      return {
+        ...r,
+        customGroups: r.customGroups.map(g => g.id === targetId ? { ...g, attachments: updater(g.attachments ?? []) } : g),
+      };
+    }));
+  }
+
+  function getTargetAttachments(roundIdx: number, targetId: string): RoundAttachment[] {
+    const r = rounds[roundIdx];
+    if (!r) return [];
+    if (targetId === 'general') return r.attachments ?? [];
+    return r.customGroups.find(g => g.id === targetId)?.attachments ?? [];
+  }
+
+  function showToast(msg: string) {
+    setToastMessage(msg);
+    setShowDraftToast(true);
+    setTimeout(() => setShowDraftToast(false), 2500);
+  }
+
+  async function uploadAttachments(roundIdx: number, targetId: string, files: FileList | File[]) {
+    const list = Array.from(files);
+    const current = getTargetAttachments(roundIdx, targetId);
+    let slots = ATTACH_MAX_PER_TARGET - current.length;
+    for (const file of list) {
+      if (slots <= 0) { showToast(`자료는 타깃당 최대 ${ATTACH_MAX_PER_TARGET}개까지 첨부할 수 있어요`); break; }
+      const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+      if (!ATTACH_ALLOWED_EXT.includes(ext)) { showToast(`${file.name}: 지원하지 않는 형식 (pdf/docx/txt/xlsx/csv)`); continue; }
+      if (file.size > ATTACH_MAX_BYTES) { showToast(`${file.name}: 10MB를 초과했어요`); continue; }
+      slots -= 1;
+      const id = `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      patchTargetAttachments(roundIdx, targetId, prev => [
+        ...prev,
+        { id, name: file.name, mimeType: file.type, size: file.size, note: '', useForGeneration: false, parseStatus: 'parsing', uploadedAt: new Date().toISOString() },
+      ]);
+      // 업로드 즉시 파싱 — 추출 텍스트만 보관 (파일 바이트는 저장하지 않음)
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        const res = await fetch('/api/newsletter/parse-attachment', { method: 'POST', body: fd });
+        const data = await res.json() as { extractedText?: string; error?: string };
+        if (!res.ok || !data.extractedText) throw new Error(data.error || '파싱 실패');
+        patchTargetAttachments(roundIdx, targetId, prev => prev.map(a => a.id === id ? { ...a, parseStatus: 'done', extractedText: data.extractedText } : a));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : '파일을 분석할 수 없습니다.';
+        patchTargetAttachments(roundIdx, targetId, prev => prev.map(a => a.id === id ? { ...a, parseStatus: 'error', parseError: msg } : a));
+      }
+    }
+  }
+
+  function removeAttachment(roundIdx: number, targetId: string, id: string) {
+    patchTargetAttachments(roundIdx, targetId, prev => prev.filter(a => a.id !== id));
+  }
+
+  function setAttachmentNote(roundIdx: number, targetId: string, id: string, note: string) {
+    patchTargetAttachments(roundIdx, targetId, prev => prev.map(a => a.id === id ? { ...a, note } : a));
+  }
+
+  function toggleAttachmentUse(roundIdx: number, targetId: string, id: string) {
+    patchTargetAttachments(roundIdx, targetId, prev => prev.map(a => a.id === id ? { ...a, useForGeneration: !a.useForGeneration } : a));
+  }
+
+  // '본문에 반영' 체크 + 파싱 성공한 자료의 추출 텍스트만 모아 generate/refine 입력으로 사용
+  function buildReferenceData(roundIdx: number, targetId: string): string {
+    return getTargetAttachments(roundIdx, targetId)
+      .filter(a => a.useForGeneration && a.parseStatus === 'done' && a.extractedText?.trim())
+      .map(a => `[자료: ${a.name}${a.note ? ` — ${a.note}` : ''}]\n${a.extractedText!.trim()}`)
+      .join('\n\n');
+  }
+
   // ── Step 4: 주제/콘텐츠/인터랙션/만족도 4섹션 렌더 (일반형·맞춤형 그룹 공용) ──
   function renderContentSections(opts: {
     keyPrefix: string;
@@ -1164,9 +1281,17 @@ function ConfigureContent() {
     toggleInteractionFn: (v: 'quiz' | 'scenario' | 'selfcheck' | 'reflection' | 'dodont') => void;
     toggleSurveyFn: (v: 'always' | 'periodic') => void;
     openPool: () => void;
+    attachments: RoundAttachment[];
+    uploadAttachmentsFn: (files: FileList | File[]) => void;
+    removeAttachmentFn: (id: string) => void;
+    toggleAttachmentUseFn: (id: string) => void;
+    setAttachmentNoteFn: (id: string, note: string) => void;
   }) {
-    const { keyPrefix, targetId, topic, contents, interactions, surveys, placeholder } = opts;
-    const kTopic = `${keyPrefix}:2`, kContent = `${keyPrefix}:3`, kInter = `${keyPrefix}:4`, kSurvey = `${keyPrefix}:5`;
+    const { keyPrefix, targetId, topic, contents, interactions, surveys, placeholder, attachments } = opts;
+    const kTopic = `${keyPrefix}:2`, kContent = `${keyPrefix}:3`, kAttach = `${keyPrefix}:3b`, kInter = `${keyPrefix}:4`, kSurvey = `${keyPrefix}:5`;
+    const attachDropId = `${keyPrefix}:attach`;
+    const usedAttachCount = attachments.filter(a => a.useForGeneration && a.parseStatus === 'done').length;
+    const fmtSize = (n: number) => n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
     const isTarget = suggestionsTarget === targetId;
     const targetKey = `${activeRoundIdx}:${targetId}`;
     // 주제 추천 로딩: 수동 재추천(isLoadingTopics+isTarget) 또는 초기 자동 준비 중 주제 미설정 단계
@@ -1261,6 +1386,96 @@ function ConfigureContent() {
                       </div>
                     ))}
                     {contentSuggestLoading[activeRoundIdx] && (<div className="flex items-center gap-2 px-3 py-3 rounded-xl border border-dashed border-[#55A4DA]/40 bg-[#55A4DA]/5"><svg className="w-3.5 h-3.5 animate-spin text-[#55A4DA] flex-shrink-0" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg><p className="text-xs text-[#55A4DA] font-medium">AI가 콘텐츠를 선택하는 중...</p></div>)}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+        {/* 추가 자료 업로드 — 조직 진단 결과 등을 첨부하고 '본문에 반영' 체크한 자료만 생성에 사용 */}
+        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div onClick={() => toggleSectionKey(kAttach)} className="px-5 py-3 flex items-center gap-2 hover:bg-gray-50 transition-colors cursor-pointer">
+            <p className="text-base font-medium text-gray-800 flex-1">추가 자료 업로드</p>
+            {usedAttachCount > 0
+              ? (<span className="text-[11px] font-semibold text-[#55A4DA] flex-shrink-0">{usedAttachCount}개 반영</span>)
+              : attachments.length > 0
+                ? (<span className="text-[11px] text-gray-400 flex-shrink-0">{attachments.length}개 · 미반영</span>)
+                : (<span className="text-[11px] text-gray-400 flex-shrink-0">선택사항</span>)}
+            <label
+              onClick={e => e.stopPropagation()}
+              className="flex items-center gap-1 px-2.5 py-1 bg-[#55A4DA] hover:bg-[#3A8BC4] text-white text-xs font-bold rounded-lg transition-colors ml-1.5 flex-shrink-0 cursor-pointer"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
+              파일 추가
+              <input type="file" multiple accept={ATTACH_ACCEPT} className="hidden" onChange={e => { if (e.target.files?.length) opts.uploadAttachmentsFn(e.target.files); e.target.value = ''; }} />
+            </label>
+            <svg className={`w-3.5 h-3.5 text-gray-400 flex-shrink-0 ml-1 transition-transform duration-200 ${isSectionOpen(kAttach) ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+          </div>
+          <div className={`grid transition-all duration-200 ${isSectionOpen(kAttach) ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+            <div className="overflow-hidden">
+              <div className="border-t border-gray-100 p-4 space-y-3">
+                <p className="text-[11px] text-gray-400">조직 진단 결과(엑셀·PDF 등)를 첨부하면 분포·수치를 추출해, <span className="font-semibold text-gray-500">‘본문에 반영’ 체크한 자료만</span> 생성·수정에 사용합니다. (pdf · docx · txt · xlsx · csv · 최대 10MB · 타깃당 {ATTACH_MAX_PER_TARGET}개)</p>
+                {/* 드롭존 */}
+                <label
+                  className={`flex flex-col items-center justify-center w-full border-2 border-dashed rounded-xl py-5 px-4 cursor-pointer transition-colors ${
+                    attachDragTarget === attachDropId ? 'border-[#55A4DA] bg-[#55A4DA]/10' : 'border-gray-200 hover:border-[#55A4DA]/50 hover:bg-[#55A4DA]/5'
+                  }`}
+                  onDragOver={e => { e.preventDefault(); setAttachDragTarget(attachDropId); }}
+                  onDragLeave={() => setAttachDragTarget(null)}
+                  onDrop={e => { e.preventDefault(); setAttachDragTarget(null); if (e.dataTransfer.files.length) opts.uploadAttachmentsFn(e.dataTransfer.files); }}
+                >
+                  <input type="file" multiple accept={ATTACH_ACCEPT} className="hidden" onChange={e => { if (e.target.files?.length) opts.uploadAttachmentsFn(e.target.files); e.target.value = ''; }} />
+                  <svg className="w-5 h-5 text-[#55A4DA] mb-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3-3m0 0l3 3m-3-3v9" /></svg>
+                  <span className="text-xs text-gray-400">파일을 끌어다 놓거나 클릭해 업로드</span>
+                </label>
+                {/* 업로드 목록 */}
+                {attachments.length > 0 && (
+                  <div className="space-y-2">
+                    {attachments.map(a => {
+                      const isError = a.parseStatus === 'error';
+                      const isParsing = a.parseStatus === 'parsing';
+                      const canUse = a.parseStatus === 'done';
+                      return (
+                        <div key={a.id} className={`border rounded-xl px-3 py-2.5 ${isError ? 'border-red-200 bg-red-50/40' : 'border-gray-100 bg-gray-50'}`}>
+                          <div className="flex items-center gap-2.5">
+                            {/* 반영 체크박스 — 파싱 성공한 자료만 활성 */}
+                            <button
+                              onClick={() => canUse && opts.toggleAttachmentUseFn(a.id)}
+                              disabled={!canUse}
+                              title={canUse ? '본문에 반영' : (isParsing ? '분석 중' : '분석 실패 — 반영 불가')}
+                              className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                                a.useForGeneration && canUse ? 'border-[#55A4DA] bg-[#55A4DA]' : canUse ? 'border-gray-300 hover:border-[#55A4DA]' : 'border-gray-200 cursor-not-allowed'
+                              }`}
+                            >
+                              {a.useForGeneration && canUse && <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3.5} d="M5 13l4 4L19 7" /></svg>}
+                            </button>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-xs font-semibold text-gray-700 truncate">{a.name}</p>
+                                <span className="text-[10px] text-gray-400 flex-shrink-0">{fmtSize(a.size)}</span>
+                              </div>
+                              {/* 상태 표시 */}
+                              {isParsing && (
+                                <span className="inline-flex items-center gap-1 text-[10px] text-[#55A4DA] mt-0.5">
+                                  <svg className="w-2.5 h-2.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+                                  데이터 분석 중...
+                                </span>
+                              )}
+                              {isError && <span className="block text-[10px] text-red-500 mt-0.5">분석 실패 — 본문에 반영되지 않아요{a.parseError ? ` (${a.parseError})` : ''}</span>}
+                              {canUse && <span className="block text-[10px] text-emerald-600 mt-0.5">분석 완료 · {a.useForGeneration ? '본문에 반영됨' : '체크하면 반영'}</span>}
+                            </div>
+                            <button onClick={() => opts.removeAttachmentFn(a.id)} className="flex-shrink-0 text-gray-300 hover:text-red-400 transition-colors" title="삭제"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+                          </div>
+                          <input
+                            type="text"
+                            value={a.note}
+                            onChange={e => opts.setAttachmentNoteFn(a.id, e.target.value)}
+                            placeholder="메모 (예: 2024 리더십 진단 분포)"
+                            className="w-full mt-1.5 text-[11px] text-gray-600 bg-transparent border-b border-transparent hover:border-gray-200 focus:border-[#55A4DA] focus:outline-none py-0.5 placeholder-gray-300"
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1861,6 +2076,53 @@ function ConfigureContent() {
               </div>
             )}
 
+            {/* 이전 회차와 동일하게 — 2회차부터 노출 (1회차는 복사할 이전 회차가 없음) */}
+            {rounds.length > 1 && distributionRoundIdx > 0 && (
+              <div className="relative inline-block">
+                <button
+                  onClick={() => setCopyDistMenuOpen(v => !v)}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border border-[#55A4DA] text-[#55A4DA] hover:bg-[#55A4DA]/5 transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 4h8a2 2 0 012 2v6a2 2 0 01-2 2h-8a2 2 0 01-2-2v-6a2 2 0 012-2z" />
+                  </svg>
+                  이전 회차와 동일하게 적용
+                  <svg className={`w-3 h-3 transition-transform ${copyDistMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {copyDistMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setCopyDistMenuOpen(false)} />
+                    <div className="absolute left-0 top-full mt-1.5 w-64 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden">
+                      <div className="px-3.5 py-2.5 border-b border-gray-100 text-[11px] font-bold text-gray-400">
+                        복사할 회차를 선택하세요
+                      </div>
+                      <div className="max-h-60 overflow-y-auto divide-y divide-gray-50">
+                        {rounds.slice(0, distributionRoundIdx).map((r, idx) => {
+                          const s = customStoryline[r.stepIndex];
+                          const groupCount = r.customGroups.filter(g => g.types.length > 0).length;
+                          return (
+                            <button
+                              key={idx}
+                              onClick={() => applyDistributionFrom(idx)}
+                              className="w-full text-left px-3.5 py-2.5 hover:bg-[#55A4DA]/5 transition-colors"
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-bold text-gray-700">{idx + 1}회차</span>
+                                {s && <span className="text-[11px] text-gray-400 truncate">{s.title}</span>}
+                              </div>
+                              <p className="text-[11px] text-gray-400 mt-0.5">맞춤형 {groupCount}그룹</p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {/* 배분 카드 */}
             {rounds[distributionRoundIdx] !== undefined && (() => {
               const r = rounds[distributionRoundIdx];
@@ -2297,6 +2559,11 @@ function ConfigureContent() {
                           toggleInteractionFn: v => toggleGroupInteraction(activeRoundIdx, g.id, v),
                           toggleSurveyFn: v => toggleGroupSurvey(activeRoundIdx, g.id, v),
                           openPool: () => openContentPool(true, g.id),
+                          attachments: g.attachments ?? [],
+                          uploadAttachmentsFn: files => void uploadAttachments(activeRoundIdx, g.id, files),
+                          removeAttachmentFn: id => removeAttachment(activeRoundIdx, g.id, id),
+                          toggleAttachmentUseFn: id => toggleAttachmentUse(activeRoundIdx, g.id, id),
+                          setAttachmentNoteFn: (id, note) => setAttachmentNote(activeRoundIdx, g.id, id, note),
                         })}
                       </div>
                     );
@@ -2336,6 +2603,11 @@ function ConfigureContent() {
                       toggleInteractionFn: v => toggleInteraction(activeRoundIdx, v),
                       toggleSurveyFn: v => toggleSurvey(activeRoundIdx, v),
                       openPool: () => openContentPool(false, null),
+                      attachments: r.attachments ?? [],
+                      uploadAttachmentsFn: files => void uploadAttachments(activeRoundIdx, 'general', files),
+                      removeAttachmentFn: id => removeAttachment(activeRoundIdx, 'general', id),
+                      toggleAttachmentUseFn: id => toggleAttachmentUse(activeRoundIdx, 'general', id),
+                      setAttachmentNoteFn: (id, note) => setAttachmentNote(activeRoundIdx, 'general', id, note),
                     })}
                   </div>
                     );
