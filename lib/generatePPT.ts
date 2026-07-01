@@ -155,8 +155,8 @@ export async function downloadNewsletterPPT(
       y += 0.58;
     }
 
-    // 핵심 포인트
-    if (y < FOOTER_Y) {
+    // 핵심 포인트 (없는 섹션은 생략)
+    if (y < FOOTER_Y && sec.keyTakeaway && sec.keyTakeaway.trim()) {
       s1.addShape(pptx.ShapeType.rect, { x: PAD + 0.1, y, w: IW - 0.1, h: 0.4, fill: { color: C.lightGreen }, line: { color: '86EFAC', width: 0.5 } });
       s1.addShape(pptx.ShapeType.rect, { x: PAD + 0.1, y, w: 0.06, h: 0.4, fill: { color: C.green }, line: { color: C.green } });
       s1.addText(`💡  ${sec.keyTakeaway}`, { x: PAD + 0.22, y: y + 0.08, w: IW - 0.32, h: 0.28, fontSize: 9.5, bold: true, color: '065F46', wrap: true });

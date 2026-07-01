@@ -65,6 +65,9 @@ function EditableText({ value, field, onEdit, className, tag: Tag = 'span', mult
   );
 }
 
+// 스크롤형 본문 3부작 단계 라벨 (서론·본론·결론) — 흐름이 한눈에 읽히도록 동사형 단계로 노출
+const STORY_STAGES = ['짚어보기', '파고들기', '행동하기'] as const;
+
 // ── 생성된 뉴스레터 데이터 타입 (configure 페이지와 공유) ──
 export type GeneratedNewsletterSection = {
   contentTitle: string;
@@ -78,7 +81,7 @@ export type GeneratedNewsletterSection = {
   caseStudy?: string;     // 실제 사례 박스
   mainBody?: string;      // (구버전 호환)
   examples?: string;      // (구버전 호환)
-  keyTakeaway: string;
+  keyTakeaway?: string;   // 핵심 한 줄 (서론 섹션 등에서는 생략 가능)
   actionPlan?: string[];  // 실천 가능한 행동 2~3개
   thumbnail?: string;     // 콘텐츠 썸네일 (콘텐츠 풀 우선)
   thumbnailUrl?: string;  // 썸네일 폴백 URL (서버 생성)
@@ -486,6 +489,22 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
   const useTemplateInteractions = templateInteractions !== undefined;
   const useTemplateSurveys = templateSurveys !== undefined;
   const e = onInlineEdit; // shorthand
+
+  // ── 이미지 중복 방지 ──
+  // 뉴스레터 안에서 렌더되는 모든 사진(커버 + 본문 섹션 썸네일)이 서로 달라야 한다.
+  // 커버가 섹션0의 이미지를 먼저 차지하고, 이후 섹션은 이미 쓰인 이미지면 비운다(중복보다 없는 게 낫다).
+  const firstImage = (s?: GeneratedNewsletterSection) =>
+    [s?.thumbnail, s?.thumbnailUrl].find((u): u is string => !!u && u.trim().length > 0) ?? '';
+  const usedImages = new Set<string>();
+  const coverImage = firstImage(generated.sections[0]);
+  if (coverImage) usedImages.add(coverImage);
+  const sectionImage = generated.sections.map((s, i) => {
+    if (i === 0) return '';                                  // 섹션0 사진은 커버에서 노출 → 본문 인라인 중복 방지
+    const img = firstImage(s);
+    if (img && !usedImages.has(img)) { usedImages.add(img); return img; }
+    return '';                                               // 중복이거나 후보 없음 → 이 섹션은 사진을 비움
+  });
+
   return (
     <div className="bg-white max-w-2xl mx-auto rounded-2xl overflow-hidden shadow-sm border border-gray-100 break-keep break-words">
       {/* ① 매스헤드 — 유틸바 + 대형 타이틀 + 원형 VOL 배지 + 블랙 더블 룰 */}
@@ -514,7 +533,7 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
       </div>
 
       {/* ② 오버레이 히어로 — 첫 섹션 썸네일 위에 eyebrow + 헤드라인 */}
-      <HeroOverlay sources={[generated.sections[0]?.thumbnail, generated.sections[0]?.thumbnailUrl]} label={generated.sections[0]?.contentTitle}>
+      <HeroOverlay sources={[coverImage]} label={generated.sections[0]?.contentTitle}>
         {generated.subject && (
           <EditableText tag="p" value={generated.subject} field="subject" onEdit={e} className="text-[11px] font-bold tracking-[0.2em] uppercase text-white/80 mb-2" />
         )}
@@ -540,7 +559,10 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
               {generated.sections.map((sec, idx) => (
                 <li key={sec.contentId}>
                   <a href={`#nl-sec-${idx}`} className="flex items-center gap-3 px-5 py-3 hover:bg-[#F6FAFE] transition-colors group">
-                    <span className="text-sm font-black text-[#55A4DA] tabular-nums w-6 flex-shrink-0">{String(idx + 1).padStart(2, '0')}</span>
+                    <span className="flex-shrink-0 w-[4.5rem]">
+                      <span className="block text-[10px] font-bold text-[#9CA3AF] tabular-nums leading-none">{String(idx + 1).padStart(2, '0')}</span>
+                      {STORY_STAGES[idx] && <span className="block text-[11px] font-bold text-[#55A4DA] leading-tight mt-0.5">{STORY_STAGES[idx]}</span>}
+                    </span>
                     <span className="text-sm font-semibold text-[#374151] leading-snug flex-1 min-w-0 group-hover:text-[#55A4DA] transition-colors">{sec.contentTitle}</span>
                     <span className="text-[#9CA3AF] group-hover:text-[#55A4DA] transition-colors flex-shrink-0">→</span>
                   </a>
@@ -559,87 +581,138 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
               ? sec.body
               : [sec.mainBody, sec.examples].filter((p): p is string => !!p && p.trim().length > 0);
             const paras = bodyParas.length > 0 ? bodyParas : (sec.summary ? [sec.summary] : []);
+            // 역할 결정: 첫 섹션=서론(임팩트형), 마지막=결론(실천 카드형), 그 외=본론(기사형)
+            const role: 'intro' | 'body' | 'action' =
+              idx === 0 ? 'intro' : (idx === generated.sections.length - 1 ? 'action' : 'body');
+
+            // 단계 마커(진행 바 + 라벨) — 세 템플릿 공통 throughline (요청대로 유지)
+            const eyebrow = (
+              <div className="flex items-center gap-2.5 mb-3">
+                <div className="flex items-center gap-1">
+                  {generated.sections.map((_, i) => (
+                    <span key={i} className={`h-[3px] rounded-full transition-all ${i === idx ? 'w-6 bg-[#55A4DA]' : 'w-2.5 bg-[#CFE3F3]'}`} />
+                  ))}
+                </div>
+                <p className="text-[11px] font-bold text-[#55A4DA] leading-none">
+                  <span className="tabular-nums tracking-[0.1em]">{String(idx + 1).padStart(2, '0')}/{String(generated.sections.length).padStart(2, '0')}</span>
+                  {STORY_STAGES[idx] && <span className="ml-1.5">· {STORY_STAGES[idx]}</span>}
+                </p>
+              </div>
+            );
+
+            const divider = idx > 0 && (
+              <div className="my-14 flex items-center gap-4">
+                <span className="h-px flex-1 bg-gray-100" />
+                <span className="text-gray-300 text-xs tracking-[0.5em]">• • •</span>
+                <span className="h-px flex-1 bg-gray-100" />
+              </div>
+            );
+
+            // ───────── 서론: '임팩트형' — 거대 숫자/한 문장이 압도, 박스·인용·사례 없음 ─────────
+            if (role === 'intro') {
+              return (
+                <div key={sec.contentId} id={`nl-sec-${idx}`} className="scroll-mt-4">
+                  {divider}
+                  {eyebrow}
+                  <EditableText tag="p" value={sec.contentTitle} field={`section.${idx}.contentTitle`} onEdit={e} className="text-3xl sm:text-[2.5rem] font-black text-[#1A1A1A] leading-[1.15] break-keep" />
+                  {sec.subtitle && <EditableText tag="p" value={sec.subtitle} field={`section.${idx}.subtitle`} onEdit={e} className="text-base text-[#9CA3AF] mt-3 leading-relaxed" />}
+                  {sec.intro && <EditableText tag="p" value={sec.intro} field={`section.${idx}.intro`} onEdit={e} className="text-[17px] text-[#4B5563] leading-[1.85] mt-6" multiline />}
+                  {/* 핵심 숫자 강조 — 숫자만 키우고 설명은 작은 보조 텍스트 (압도가 아닌 세련된 강조) */}
+                  {sec.dataStat && (sec.dataStat.value || sec.dataStat.description) && (
+                    <div className="my-9 text-center">
+                      {sec.dataStat.value && <EditableText tag="p" value={sec.dataStat.value} field={`section.${idx}.dataStat.value`} onEdit={e} className="text-3xl sm:text-4xl font-black text-[#55A4DA] leading-tight whitespace-pre-line break-keep" />}
+                      <div className="mx-auto w-10 h-[2px] bg-[#55A4DA] my-4" />
+                      {sec.dataStat.description && <EditableText tag="p" value={sec.dataStat.description} field={`section.${idx}.dataStat.description`} onEdit={e} className="text-sm text-[#6B7280] leading-[1.7] max-w-md mx-auto" multiline />}
+                    </div>
+                  )}
+                  {/* 한 줄 임팩트 — 박스 없이 큰 문장 */}
+                  {sec.keyTakeaway && sec.keyTakeaway.trim() && (
+                    <EditableText tag="p" value={sec.keyTakeaway} field={`section.${idx}.keyTakeaway`} onEdit={e} className="text-2xl font-black text-[#1A1A1A] leading-snug break-keep text-center mt-2" />
+                  )}
+                  {/* 스크롤 큐 */}
+                  <div className="flex justify-center mt-10">
+                    <span className="text-[#CFE3F3] text-2xl leading-none">↓</span>
+                  </div>
+                </div>
+              );
+            }
+
+            // ───────── 결론: '실천 카드형' — 큰 체크리스트 카드가 주인공, 통계·사례·인용 없음 ─────────
+            if (role === 'action') {
+              return (
+                <div key={sec.contentId} id={`nl-sec-${idx}`} className="scroll-mt-4">
+                  {divider}
+                  {eyebrow}
+                  <EditableText tag="p" value={sec.contentTitle} field={`section.${idx}.contentTitle`} onEdit={e} className="text-2xl sm:text-3xl font-black text-[#1A1A1A] leading-tight break-keep" />
+                  {/* 짧은 수렴 문장 */}
+                  {sec.intro && <EditableText tag="p" value={sec.intro} field={`section.${idx}.intro`} onEdit={e} className="text-base text-[#4B5563] leading-[1.8] mt-3" multiline />}
+                  {paras[0] && <EditableText tag="p" value={paras[0]} field={`section.${idx}.body.0`} onEdit={e} className="text-base text-[#4B5563] leading-[1.8] mt-2" multiline />}
+                  {/* 큰 액션 카드 — 번호 매긴 체크 항목 */}
+                  {sec.actionPlan && sec.actionPlan.length > 0 && (
+                    <div className="mt-7 rounded-3xl border-2 border-[#55A4DA] px-6 py-7" style={{ backgroundColor: '#EAF4FC' }}>
+                      <p className="text-[11px] font-bold tracking-[0.2em] uppercase text-[#55A4DA] mb-1.5">Action Plan</p>
+                      <p className="text-lg font-black text-[#1A1A1A] mb-5">내일, 이것부터 해보세요</p>
+                      <ul className="space-y-3.5">
+                        {sec.actionPlan.map((act, i) => (
+                          <li key={i} className="flex items-start gap-3.5 rounded-2xl bg-white px-4 py-3.5 border border-[#CFE3F3]">
+                            <span className="flex-shrink-0 w-6 h-6 rounded-md border-2 border-[#55A4DA] bg-white mt-0.5 flex items-center justify-center text-[11px] font-black text-[#55A4DA] tabular-nums">{i + 1}</span>
+                            <EditableText tag="p" value={act} field={`section.${idx}.actionPlan.${i}`} onEdit={e} className="text-base text-[#374151] leading-[1.7] font-medium" />
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {/* 강하게 끝내는 한 줄 */}
+                  {sec.keyTakeaway && sec.keyTakeaway.trim() && (
+                    <EditableText tag="p" value={sec.keyTakeaway} field={`section.${idx}.keyTakeaway`} onEdit={e} className="text-xl font-black text-[#1A1A1A] leading-snug break-keep text-center mt-8" />
+                  )}
+                </div>
+              );
+            }
+
+            // ───────── 본론: '심층 기사형' — 글·인용·통계 카드·사례가 길게 흐름 ─────────
             return (
               <div key={sec.contentId} id={`nl-sec-${idx}`} className="scroll-mt-4">
-                {/* 콘텐츠 구분선 */}
-                {idx > 0 && (
-                  <div className="my-14 flex items-center gap-4">
-                    <span className="h-px flex-1 bg-gray-100" />
-                    <span className="text-gray-300 text-xs tracking-[0.5em]">• • •</span>
-                    <span className="h-px flex-1 bg-gray-100" />
-                  </div>
-                )}
-                {/* ARTICLE 번호 eyebrow + 제목 + 부제 */}
-                <div className="mb-5">
-                  <div className="flex items-center gap-2.5 mb-2.5">
-                    <span className="w-6 h-[2px] bg-[#55A4DA]" />
-                    <p className="text-[11px] font-bold tracking-[0.2em] uppercase text-[#55A4DA] leading-none">Article {String(idx + 1).padStart(2, '0')}</p>
-                  </div>
-                  <EditableText tag="p" value={sec.contentTitle} field={`section.${idx}.contentTitle`} onEdit={e} className="text-2xl sm:text-3xl font-black text-[#1A1A1A] leading-tight break-keep" />
-                  {sec.subtitle && <EditableText tag="p" value={sec.subtitle} field={`section.${idx}.subtitle`} onEdit={e} className="text-base text-[#9CA3AF] mt-2 leading-relaxed" />}
-                </div>
-                {/* 큰 썸네일 (16:9) — 섹션0은 상단 히어로로 노출되므로 생략, 그 외엔 항상 표시 */}
-                {idx > 0 && (
-                  <Thumbnail sources={[sec.thumbnail, sec.thumbnailUrl]} label={sec.contentTitle} aspectClass="aspect-video" wrapClass="my-5" />
-                )}
-                {/* 도입 */}
+                {divider}
+                {eyebrow}
+                <EditableText tag="p" value={sec.contentTitle} field={`section.${idx}.contentTitle`} onEdit={e} className="text-2xl sm:text-3xl font-black text-[#1A1A1A] leading-tight break-keep" />
+                {sec.subtitle && <EditableText tag="p" value={sec.subtitle} field={`section.${idx}.subtitle`} onEdit={e} className="text-base text-[#9CA3AF] mt-2 leading-relaxed" />}
+                {/* 중복 방지된 이미지가 있을 때만 표시 (없으면 사진 없이 진행) */}
+                {sectionImage[idx] && <Thumbnail sources={[sectionImage[idx]]} label={sec.contentTitle} aspectClass="aspect-video" wrapClass="my-5" />}
                 {sec.intro && <EditableText tag="p" value={sec.intro} field={`section.${idx}.intro`} onEdit={e} className="text-base text-[#4B5563] leading-[1.8] mb-4" multiline />}
-                {/* 본문1 */}
                 {paras[0] && <EditableText tag="p" value={paras[0]} field={`section.${idx}.body.0`} onEdit={e} className="text-base text-[#4B5563] leading-[1.8] mb-4" multiline />}
-                {/* 인용구 박스 */}
                 {sec.quote && (
                   <blockquote className="my-7 border-l-[3px] border-[#55A4DA] pl-5">
                     <span className="block text-3xl font-black text-[#55A4DA]/30 leading-none mb-1">&ldquo;</span>
                     <EditableText tag="p" value={sec.quote} field={`section.${idx}.quote`} onEdit={e} className="text-xl italic font-medium text-[#1F2937] leading-relaxed whitespace-pre-line break-keep" />
                   </blockquote>
                 )}
-                {/* 본문2 */}
                 {paras[1] && <EditableText tag="p" value={paras[1]} field={`section.${idx}.body.1`} onEdit={e} className="text-base text-[#4B5563] leading-[1.8] mb-4" multiline />}
-                {/* 데이터 박스 */}
                 {sec.dataStat && (sec.dataStat.value || sec.dataStat.description) && (
                   <div className="my-7 rounded-2xl overflow-hidden">
-                    {/* 블루 헤더부: eyebrow + 큰 수치 */}
                     <div className="px-6 pt-5 pb-5 bg-[#55A4DA]">
                       <p className="text-[11px] font-bold tracking-[0.2em] uppercase text-white/75 mb-1.5">By the Numbers</p>
                       <EditableText tag="p" value={sec.dataStat.value} field={`section.${idx}.dataStat.value`} onEdit={e} className="text-4xl font-black text-white leading-none whitespace-pre-line break-keep" />
                     </div>
-                    {/* 라이트 블루 바디부: 설명 */}
                     <div className="px-6 py-5 bg-[#EAF4FC]">
                       <EditableText tag="p" value={sec.dataStat.description} field={`section.${idx}.dataStat.description`} onEdit={e} className="text-base text-[#4B5563] leading-[1.7]" multiline />
                     </div>
                   </div>
                 )}
-                {/* 본문3 */}
                 {paras[2] && <EditableText tag="p" value={paras[2]} field={`section.${idx}.body.2`} onEdit={e} className="text-base text-[#4B5563] leading-[1.8] mb-4" multiline />}
-                {/* 사례 박스 */}
                 {sec.caseStudy && (
                   <div className="my-6 rounded-2xl px-6 py-5" style={{ backgroundColor: '#F7F8FA' }}>
                     <p className="text-[11px] font-bold tracking-[0.2em] uppercase text-[#9CA3AF] mb-2.5">Case Study</p>
                     <EditableText tag="p" value={sec.caseStudy} field={`section.${idx}.caseStudy`} onEdit={e} className="text-base text-[#4B5563] leading-[1.8]" multiline />
                   </div>
                 )}
-                {/* 나머지 본문 단락 */}
                 {paras.slice(3).map((p, i) => (
                   <EditableText key={i} tag="p" value={p} field={`section.${idx}.body.${i + 3}`} onEdit={e} className="text-base text-[#4B5563] leading-[1.8] mb-4" multiline />
                 ))}
-                {/* 핵심 포인트 — KEY POINT (블루 좌측 보더) */}
-                <div className="mt-6 rounded-r-2xl px-6 py-5 border-l-[4px] border-[#55A4DA]" style={{ backgroundColor: '#F3F8FC' }}>
-                  <p className="text-[11px] font-bold tracking-[0.2em] uppercase text-[#55A4DA] mb-2">Key Point</p>
-                  <EditableText tag="p" value={sec.keyTakeaway} field={`section.${idx}.keyTakeaway`} onEdit={e} className="text-base font-bold text-[#1A1A1A] leading-[1.7]" />
-                </div>
-                {/* Action Plan — 체크리스트 카드 */}
-                {sec.actionPlan && sec.actionPlan.length > 0 && (
-                  <div className="mt-4 rounded-2xl px-6 py-5" style={{ backgroundColor: '#EAF4FC' }}>
-                    <p className="text-[11px] font-bold tracking-[0.2em] uppercase text-[#55A4DA] mb-1.5">Action Plan</p>
-                    <p className="text-base font-bold text-[#1A1A1A] mb-3.5">이번 호 핵심을 실천으로 옮겨보세요</p>
-                    <ul className="space-y-3">
-                      {sec.actionPlan.map((act, i) => (
-                        <li key={i} className="flex items-start gap-3">
-                          <span className="flex-shrink-0 w-5 h-5 rounded-md border-2 border-[#55A4DA] bg-white mt-0.5" />
-                          <EditableText tag="p" value={act} field={`section.${idx}.actionPlan.${i}`} onEdit={e} className="text-base text-[#374151] leading-[1.7]" />
-                        </li>
-                      ))}
-                    </ul>
+                {sec.keyTakeaway && sec.keyTakeaway.trim() && (
+                  <div className="mt-6 rounded-r-2xl px-6 py-5 border-l-[4px] border-[#55A4DA]" style={{ backgroundColor: '#F3F8FC' }}>
+                    <p className="text-[11px] font-bold tracking-[0.2em] uppercase text-[#55A4DA] mb-2">Key Point</p>
+                    <EditableText tag="p" value={sec.keyTakeaway} field={`section.${idx}.keyTakeaway`} onEdit={e} className="text-base font-bold text-[#1A1A1A] leading-[1.7]" />
                   </div>
                 )}
                 {sec.youtubeUrl && (

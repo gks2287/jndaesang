@@ -1674,7 +1674,7 @@ function ConfigureContent() {
               )}
               <div>
                 <label className={labelCls}>💡 핵심 포인트</label>
-                <textarea className={areaCls} rows={2} value={sec.keyTakeaway} onChange={e => updateEditSection(i, 'keyTakeaway', e.target.value)} />
+                <textarea className={areaCls} rows={2} value={sec.keyTakeaway ?? ''} onChange={e => updateEditSection(i, 'keyTakeaway', e.target.value)} />
               </div>
               <div>
                 <label className={labelCls}>✅ Action Plan (한 줄에 하나씩)</label>
