@@ -223,7 +223,7 @@ export default function NewCompanyPage() {
 
           {/* 기본 정보 */}
           <section>
-            <h2 className="text-[11px] tracking-[0.2em] text-gray-600 font-semibold mb-4">기본 정보</h2>
+            <h2 className="text-sm tracking-[0.15em] text-gray-600 font-semibold mb-4">기본 정보</h2>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -283,7 +283,7 @@ export default function NewCompanyPage() {
 
           {/* 코칭 기간 */}
           <section>
-            <h2 className="text-[11px] tracking-[0.2em] text-gray-600 font-semibold mb-4">코칭 기간</h2>
+            <h2 className="text-sm tracking-[0.15em] text-gray-600 font-semibold mb-4">코칭 기간</h2>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-gray-500 mb-1.5">시작일 <span className="text-red-400">*</span></label>
@@ -298,7 +298,7 @@ export default function NewCompanyPage() {
 
           {/* 다면진단 보고서 */}
           <section>
-            <h2 className="text-[11px] tracking-[0.2em] text-gray-600 font-semibold mb-4">리더십 유형 정보</h2>
+            <h2 className="text-sm tracking-[0.15em] text-gray-600 font-semibold mb-4">리더십 유형 정보</h2>
             <label className="block w-full border-2 border-dashed border-gray-200 rounded-lg px-6 py-8 cursor-pointer hover:border-[#55A4DA] hover:bg-[#55A4DA]/5 transition-colors group">
               <input
                 type="file"
@@ -392,7 +392,7 @@ export default function NewCompanyPage() {
           {/* 직책자 */}
           <section>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-[11px] tracking-[0.2em] text-gray-600 font-semibold">
+              <h2 className="text-sm tracking-[0.15em] text-gray-600 font-semibold">
                 직책자
                 {draftParticipants.length > 0 && (
                   <span className="ml-2 text-[#55A4DA]">{draftParticipants.length}명</span>
@@ -524,7 +524,7 @@ export default function NewCompanyPage() {
 
           {/* HR 담당자 */}
           <section>
-            <h2 className="text-[11px] tracking-[0.2em] text-gray-600 font-semibold mb-4">HR 담당자</h2>
+            <h2 className="text-sm tracking-[0.15em] text-gray-600 font-semibold mb-4">HR 담당자</h2>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-gray-500 mb-1.5">담당자명</label>
@@ -539,7 +539,7 @@ export default function NewCompanyPage() {
 
           {/* 비고 */}
           <section>
-            <h2 className="text-[11px] tracking-[0.2em] text-gray-600 font-semibold mb-4">비고</h2>
+            <h2 className="text-sm tracking-[0.15em] text-gray-600 font-semibold mb-4">비고</h2>
             <textarea
               value={form.note}
               onChange={e => set('note', e.target.value)}
