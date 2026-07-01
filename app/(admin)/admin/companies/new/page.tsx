@@ -192,7 +192,7 @@ export default function NewCompanyPage() {
                     type="text"
                     value={form.name}
                     onChange={e => set('name', e.target.value)}
-                    placeholder="예) LG화학"
+                    placeholder="예) J&Company"
                     required
                     className={inputCls}
                   />
