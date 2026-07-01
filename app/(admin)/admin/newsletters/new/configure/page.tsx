@@ -12,6 +12,7 @@ import { type Round, type CustomGroup, type RoundAttachment, makeCustomGroup } f
 import { getContentList, type ContentPoolItem, type ContentCategory } from '@/lib/api/contentPool';
 import { useNewNewsletterDraftStore, type TopicSuggestion as DraftTopicSuggestion } from '@/store/newNewsletterDraftStore';
 import { useParticipantStore, POSITIVE_TYPES, NEGATIVE_TYPES } from '@/store/participantStore';
+import { useLeadershipInfoStore } from '@/store/leadershipInfoStore';
 import {
   renderGeneratedFullBody,
   renderInteractionTemplates,
@@ -135,6 +136,20 @@ function ConfigureContent() {
   const selectedParticipants = allParticipants.filter(p => configDraft.companyIds?.includes(p.companyId) ?? false);
   const positiveParticipants = selectedParticipants.filter(p => POSITIVE_TYPES.includes(p.leadershipType));
   const negativeParticipants = selectedParticipants.filter(p => NEGATIVE_TYPES.includes(p.leadershipType));
+
+  // 이 기업 다면진단 기반 리더십 유형 정보 (뉴스레터 주제·본문 맞춤용)
+  const leadershipInfoYear = new Date().getFullYear();
+  const leadershipCompanyId = targetCompanies[0]?.id;
+  const loadLeadershipInfo = useLeadershipInfoStore(s => s.loadForCompany);
+  const companyLeadershipInfo = useLeadershipInfoStore(
+    s => (leadershipCompanyId != null ? (s.current[`${leadershipCompanyId}-${leadershipInfoYear}`] ?? []) : []),
+  );
+  useEffect(() => {
+    if (leadershipCompanyId != null) void loadLeadershipInfo(leadershipCompanyId, leadershipInfoYear);
+  }, [leadershipCompanyId, leadershipInfoYear, loadLeadershipInfo]);
+  // 주어진 유형들과 매칭되는 리더십 정보만 (문서에 없는 유형은 자동 제외)
+  const matchLeadershipInfo = (types: string[]) =>
+    companyLeadershipInfo.filter(i => types.includes(i.type));
 
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [companySearch, setCompanySearch] = useState('');
@@ -570,6 +585,7 @@ function ConfigureContent() {
           leadershipType: isCustom && group && group.types.length > 0 ? group.types.join(', ') : '일반형',
           companyName: targetCompanies.map(c => c.name).join(', ') || '대상 기업',
           referenceData,
+          leadershipInfo: matchLeadershipInfo(isCustom && group && group.types.length > 0 ? group.types : []),
         }),
       });
       if (!res.ok) throw new Error('생성 실패');
@@ -716,7 +732,7 @@ function ConfigureContent() {
       const res = await fetch('/api/topics/suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadershipTypes, companyName, kind, stepTitle, roundIndex: roundIdx + 1 }),
+        body: JSON.stringify({ leadershipTypes, companyName, kind, stepTitle, roundIndex: roundIdx + 1, leadershipInfo: matchLeadershipInfo((leadershipTypes ?? []).filter(t => t !== '일반형')) }),
       });
       if (!res.ok) throw new Error('API 오류');
       const data = await res.json() as { topics: TopicSuggestion[] };
@@ -750,7 +766,7 @@ function ConfigureContent() {
       const cacheKey = topicsCacheKey(leadershipTypes, companyName, kind, stepTitle, roundIdx + 1);
       const cachedTopics = topicsCacheRef.current.get(cacheKey);
       if (cachedTopics && cachedTopics.length) { console.log('[client topics/suggest] 캐시 HIT'); return cachedTopics; }
-      const body = JSON.stringify({ leadershipTypes, companyName, kind, stepTitle, roundIndex: roundIdx + 1 });
+      const body = JSON.stringify({ leadershipTypes, companyName, kind, stepTitle, roundIndex: roundIdx + 1, leadershipInfo: matchLeadershipInfo((leadershipTypes ?? []).filter(t => t !== '일반형')) });
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
           const res = await fetch('/api/topics/suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });

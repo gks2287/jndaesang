@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useCompanyStore, type CoachingStatus } from '@/store/companyStore';
 import { useParticipantStore, type LeadershipType, type Participant } from '@/store/participantStore';
 import { useLeadershipInfoStore, DEFAULT_INFO, type LeadershipInfo, type LeadershipInfoVersion } from '@/store/leadershipInfoStore';
@@ -61,8 +61,10 @@ export default function CompanyEditPage() {
   const [infoYear, setInfoYear] = useState<number>(years[0] ?? currentYear);
 
   const updateInfo = useLeadershipInfoStore(s => s.updateInfo);
+  const loadLeadershipInfo = useLeadershipInfoStore(s => s.loadForCompany);
   const leadershipCurrent = useLeadershipInfoStore(s => s.current[`${companyId}-${infoYear}`] ?? DEFAULT_INFO);
   const leadershipHistory = useLeadershipInfoStore(s => s.history[`${companyId}-${infoYear}`] ?? EMPTY_HISTORY);
+  useEffect(() => { void loadLeadershipInfo(companyId, infoYear); }, [companyId, infoYear, loadLeadershipInfo]);
 
   // ── 기업 정보 폼 ──
   const [companyForm, setCompanyForm] = useState({

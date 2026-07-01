@@ -8,16 +8,24 @@ const topicsCache = new Map<string, Topic[]>();
 let topicsCallCount = 0;
 
 export async function POST(req: NextRequest) {
-  const { leadershipTypes, companyName, kind, stepTitle, roundIndex } = await req.json() as {
+  const { leadershipTypes, companyName, kind, stepTitle, roundIndex, leadershipInfo } = await req.json() as {
     leadershipTypes: string[];
     companyName: string;
     kind: string;
     stepTitle?: string;
     roundIndex?: number;
+    leadershipInfo?: { type: string; characteristics?: string; developmentPoints?: string }[];
   };
 
-  // 캐시 키: 회차 인덱스 + 스토리라인 단계 + 리더십유형 + 기업명 + kind
-  const cacheKey = JSON.stringify({ roundIndex: roundIndex ?? '', stepTitle: stepTitle ?? '', types: [...(leadershipTypes ?? [])].sort(), companyName: companyName ?? '', kind: kind ?? '' });
+  // 이 기업 다면진단 기반 유형 정보 블록 (주제가 이 특징·개발포인트를 직접 겨냥하도록)
+  const infoList = (leadershipInfo ?? []).filter(i => i.characteristics?.trim() || i.developmentPoints?.trim());
+  const infoBlock = infoList.length > 0
+    ? `\n[이 기업 다면진단 기반 유형 정보 — 주제에 직접 반영]\n`
+      + infoList.map(i => `- ${i.type}: 특징 ${i.characteristics ?? ''}${i.developmentPoints?.trim() ? ` / 개발포인트 ${i.developmentPoints}` : ''}`).join('\n')
+    : '';
+
+  // 캐시 키: 회차 인덱스 + 스토리라인 단계 + 리더십유형 + 기업명 + kind + 유형정보 시그니처
+  const cacheKey = JSON.stringify({ roundIndex: roundIndex ?? '', stepTitle: stepTitle ?? '', types: [...(leadershipTypes ?? [])].sort(), companyName: companyName ?? '', kind: kind ?? '', info: infoList.map(i => `${i.type}:${(i.characteristics ?? '').slice(0, 24)}`).sort() });
   topicsCallCount += 1;
   const cached = topicsCache.get(cacheKey);
   console.log(`[topics/suggest] 호출 #${topicsCallCount}, 캐시: ${cached ? 'HIT' : 'MISS'}`);
@@ -42,8 +50,10 @@ export async function POST(req: NextRequest) {
 - 대상: ${targetDesc}
 - 스토리라인 단계: ${stepLabel || '미지정'} (${roundLabel || ''})
 ${isCustom ? `- 핵심: ${typeLabel} 유형 리더의 특성과 문제 행동을 개선하는 데 직접적으로 도움이 되는 주제` : '- 핵심: 모든 리더에게 보편적으로 적용 가능한 리더십 역량 강화 주제'}
+${infoBlock}
 
 [작성 기준]
+${infoBlock ? '- 위 "이 기업 다면진단 기반 유형 정보"의 특징·개발포인트를 직접 겨냥하는 주제로 구성하세요 (그 기업의 실제 진단에 맞춤). 문서에 없는 내용은 만들지 마세요.' : ''}
 - ${stepLabel ? `"${stepLabel}" 단계의 목적(${stepLabel === '수용' ? '진단 결과 수용·성찰' : stepLabel === '분석' ? 'Gap 분석·강약점 파악' : stepLabel === '실행' ? '실행 가능한 작은 변화' : stepLabel === '유지' ? '습관화·지속 유지' : stepLabel === '확장' ? '성장 복기·재준비' : '단계 목적'})에 부합하는 주제` : '스토리라인 단계에 맞는 주제'}
 - 현장에서 바로 적용할 수 있는 실용적이고 행동 가능한 내용
 - 각 주제는 4~5분 분량의 뉴스레터로 다룰 수 있어야 함

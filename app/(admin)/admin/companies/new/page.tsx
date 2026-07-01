@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useCompanyStore, CoachingStatus } from '@/store/companyStore';
 import { useParticipantStore, type LeadershipType } from '@/store/participantStore';
+import { useLeadershipInfoStore, type LeadershipInfo } from '@/store/leadershipInfoStore';
 
 const INDUSTRIES = ['화학/소재', '자동차 부품', '반도체', '철강', '배터리/전자', '소비재', '화학', '에너지', '금융', 'IT/소프트웨어', '유통/물류', '제약/바이오', '건설/부동산', '기타'];
 const STATUS_OPTIONS = ['진행 전', '진행 중', '진행 완료'];
@@ -63,6 +64,41 @@ export default function NewCompanyPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
+  // 다면진단 보고서 → AI 추출 리더십 유형 정보 (제출 전 미리보기/수정)
+  const saveLeadershipInfo = useLeadershipInfoStore(s => s.updateInfo);
+  const [extractedInfo, setExtractedInfo] = useState<LeadershipInfo[]>([]);
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
+  const [reportFileName, setReportFileName] = useState('');
+
+  async function handleReportExtract(file: File) {
+    setExtracting(true);
+    setExtractError(null);
+    setReportFileName(file.name);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/admin/leadership-info/extract', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? '분석 실패');
+      const info = (data.info ?? []) as LeadershipInfo[];
+      if (info.length === 0) {
+        setExtractError('보고서에서 리더십 유형을 찾지 못했습니다. 형식을 확인하거나 직접 입력해 주세요.');
+      }
+      setExtractedInfo(info);
+    } catch (err) {
+      setExtractError(err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.');
+    } finally {
+      setExtracting(false);
+    }
+  }
+  function updateExtracted(idx: number, field: 'characteristics' | 'developmentPoints', value: string) {
+    setExtractedInfo(prev => prev.map((it, i) => (i === idx ? { ...it, [field]: value } : it)));
+  }
+  function removeExtracted(idx: number) {
+    setExtractedInfo(prev => prev.filter((_, i) => i !== idx));
+  }
+
   const [draftParticipants, setDraftParticipants] = useState<DraftParticipant[]>([]);
   const [showAddRow, setShowAddRow] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -103,6 +139,10 @@ export default function NewCompanyPage() {
         stepCurrent: 0,
         stepTotal: 6,
       })));
+    }
+    // 다면진단 보고서에서 추출한 리더십 유형 정보 저장 (이 기업 뉴스레터 맞춤용)
+    if (extractedInfo.length > 0) {
+      await saveLeadershipInfo(created.id, currentYear, extractedInfo, reportFileName || '다면진단 보고서');
     }
     setSubmitting(false);
     router.push('/admin/dashboard');
@@ -268,6 +308,7 @@ export default function NewCompanyPage() {
                 onChange={e => {
                   const picked = Array.from(e.target.files ?? []);
                   setFiles(prev => [...prev, ...picked]);
+                  if (picked[0]) void handleReportExtract(picked[0]);
                 }}
               />
               <div className="flex flex-col items-center gap-2 text-center">
@@ -301,6 +342,50 @@ export default function NewCompanyPage() {
                   </li>
                 ))}
               </ul>
+            )}
+
+            {/* AI 추출 결과 — 제출 전 미리보기/수정 */}
+            {extracting && (
+              <div className="mt-4 flex items-center gap-2 text-sm text-[#2E7DB5]">
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+                보고서에서 리더십 유형을 분석하고 있어요...
+              </div>
+            )}
+            {extractError && !extracting && (
+              <p className="mt-4 text-sm text-amber-600">{extractError}</p>
+            )}
+            {extractedInfo.length > 0 && (
+              <div className="mt-5">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-semibold text-gray-800">추출된 리더십 유형 <span className="text-[#55A4DA]">{extractedInfo.length}</span>개 <span className="text-xs font-normal text-gray-400">· 저장 전 수정할 수 있어요</span></p>
+                </div>
+                <div className="space-y-3">
+                  {extractedInfo.map((it, idx) => (
+                    <div key={idx} className="rounded-xl border border-[#E1EFFB] p-4" style={{ backgroundColor: '#F8FBFE' }}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-[#EAF4FC] text-[#2E7DB5]">{it.type}</span>
+                        <button type="button" onClick={() => removeExtracted(idx)} className="text-xs text-gray-400 hover:text-red-400">제외</button>
+                      </div>
+                      <label className="block text-[11px] font-semibold text-gray-500 mb-1">특징</label>
+                      <textarea
+                        value={it.characteristics}
+                        onChange={e => updateExtracted(idx, 'characteristics', e.target.value)}
+                        rows={2}
+                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-y focus:border-[#55A4DA] focus:outline-none focus:ring-1 focus:ring-[#55A4DA]/30 mb-2"
+                      />
+                      <label className="block text-[11px] font-semibold text-gray-500 mb-1">개발 포인트</label>
+                      <textarea
+                        value={it.developmentPoints ?? ''}
+                        onChange={e => updateExtracted(idx, 'developmentPoints', e.target.value)}
+                        rows={2}
+                        placeholder="개발 포인트(선택)"
+                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-y focus:border-[#55A4DA] focus:outline-none focus:ring-1 focus:ring-[#55A4DA]/30"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-400 mt-2">이 정보는 기업 생성 시 저장되고, 이 기업 뉴스레터 제작 시 주제·본문에 반영됩니다.</p>
+              </div>
             )}
           </section>
 

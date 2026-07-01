@@ -142,12 +142,23 @@ function buildInteractionPrompt(types: string[]): string {
 // ── POST 핸들러 ───────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
-    const { round, leadershipType, companyName, referenceData } = await req.json() as {
+    const { round, leadershipType, companyName, referenceData, leadershipInfo } = await req.json() as {
       round: RoundPayload;
       leadershipType: string;
       companyName: string;
       referenceData?: string;
+      leadershipInfo?: { type: string; characteristics?: string; developmentPoints?: string }[];
     };
+
+    // 이 기업 다면진단 기반 유형 정보 (특징=공감/문제인식, 개발포인트=실천 처방)
+    const infoBlock = (leadershipInfo && leadershipInfo.length > 0)
+      ? `\n\n[이 기업 다면진단 기반 리더십 유형 정보 — 본문에 반드시 반영]\n`
+        + leadershipInfo
+            .filter(i => (i.characteristics?.trim() || i.developmentPoints?.trim()))
+            .map(i => `- ${i.type}\n  · 특징: ${i.characteristics ?? ''}${i.developmentPoints?.trim() ? `\n  · 개발 포인트: ${i.developmentPoints}` : ''}`)
+            .join('\n')
+        + `\n(특징은 intro·본문의 공감/문제 인식에, 개발 포인트는 keyTakeaway와 actionPlan의 실천 처방에 직접 반영하세요. 문서에 없는 내용은 지어내지 마세요.)`
+      : '';
 
     // 관리자가 첨부하고 '본문에 반영' 체크한 조직 진단 자료에서 추출된 데이터 (있을 때만)
     const referenceBlock = referenceData?.trim()
@@ -178,6 +189,7 @@ ${referenceData.trim()}`
 - 리더십 유형: ${leadershipType}
 - 스토리라인 단계: ${round.stepLabel}
 - 이번 호 주제: ${round.topic.trim() || '(미선정)'}
+${infoBlock}
 
 [이번 호 콘텐츠]
 ${contentSummary}
