@@ -298,11 +298,11 @@ export default function NewCompanyPage() {
 
           {/* 다면진단 보고서 */}
           <section>
-            <h2 className="text-[11px] tracking-[0.2em] text-gray-400 font-semibold mb-4">다면진단 보고서</h2>
+            <h2 className="text-[11px] tracking-[0.2em] text-gray-400 font-semibold mb-4">리더십 유형 정보</h2>
             <label className="block w-full border-2 border-dashed border-gray-200 rounded-lg px-6 py-8 cursor-pointer hover:border-[#55A4DA] hover:bg-[#55A4DA]/5 transition-colors group">
               <input
                 type="file"
-                accept=".pdf,.xlsx,.xls,.csv,.pptx,.ppt"
+                accept=".pdf,.docx,.txt,.xlsx,.csv"
                 multiple
                 className="hidden"
                 onChange={e => {
@@ -316,7 +316,7 @@ export default function NewCompanyPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
                 <p className="text-sm font-medium text-gray-500 group-hover:text-[#55A4DA]">파일을 드래그하거나 클릭해서 업로드</p>
-                <p className="text-xs text-gray-400">PDF, Excel, CSV, PPT 지원 · 최대 50MB</p>
+                <p className="text-xs text-gray-400">PDF, DOCX, TXT, Excel, CSV 지원 · 최대 50MB</p>
               </div>
             </label>
             {files.length > 0 && (
