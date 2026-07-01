@@ -987,7 +987,7 @@ export default function ContentPage() {
 
       {/* ── 상단 토퍼 ── */}
       <div className="bg-white border-b border-gray-200 px-8 py-3.5 flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-2 text-[15px] text-gray-800 font-semibold">
+        <div className="flex items-center gap-2 text-[17px] text-gray-900 font-semibold">
           <span className="font-bold">콘텐츠 풀</span>
         </div>
         <div className="flex items-center gap-2">

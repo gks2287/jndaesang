@@ -412,7 +412,7 @@ export default function CompanyDetailPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-        <span className="text-[15px] font-bold text-gray-800">{company.name}</span>
+        <span className="text-[17px] font-bold text-gray-900">{company.name}</span>
         <div className="flex items-center gap-1.5 ml-1">
           <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusDot[company.status]}`} />
           <span className={`text-xs font-medium ${statusText[company.status]}`}>{company.status}</span>
