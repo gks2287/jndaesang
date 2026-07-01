@@ -77,7 +77,7 @@ export default function AnalyticsPage() {
     <div className="flex flex-col h-full overflow-hidden">
       {/* 상단 토퍼 */}
       <div className="bg-surface border-b border-border-light px-8 h-[65px] flex items-center flex-shrink-0">
-        <div className="flex items-center gap-2 text-[15px] text-text-primary font-bold">
+        <div className="flex items-center gap-2 text-[17px] text-text-primary font-bold">
           <span>데이터 대시보드</span>
         </div>
       </div>

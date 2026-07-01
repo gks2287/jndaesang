@@ -104,7 +104,7 @@ export default function NewsletterStoragePage() {
       {/* 헤더 */}
       <div className="bg-white border-b border-gray-200 px-8 h-[65px] flex items-center justify-between flex-shrink-0">
         <div>
-          <span className="text-[15px] font-bold text-gray-800">뉴스레터 저장소</span>
+          <span className="text-[17px] font-bold text-gray-900">뉴스레터 저장소</span>
           <span className="ml-2 text-xs text-gray-400 font-normal">마음에 드는 회차를 저장하고 재활용하세요</span>
         </div>
       </div>

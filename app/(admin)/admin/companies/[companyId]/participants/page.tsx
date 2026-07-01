@@ -165,7 +165,7 @@ const [search, setSearch] = useState('');
 
       {/* 상단 토퍼 */}
       <div className="bg-white border-b border-gray-200 px-8 h-[65px] flex items-center justify-between">
-        <div className="flex items-center gap-2 text-[15px] text-gray-800">
+        <div className="flex items-center gap-2 text-[17px] text-gray-900">
           <span className="font-bold text-gray-800">{company.name}</span>
         </div>
 

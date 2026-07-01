@@ -196,7 +196,7 @@ export default function NewCompanyPage() {
     <div className="flex flex-col h-full overflow-hidden">
       {/* 상단 토퍼 */}
       <div className="bg-white border-b border-gray-200 px-8 h-[65px] flex items-center justify-between">
-        <div className="flex items-center gap-2 text-[15px] text-gray-800 font-semibold">
+        <div className="flex items-center gap-2 text-[17px] text-gray-900 font-semibold">
           <span className="font-bold">기업 추가</span>
         </div>
         <Link href="/admin/dashboard" className="text-sm text-gray-400 hover:text-gray-600 transition-colors">
