@@ -23,6 +23,7 @@ type CreateBody = {
   startDate?: string;
   endDate?: string;
   note?: string;
+  logoUrl?: string | null;
 };
 
 // POST /api/admin/companies — 기업 생성 (이니셜/색상은 서버에서 부여)
@@ -46,6 +47,7 @@ export async function POST(req: NextRequest) {
         endDate: body.endDate ?? '',
         note: body.note ?? '',
         color: '',
+        logoUrl: body.logoUrl ?? null,
       },
     });
     const withColor = await prisma.company.update({

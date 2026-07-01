@@ -184,7 +184,7 @@ const [search, setSearch] = useState('');
       <div className="flex-1 px-8 py-6 flex flex-col overflow-hidden bg-white">
         {/* 기업 요약 뱃지 */}
         <div className="flex items-center gap-3 mb-5">
-          <CompanyLogo name={company.name} size={40} />
+          <CompanyLogo name={company.name} logoUrl={company.logoUrl} size={40} />
           <div>
             <div className="flex items-center gap-2 mb-0.5">
               <h2 className="text-base font-bold text-gray-800">{company.name}</h2>

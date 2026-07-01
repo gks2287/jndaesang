@@ -179,7 +179,7 @@ export default function AnalyticsPage() {
                 {/* 기업 헤더 */}
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <CompanyLogo name={company.name} size={40} />
+                    <CompanyLogo name={company.name} logoUrl={company.logoUrl} size={40} />
                     <div>
                       <p className="text-sm font-bold text-text-primary group-hover:text-brand transition-colors">{company.name}</p>
                       <p className="text-xs text-text-secondary">{company.industry}</p>

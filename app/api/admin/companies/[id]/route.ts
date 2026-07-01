@@ -12,6 +12,7 @@ type UpdateBody = Partial<{
   startDate: string;
   endDate: string;
   note: string;
+  logoUrl: string | null;
 }>;
 
 // PATCH /api/admin/companies/[id] — 기업 수정 (이름 변경 시 이니셜 재계산)

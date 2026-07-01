@@ -15,6 +15,7 @@ export interface Company {
   endDate: string;
   note: string;
   color: string;
+  logoUrl?: string | null; // 업로드한 기업 로고(data URL). 없으면 이니셜 아바타
 }
 
 type CompanyInput = Omit<Company, 'id' | 'initials' | 'color'>;

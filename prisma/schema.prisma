@@ -26,6 +26,7 @@ model Company {
   endDate          String        @default("")
   note             String        @default("")
   color            String        @default("")
+  logoUrl          String? // 업로드한 기업 로고(data URL). 없으면 이니셜 아바타 표시
   participants     Participant[]
   newsletters      Newsletter[]
   createdAt        DateTime      @default(now())

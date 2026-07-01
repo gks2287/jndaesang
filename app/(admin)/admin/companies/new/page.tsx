@@ -43,6 +43,28 @@ function getInitials(name: string) {
   return trimmed.slice(0, 2).toUpperCase();
 }
 
+// 업로드 이미지를 정사각 축소 data URL로 (DB에 가볍게 저장)
+function resizeImageToDataUrl(file: File, max = 256): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new window.Image();
+    img.onload = () => {
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      URL.revokeObjectURL(url);
+      if (!ctx) { reject(new Error('canvas 미지원')); return; }
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('이미지 로드 실패')); };
+    img.src = url;
+  });
+}
+
 export default function NewCompanyPage() {
   const router = useRouter();
   const addCompany = useCompanyStore(s => s.addCompany);
@@ -70,6 +92,20 @@ export default function NewCompanyPage() {
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
   const [reportFileName, setReportFileName] = useState('');
+
+  // 기업 로고 업로드 (선택) — 없으면 이니셜 아바타
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
+  async function handleLogoFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !file.type.startsWith('image/')) return;
+    try {
+      setLogoDataUrl(await resizeImageToDataUrl(file, 256));
+    } catch {
+      // 실패 시 이니셜 유지
+    }
+  }
 
   async function handleReportExtract(file: File) {
     setExtracting(true);
@@ -122,6 +158,7 @@ export default function NewCompanyPage() {
       startDate: form.startDate,
       endDate: form.endDate,
       note: form.note,
+      logoUrl: logoDataUrl,
     });
     if (!created) {
       setSubmitting(false);
@@ -208,14 +245,32 @@ export default function NewCompanyPage() {
       <div className="flex-1 overflow-y-auto bg-white px-8 py-8">
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto space-y-8">
 
-          {/* 미리보기 아바타 */}
+          {/* 미리보기 아바타 — 클릭하면 로고 이미지 첨부(선택) */}
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-[#55A4DA] flex items-center justify-center flex-shrink-0">
-              <span className="text-white text-lg font-bold">{initials || '?'}</span>
-            </div>
+            <button
+              type="button"
+              onClick={() => logoInputRef.current?.click()}
+              title="클릭해서 로고 첨부"
+              className="relative w-14 h-14 rounded-2xl overflow-hidden flex items-center justify-center flex-shrink-0 group"
+              style={{ backgroundColor: logoDataUrl ? '#fff' : '#55A4DA' }}
+            >
+              {logoDataUrl
+                ? <img src={logoDataUrl} alt="기업 로고" className="w-full h-full object-cover" />
+                : <span className="text-white text-lg font-bold">{initials || '?'}</span>}
+              <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
+                <svg className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </span>
+            </button>
+            <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoFile} />
             <div>
               <p className="text-base font-bold text-gray-800">{form.name || '기업명을 입력하세요'}</p>
               <p className="text-sm text-gray-400">{form.industry || '산업군 미선택'}</p>
+              {logoDataUrl
+                ? <button type="button" onClick={() => setLogoDataUrl(null)} className="text-xs text-gray-400 hover:text-red-400 mt-1">로고 제거</button>
+                : <p className="text-xs text-gray-300 mt-1">로고를 클릭해 이미지 첨부 (선택)</p>}
             </div>
           </div>
 

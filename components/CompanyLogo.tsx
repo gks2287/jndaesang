@@ -20,10 +20,11 @@ interface CompanyLogoProps {
   name: string;          // COMPANY_META 키값과 일치
   size?: number;         // px, 기본 48
   className?: string;    // 추가 클래스 (모서리는 컴포넌트가 rounded-lg로 통일)
+  logoUrl?: string | null; // 직접 업로드한 로고(data URL). 있으면 최우선 표시
 }
 
-// 기업 CI 로고. 로컬 번들(png → svg) 시도 후 실패 시 텍스트 아바타로 fallback.
-export default function CompanyLogo({ name, size = 48, className = '' }: CompanyLogoProps) {
+// 기업 CI 로고. 업로드 로고 > 로컬 번들(png → svg) > 텍스트 아바타 순으로 fallback.
+export default function CompanyLogo({ name, size = 48, className = '', logoUrl }: CompanyLogoProps) {
   const meta = COMPANY_META[name];
   // 이미지 소스 후보 (순서대로 시도). meta 없으면 곧장 텍스트 아바타.
   const sources = meta
@@ -34,6 +35,18 @@ export default function CompanyLogo({ name, size = 48, className = '' }: Company
 
   // name이 바뀌면 소스 인덱스 초기화 (리스트 항목 재사용 시 stale 소스 방지)
   useEffect(() => { setIdx(0); }, [name]);
+
+  // 직접 업로드한 로고가 있으면 최우선 (훅 호출 이후에 분기)
+  if (logoUrl) {
+    return (
+      <div
+        className={`flex-shrink-0 overflow-hidden rounded-lg bg-white ${className}`}
+        style={{ width: size, height: size }}
+      >
+        <img src={logoUrl} alt={name} className="w-full h-full object-cover" />
+      </div>
+    );
+  }
 
   const label = meta?.label ?? name.slice(0, 2).toUpperCase();
 

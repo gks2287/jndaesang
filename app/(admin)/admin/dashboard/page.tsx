@@ -106,7 +106,7 @@ export default function DashboardPage() {
               >
                 {/* 기업명 + 아바타 */}
                 <div className="flex items-center gap-3">
-                  <CompanyLogo name={company.name} size={56} />
+                  <CompanyLogo name={company.name} logoUrl={company.logoUrl} size={56} />
                   <div>
                     <p className="text-sm font-semibold text-gray-800">{company.name}</p>
                   </div>

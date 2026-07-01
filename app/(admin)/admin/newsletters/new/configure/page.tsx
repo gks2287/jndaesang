@@ -1791,7 +1791,7 @@ function ConfigureContent() {
                       }}
                       className="flex flex-col items-center gap-3 p-6 bg-white border-2 border-gray-200 rounded-2xl hover:border-[#55A4DA] hover:shadow-md transition-all group text-center"
                     >
-                      <CompanyLogo name={c.name} size={56} />
+                      <CompanyLogo name={c.name} logoUrl={c.logoUrl} size={56} />
                       <div>
                         <p className="text-sm font-semibold text-gray-800 group-hover:text-[#2E7DB5] transition-colors">{c.name}</p>
                         <p className="text-xs text-gray-400 mt-0.5">{c.industry}</p>

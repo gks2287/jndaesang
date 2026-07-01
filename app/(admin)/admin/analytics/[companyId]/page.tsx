@@ -424,7 +424,7 @@ export default function CompanyDetailPage() {
 
         {/* 기업 정보 카드 */}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 flex items-start gap-6">
-          <CompanyLogo name={company.name} size={56} />
+          <CompanyLogo name={company.name} logoUrl={company.logoUrl} size={56} />
           <div className="flex-1 grid grid-cols-3 gap-4">
             <div>
               <p className="text-xs text-gray-400 mb-1">업종</p>
