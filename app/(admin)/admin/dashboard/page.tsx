@@ -39,8 +39,8 @@ export default function DashboardPage() {
     <div className="flex flex-col h-full overflow-hidden">
       {/* ── 상단 토퍼 ── */}
       <div className="bg-white border-b border-gray-200 px-8 h-[65px] flex items-center justify-between">
-        <div className="flex items-center gap-2 text-[15px] text-gray-800">
-          <span className="font-bold">진단 대상</span>
+        <div className="flex items-center gap-2 text-[18px] text-gray-900">
+          <span className="font-extrabold">진단 대상</span>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5">
@@ -50,10 +50,10 @@ export default function DashboardPage() {
             <input
               type="text"
               placeholder="기업 검색"
-              className="bg-transparent text-sm text-gray-600 placeholder-gray-400 outline-none w-28"
+              className="bg-transparent text-[15px] font-medium text-gray-700 placeholder-gray-400 outline-none w-32"
             />
           </div>
-          <Link href="/admin/companies/new" className="flex items-center gap-2 bg-[#55A4DA] hover:bg-[#3A8BC4] text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+          <Link href="/admin/companies/new" className="flex items-center gap-2 bg-[#55A4DA] hover:bg-[#3A8BC4] text-white text-[15px] font-bold px-4 py-2 rounded-lg transition-colors">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
