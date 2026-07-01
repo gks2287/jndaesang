@@ -47,7 +47,14 @@ body {
   font-family: "Figtree", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* 화면 기본 배율을 90%로 (기존 100% 화면을 90% 기준으로 표시) */
+  zoom: 0.9;
 }
+
+/* zoom:0.9 보정 — 전체높이(100vh) 레이아웃이 축소돼 하단에 빈 공간이 생기지 않도록
+   뷰포트 높이를 역보정(100vh / 0.9)해 화면을 정확히 채운다. */
+.h-screen { height: calc(100vh / 0.9); }
+.min-h-screen { min-height: calc(100vh / 0.9); }
 
 @layer base {
   *,
