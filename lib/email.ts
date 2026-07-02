@@ -9,7 +9,12 @@ const RAW_FROM = (process.env.RESEND_FROM_EMAIL ?? '').trim();
 const FROM_EMAIL = RAW_FROM && RAW_FROM.includes('@') && !RAW_FROM.includes('&')
   ? RAW_FROM
   : '"J&리더십레터" <newsletter@jnhrcompany.com>';
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+// 이메일 링크의 기준 URL — canonical 도메인(jnhrcompany.com) 보장.
+// 로컬(localhost)은 env 사용, 옛 vercel.app 값이나 빈 값이면 canonical로 강제.
+const RAW_APP = (process.env.NEXT_PUBLIC_APP_URL ?? '').trim();
+const APP_URL = RAW_APP.startsWith('http') && !RAW_APP.includes('vercel.app')
+  ? RAW_APP
+  : 'https://jnhrcompany.com';
 
 /** 요약본 이메일 HTML 생성 */
 export function buildEmailHtml(generated: GeneratedNewsletter, opts: { vol: number; dateLabel: string; participantName: string; token?: string }): string {

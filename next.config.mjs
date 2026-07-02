@@ -4,6 +4,17 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // www → apex(jnhrcompany.com) 영구 리디렉트
+  async redirects() {
+    return [
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: 'www.jnhrcompany.com' }],
+        destination: 'https://jnhrcompany.com/:path*',
+        permanent: true,
+      },
+    ];
+  },
   experimental: {
     serverComponentsExternalPackages: ['pdf-parse', 'mammoth', '@anthropic-ai/sdk'],
   },
