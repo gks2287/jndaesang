@@ -4,16 +4,21 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  // www → apex(jnhrcompany.com) 영구 리디렉트
+  // 비정식 도메인(www + Vercel 자동 프로덕션 도메인) → jnhrcompany.com 영구 리디렉트.
+  // 프리뷰 배포 주소(해시 포함)는 목록에 없으므로 영향 없음.
   async redirects() {
-    return [
-      {
-        source: '/:path*',
-        has: [{ type: 'host', value: 'www.jnhrcompany.com' }],
-        destination: 'https://jnhrcompany.com/:path*',
-        permanent: true,
-      },
+    const legacyHosts = [
+      'www.jnhrcompany.com',
+      'jand-newsletter-admin.vercel.app',
+      'jand-newsletter-admin-lee-younghans-projects.vercel.app',
+      'jand-newsletter-admin-gks2287-5987-lee-younghans-projects.vercel.app',
     ];
+    return legacyHosts.map(host => ({
+      source: '/:path*',
+      has: [{ type: 'host', value: host }],
+      destination: 'https://jnhrcompany.com/:path*',
+      permanent: true,
+    }));
   },
   experimental: {
     serverComponentsExternalPackages: ['pdf-parse', 'mammoth', '@anthropic-ai/sdk'],
