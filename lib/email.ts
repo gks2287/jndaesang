@@ -3,7 +3,11 @@ import type { GeneratedNewsletter } from '@/components/newsletter/NewsletterRend
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+// 발신 주소 — 인증된 도메인 사용. 환경변수가 비었거나 Resend가 거부하는 형식('&' 포함 등)이면 안전한 plain 기본값 사용.
+const RAW_FROM = (process.env.RESEND_FROM_EMAIL ?? '').trim();
+const FROM_EMAIL = RAW_FROM && RAW_FROM.includes('@') && !RAW_FROM.includes('&')
+  ? RAW_FROM
+  : 'newsletter@jnhrcompany.com';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
 /** 요약본 이메일 HTML 생성 */
