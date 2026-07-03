@@ -820,10 +820,10 @@ function NewslettersContent() {
 
     for (const company of companies) {
       const companyPs = participants.filter(p => p.companyId === company.id);
-      if (companyPs.length === 0) continue;
-
       // 해당 기업의 뉴스레터 목록 (유형 매칭 또는 기업 전체 대상)
       const companyNLs = newsletters.filter(n => n.companyId === company.id);
+      // 직책자도 없고 뉴스레터도 없으면 스킵 (뉴스레터가 있으면 표시)
+      if (companyPs.length === 0 && companyNLs.length === 0) continue;
 
       const positivePs = companyPs.filter(p => POSITIVE_TYPES.includes(p.leadershipType));
       const negativePs = companyPs.filter(p => NEGATIVE_TYPES.includes(p.leadershipType));
@@ -866,6 +866,24 @@ function NewslettersContent() {
       }
       if (negativePs.length > 0) {
         groups.push({ polarity: 'negative', newsletterIds: negativeNLIds, totalCount: negativePs.length, types: buildTypes(negativePs) });
+      }
+
+      // 어느 유형에도 매칭되지 않은 뉴스레터(직책자가 긍정/부정으로 분류되지 않거나 없는 경우)를
+      // leaderType 그룹에 fallback으로 붙여 목록에서 누락되지 않게 한다.
+      const attachedNLIds = new Set<number>();
+      groups.forEach(g => g.types.forEach(t => { if (t.newsletterId != null) attachedNLIds.add(t.newsletterId); }));
+      for (const nl of companyNLs) {
+        if (attachedNLIds.has(nl.id)) continue;
+        const pol: Polarity = nl.leaderType === 'negative' ? 'negative' : 'positive';
+        let grp = groups.find(g => g.polarity === pol);
+        if (!grp) {
+          grp = { polarity: pol, newsletterIds: [], totalCount: companyPs.length, types: [] };
+          groups.push(grp);
+        }
+        grp.newsletterIds.push(nl.id);
+        const typeName = nl.leadershipType && nl.leadershipType !== '미지정' ? nl.leadershipType : '전체 대상';
+        grp.types.push({ typeName, count: companyPs.length, rounds: buildRoundsFromNL(nl), newsletterId: nl.id });
+        attachedNLIds.add(nl.id);
       }
 
       const latestNL = companyNLs.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
