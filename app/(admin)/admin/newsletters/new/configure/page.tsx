@@ -307,19 +307,24 @@ function ConfigureContent() {
     contentsCacheRef.current.clear();
   }, [configDraft.companyIds]);
 
-  // 유형 배분(Step 3): 저장된 리더십 유형 정보가 로드되면, 그룹이 비어있는 회차에
-  // 카탈로그 부정 유형으로 배분 그룹을 자동 생성 (비동기 로드 타이밍 보정)
+  // 유형 배분(Step 3): 저장된 리더십 유형 정보가 로드되면, 카탈로그 유형 중
+  // 아직 어느 그룹에도 없는 유형을 그룹으로 추가 (비동기 로드/진행 중 draft 보정)
   useEffect(() => {
     if (wizardStep !== 3) return;
     if (companyLeadershipInfo.length === 0) return;
+    const catalogTypes = companyLeadershipInfo.map(i => i.type);
     setRounds(prev => {
       let changed = false;
       const next = prev.map(r => {
-        if (r.customGroups.some(g => g.types.length > 0)) return r; // 이미 그룹 있음
-        const groups = buildDefaultGroups();
-        if (groups.length === 0) return r;
+        const existing = new Set(r.customGroups.flatMap(g => g.types));
+        const missing = catalogTypes.filter(t => !existing.has(t));
+        if (missing.length === 0) return r;
         changed = true;
-        return { ...r, customGroups: groups };
+        const added = missing.map((t, i) => {
+          const leaderIds = selectedParticipants.filter(p => p.leadershipType === t).map(p => p.id);
+          return makeCustomGroup(`g-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`, [t], leaderIds);
+        });
+        return { ...r, customGroups: [...r.customGroups, ...added] };
       });
       return changed ? next : prev;
     });
@@ -1060,18 +1065,15 @@ function ConfigureContent() {
     setWizardStep(prev => (prev + 1) as WizardStep);
   }
 
-  // 기본 그룹: 회사의 부정 리더 전체를 하나의 그룹으로
+  // 기본 그룹: 저장된 리더십 유형 정보(카탈로그)의 모든 유형 + 실제 직책자 유형을 유형별 그룹으로
   function buildDefaultGroups(): CustomGroup[] {
-    // 저장된 리더십 유형 정보(카탈로그)의 부정 유형 + 실제 직책자의 부정 유형을 합집합으로
-    const catalogNegTypes = companyLeadershipInfo
-      .map(i => i.type)
-      .filter((t): t is typeof NEGATIVE_TYPES[number] => (NEGATIVE_TYPES as string[]).includes(t));
-    const participantNegTypes = NEGATIVE_TYPES.filter(t => negativeParticipants.some(p => p.leadershipType === t));
-    const allNegTypes = [...new Set<string>([...catalogNegTypes, ...participantNegTypes])];
-    if (allNegTypes.length === 0) return [];
-    // 저장한 유형별로 그룹 자동 생성 (해당 유형 직책자가 있으면 매핑, 없으면 유형만 있는 빈 그룹)
-    return allNegTypes.map((t, i) => {
-      const leaderIds = negativeParticipants.filter(p => p.leadershipType === t).map(p => p.id);
+    const catalogTypes = companyLeadershipInfo.map(i => i.type);
+    const participantTypes = [...new Set(selectedParticipants.map(p => p.leadershipType))];
+    const allTypes = [...new Set<string>([...catalogTypes, ...participantTypes])];
+    if (allTypes.length === 0) return [];
+    // 저장한 유형별로 그룹 자동 생성 (해당 유형 직책자가 있으면 매핑)
+    return allTypes.map((t, i) => {
+      const leaderIds = selectedParticipants.filter(p => p.leadershipType === t).map(p => p.id);
       return makeCustomGroup(`g-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`, [t], leaderIds);
     });
   }
