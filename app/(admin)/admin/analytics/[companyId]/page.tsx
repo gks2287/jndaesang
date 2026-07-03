@@ -243,7 +243,7 @@ export default function CompanyDetailPage() {
     (Object.keys(LEADERSHIP_COLORS) as LeadershipType[]).map(type => ({
       type,
       count: yearMembers.filter(p => p.leadershipType === type).length,
-    })),
+    })).filter(seg => seg.count > 0), // 해당 기업에 실제 존재하는 유형만
     [yearMembers],
   );
 
