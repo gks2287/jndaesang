@@ -4,7 +4,6 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   PERIODIC_SURVEY_TITLE,
   PERIODIC_SURVEY_DESCRIPTION,
-  SURVEY_TYPE_BADGE,
   INTERACTION_SURVEY_LABELS,
   buildPeriodicSurveyQuestions,
   type PeriodicSurveyQuestion,
@@ -321,7 +320,7 @@ function renderPeriodicSurveyCard(questions: PeriodicSurveyQuestion[], key?: str
           <div key={i} className={showArea ? 'pt-2' : ''}>
             {showArea && <p className="text-xs font-bold text-[#55A4DA] mb-2">{q.area}</p>}
             <div className="flex items-start gap-1.5 mb-2">
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#E1EFFB] text-[#55A4DA] flex-shrink-0 mt-0.5">{SURVEY_TYPE_BADGE[q.type]}</span>
+              {/* 문항 유형(단일/복수) 라벨은 화면에 노출하지 않음 (데이터 구조상 q.type은 유지) */}
               <p className="text-sm font-semibold text-[#2C2C2C]">
                 Q{i + 1}. {q.question}
                 {q.required
@@ -490,15 +489,26 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
   const useTemplateSurveys = templateSurveys !== undefined;
   const e = onInlineEdit; // shorthand
 
+  // ── 목차·본문 섹션 중복 방지 ──
+  // 레이아웃은 '서론·본론·결론' 3부작 전제. 데이터 이상(같은 헤드라인 섹션 중복)이 들어와도
+  // 목차/본문에 두 번 나오지 않도록 헤드라인 기준으로 한 번씩만 남긴다.
+  const seenTitles = new Set<string>();
+  const sections = generated.sections.filter(s => {
+    const key = (s.contentTitle ?? '').trim();
+    if (key && seenTitles.has(key)) return false;
+    if (key) seenTitles.add(key);
+    return true;
+  });
+
   // ── 이미지 중복 방지 ──
   // 뉴스레터 안에서 렌더되는 모든 사진(커버 + 본문 섹션 썸네일)이 서로 달라야 한다.
   // 커버가 섹션0의 이미지를 먼저 차지하고, 이후 섹션은 이미 쓰인 이미지면 비운다(중복보다 없는 게 낫다).
   const firstImage = (s?: GeneratedNewsletterSection) =>
     [s?.thumbnail, s?.thumbnailUrl].find((u): u is string => !!u && u.trim().length > 0) ?? '';
   const usedImages = new Set<string>();
-  const coverImage = firstImage(generated.sections[0]);
+  const coverImage = firstImage(sections[0]);
   if (coverImage) usedImages.add(coverImage);
-  const sectionImage = generated.sections.map((s, i) => {
+  const sectionImage = sections.map((s, i) => {
     if (i === 0) return '';                                  // 섹션0 사진은 커버에서 노출 → 본문 인라인 중복 방지
     const img = firstImage(s);
     if (img && !usedImages.has(img)) { usedImages.add(img); return img; }
@@ -533,7 +543,7 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
       </div>
 
       {/* ② 오버레이 히어로 — 첫 섹션 썸네일 위에 eyebrow + 헤드라인 */}
-      <HeroOverlay sources={[coverImage]} label={generated.sections[0]?.contentTitle}>
+      <HeroOverlay sources={[coverImage]} label={sections[0]?.contentTitle}>
         {generated.subject && (
           <EditableText tag="p" value={generated.subject} field="subject" onEdit={e} className="text-[11px] font-bold tracking-[0.2em] uppercase text-white/80 mb-2" />
         )}
@@ -549,21 +559,21 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
           <EditableText tag="p" value={generated.intro} field="intro" onEdit={e} className="text-[17px] text-[#374151] leading-[1.85]" multiline />
         </div>
 
-        {/* ④ IN THIS ISSUE — 슬림 목차 (앵커 스크롤) */}
-        {generated.sections.length > 1 && (
+        {/* ④ 이번 호 목차 — 단계(짚어보기/파고들기/행동하기)별 한 줄 요약 (앵커 스크롤) */}
+        {sections.length > 1 && (
           <div className="mt-8 rounded-2xl border border-[#E1EFFB] overflow-hidden">
             <div className="px-5 py-2.5 bg-[#EAF4FC]">
-              <p className="text-[10px] font-bold tracking-[0.2em] uppercase text-[#55A4DA]">In This Issue · 이번 호 목차</p>
+              <p className="text-[11px] font-bold tracking-[0.15em] text-[#2E7DB5]">이번 호 목차</p>
             </div>
             <ul className="divide-y divide-[#EEF2F7]">
-              {generated.sections.map((sec, idx) => (
-                <li key={sec.contentId}>
-                  <a href={`#nl-sec-${idx}`} className="flex items-center gap-3 px-5 py-3 hover:bg-[#F6FAFE] transition-colors group">
-                    <span className="flex-shrink-0 w-[4.5rem]">
-                      <span className="block text-[10px] font-bold text-[#9CA3AF] tabular-nums leading-none">{String(idx + 1).padStart(2, '0')}</span>
-                      {STORY_STAGES[idx] && <span className="block text-[11px] font-bold text-[#55A4DA] leading-tight mt-0.5">{STORY_STAGES[idx]}</span>}
+              {sections.map((sec, idx) => (
+                <li key={`toc-${idx}`}>
+                  <a href={`#nl-sec-${idx}`} className="flex items-center gap-3 px-5 py-3.5 hover:bg-[#F6FAFE] transition-colors group">
+                    <span className="flex-shrink-0 w-[4.75rem] flex items-baseline gap-1.5">
+                      <span className="text-[10px] font-black text-[#9CA3AF] tabular-nums">{String(idx + 1).padStart(2, '0')}</span>
+                      {STORY_STAGES[idx] && <span className="text-[12px] font-bold text-[#55A4DA] whitespace-nowrap">{STORY_STAGES[idx]}</span>}
                     </span>
-                    <span className="text-sm font-semibold text-[#374151] leading-snug flex-1 min-w-0 group-hover:text-[#55A4DA] transition-colors">{sec.contentTitle}</span>
+                    <span className="text-sm text-[#374151] leading-snug flex-1 min-w-0 group-hover:text-[#55A4DA] transition-colors">{(sec.contentTitle ?? '').replace(/\n/g, ' ')}</span>
                     <span className="text-[#9CA3AF] group-hover:text-[#55A4DA] transition-colors flex-shrink-0">→</span>
                   </a>
                 </li>
@@ -575,7 +585,7 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
         {/* ⑤ 콘텐츠 */}
         {renderSectionHeader('📖', '오늘의 이야기', "Today's Story")}
         <div>
-          {generated.sections.map((sec, idx) => {
+          {sections.map((sec, idx) => {
             // 본문 단락: body 우선, 없으면 구버전 필드로 폴백
             const bodyParas = (sec.body && sec.body.length > 0)
               ? sec.body
@@ -583,18 +593,18 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
             const paras = bodyParas.length > 0 ? bodyParas : (sec.summary ? [sec.summary] : []);
             // 역할 결정: 첫 섹션=서론(임팩트형), 마지막=결론(실천 카드형), 그 외=본론(기사형)
             const role: 'intro' | 'body' | 'action' =
-              idx === 0 ? 'intro' : (idx === generated.sections.length - 1 ? 'action' : 'body');
+              idx === 0 ? 'intro' : (idx === sections.length - 1 ? 'action' : 'body');
 
             // 단계 마커(진행 바 + 라벨) — 세 템플릿 공통 throughline (요청대로 유지)
             const eyebrow = (
               <div className="flex items-center gap-2.5 mb-3">
                 <div className="flex items-center gap-1">
-                  {generated.sections.map((_, i) => (
+                  {sections.map((_, i) => (
                     <span key={i} className={`h-[3px] rounded-full transition-all ${i === idx ? 'w-6 bg-[#55A4DA]' : 'w-2.5 bg-[#CFE3F3]'}`} />
                   ))}
                 </div>
                 <p className="text-[11px] font-bold text-[#55A4DA] leading-none">
-                  <span className="tabular-nums tracking-[0.1em]">{String(idx + 1).padStart(2, '0')}/{String(generated.sections.length).padStart(2, '0')}</span>
+                  <span className="tabular-nums tracking-[0.1em]">{String(idx + 1).padStart(2, '0')}/{String(sections.length).padStart(2, '0')}</span>
                   {STORY_STAGES[idx] && <span className="ml-1.5">· {STORY_STAGES[idx]}</span>}
                 </p>
               </div>
@@ -616,23 +626,24 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
                   {eyebrow}
                   <EditableText tag="p" value={sec.contentTitle} field={`section.${idx}.contentTitle`} onEdit={e} className="text-3xl sm:text-[2.5rem] font-black text-[#1A1A1A] leading-[1.15] break-keep" />
                   {sec.subtitle && <EditableText tag="p" value={sec.subtitle} field={`section.${idx}.subtitle`} onEdit={e} className="text-base text-[#9CA3AF] mt-3 leading-relaxed" />}
-                  {sec.intro && <EditableText tag="p" value={sec.intro} field={`section.${idx}.intro`} onEdit={e} className="text-[17px] text-[#4B5563] leading-[1.85] mt-6" multiline />}
-                  {/* 핵심 숫자 강조 — 숫자만 키우고 설명은 작은 보조 텍스트 (압도가 아닌 세련된 강조) */}
-                  {sec.dataStat && (sec.dataStat.value || sec.dataStat.description) && (
-                    <div className="my-9 text-center">
-                      {sec.dataStat.value && <EditableText tag="p" value={sec.dataStat.value} field={`section.${idx}.dataStat.value`} onEdit={e} className="text-3xl sm:text-4xl font-black text-[#55A4DA] leading-tight whitespace-pre-line break-keep" />}
-                      <div className="mx-auto w-10 h-[2px] bg-[#55A4DA] my-4" />
-                      {sec.dataStat.description && <EditableText tag="p" value={sec.dataStat.description} field={`section.${idx}.dataStat.description`} onEdit={e} className="text-sm text-[#6B7280] leading-[1.7] max-w-md mx-auto" multiline />}
+                  {sec.intro && <EditableText tag="p" value={sec.intro} field={`section.${idx}.intro`} onEdit={e} className="text-[17px] text-[#374151] leading-[1.85] mt-6" multiline />}
+                  {/* 공감·문제 인식용 짧은 문단들 (짧게 끊어 읽기 리듬 유지) */}
+                  {paras.map((p, i) => (
+                    <EditableText key={i} tag="p" value={p} field={`section.${idx}.body.${i}`} onEdit={e} className="text-base text-[#4B5563] leading-[1.85] mt-4" multiline />
+                  ))}
+                  {/* 핵심 숫자 강조 + 한 줄 임팩트를 하나의 중앙 블록으로 묶어 여백 균형 (휑한 빈 공간 방지) */}
+                  {((sec.dataStat && (sec.dataStat.value || sec.dataStat.description)) || (sec.keyTakeaway && sec.keyTakeaway.trim())) && (
+                    <div className="mt-7 rounded-2xl bg-[#F3F8FC] px-6 py-7 text-center">
+                      {sec.dataStat?.value && <EditableText tag="p" value={sec.dataStat.value} field={`section.${idx}.dataStat.value`} onEdit={e} className="text-3xl sm:text-4xl font-black text-[#55A4DA] leading-tight whitespace-pre-line break-keep" />}
+                      {sec.dataStat?.description && <EditableText tag="p" value={sec.dataStat.description} field={`section.${idx}.dataStat.description`} onEdit={e} className="text-sm text-[#6B7280] leading-[1.7] max-w-md mx-auto mt-2.5" multiline />}
+                      {sec.keyTakeaway && sec.keyTakeaway.trim() && (
+                        <>
+                          {sec.dataStat?.value && <div className="mx-auto w-10 h-px bg-[#CFE3F3] my-5" />}
+                          <EditableText tag="p" value={sec.keyTakeaway} field={`section.${idx}.keyTakeaway`} onEdit={e} className="text-xl font-black text-[#1A1A1A] leading-snug break-keep" />
+                        </>
+                      )}
                     </div>
                   )}
-                  {/* 한 줄 임팩트 — 박스 없이 큰 문장 */}
-                  {sec.keyTakeaway && sec.keyTakeaway.trim() && (
-                    <EditableText tag="p" value={sec.keyTakeaway} field={`section.${idx}.keyTakeaway`} onEdit={e} className="text-2xl font-black text-[#1A1A1A] leading-snug break-keep text-center mt-2" />
-                  )}
-                  {/* 스크롤 큐 */}
-                  <div className="flex justify-center mt-10">
-                    <span className="text-[#CFE3F3] text-2xl leading-none">↓</span>
-                  </div>
                 </div>
               );
             }
