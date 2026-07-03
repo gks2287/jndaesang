@@ -45,6 +45,9 @@ const WIZARD_STEPS: Array<{ n: WizardStep; label: string }> = [
 
 const POSITIVE_LEADERSHIP_TYPES = new Set(['코칭형', '민주형', '서번트형', '비전형', '관계중심형']);
 
+// zustand selector가 매 렌더마다 새 배열을 만들지 않도록 하는 안정적인 빈 배열 참조
+const EMPTY_LEADERSHIP_INFO: import('@/store/leadershipInfoStore').LeadershipInfo[] = [];
+
 // 추가 자료 업로드 제한
 const ATTACH_MAX_PER_TARGET = 5;
 const ATTACH_MAX_BYTES = 10 * 1024 * 1024; // 10MB
@@ -141,9 +144,10 @@ function ConfigureContent() {
   const leadershipInfoYear = new Date().getFullYear();
   const leadershipCompanyId = targetCompanies[0]?.id;
   const loadLeadershipInfo = useLeadershipInfoStore(s => s.loadForCompany);
+  // 맵에서 원시 값만 선택(안정 참조). 없으면 모듈 상수 빈 배열 → 무한 렌더 방지
   const companyLeadershipInfo = useLeadershipInfoStore(
-    s => (leadershipCompanyId != null ? (s.current[`${leadershipCompanyId}-${leadershipInfoYear}`] ?? []) : []),
-  );
+    s => (leadershipCompanyId != null ? s.current[`${leadershipCompanyId}-${leadershipInfoYear}`] : undefined),
+  ) ?? EMPTY_LEADERSHIP_INFO;
   useEffect(() => {
     if (leadershipCompanyId != null) void loadLeadershipInfo(leadershipCompanyId, leadershipInfoYear);
   }, [leadershipCompanyId, leadershipInfoYear, loadLeadershipInfo]);
