@@ -307,6 +307,25 @@ function ConfigureContent() {
     contentsCacheRef.current.clear();
   }, [configDraft.companyIds]);
 
+  // 유형 배분(Step 3): 저장된 리더십 유형 정보가 로드되면, 그룹이 비어있는 회차에
+  // 카탈로그 부정 유형으로 배분 그룹을 자동 생성 (비동기 로드 타이밍 보정)
+  useEffect(() => {
+    if (wizardStep !== 3) return;
+    if (companyLeadershipInfo.length === 0) return;
+    setRounds(prev => {
+      let changed = false;
+      const next = prev.map(r => {
+        if (r.customGroups.some(g => g.types.length > 0)) return r; // 이미 그룹 있음
+        const groups = buildDefaultGroups();
+        if (groups.length === 0) return r;
+        changed = true;
+        return { ...r, customGroups: groups };
+      });
+      return changed ? next : prev;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wizardStep, companyLeadershipInfo]);
+
   // Step 4 진입/회차 전환 시 활성 그룹 + 일반형 각각 주제·콘텐츠 AI 자동 채움
   useEffect(() => {
     if (wizardStep !== 4) return;
@@ -1043,10 +1062,18 @@ function ConfigureContent() {
 
   // 기본 그룹: 회사의 부정 리더 전체를 하나의 그룹으로
   function buildDefaultGroups(): CustomGroup[] {
-    const negTypes = NEGATIVE_TYPES.filter(t => negativeParticipants.some(p => p.leadershipType === t));
-    if (negTypes.length === 0) return [];
-    const leaderIds = negativeParticipants.filter(p => negTypes.includes(p.leadershipType)).map(p => p.id);
-    return [makeCustomGroup(`g-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, negTypes, leaderIds)];
+    // 저장된 리더십 유형 정보(카탈로그)의 부정 유형 + 실제 직책자의 부정 유형을 합집합으로
+    const catalogNegTypes = companyLeadershipInfo
+      .map(i => i.type)
+      .filter((t): t is typeof NEGATIVE_TYPES[number] => (NEGATIVE_TYPES as string[]).includes(t));
+    const participantNegTypes = NEGATIVE_TYPES.filter(t => negativeParticipants.some(p => p.leadershipType === t));
+    const allNegTypes = [...new Set<string>([...catalogNegTypes, ...participantNegTypes])];
+    if (allNegTypes.length === 0) return [];
+    // 저장한 유형별로 그룹 자동 생성 (해당 유형 직책자가 있으면 매핑, 없으면 유형만 있는 빈 그룹)
+    return allNegTypes.map((t, i) => {
+      const leaderIds = negativeParticipants.filter(p => p.leadershipType === t).map(p => p.id);
+      return makeCustomGroup(`g-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`, [t], leaderIds);
+    });
   }
 
   function goPrev() {
