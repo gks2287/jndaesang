@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { buildEmailHtml, sendNewsletterBatch, type SendNewsletterParams } from '@/lib/email';
 import type { GeneratedNewsletter } from '@/components/newsletter/NewsletterRender';
+import { prisma } from '@/lib/db';
 
 interface Recipient {
   email: string;
@@ -52,6 +53,29 @@ export async function POST(req: Request) {
     }));
 
     const result = await sendNewsletterBatch(items);
+
+    // 발송 성공 → 각 수신 직책자의 진행 상태 갱신 (발송된 회차까지 접근 가능하도록)
+    await Promise.all(recipients.map(async (r) => {
+      if (!r.token) return;
+      try {
+        let p = await prisma.participant.findFirst({ where: { token: r.token } });
+        if (!p && r.token.startsWith('nl-')) {
+          const id = Number(r.token.slice(3));
+          if (Number.isInteger(id)) {
+            const byId = await prisma.participant.findUnique({ where: { id } });
+            if (byId && !byId.token) p = byId;
+          }
+        }
+        if (!p) return;
+        const nextStep = Math.min(p.stepTotal, Math.max(p.stepCurrent, round.vol));
+        await prisma.participant.update({
+          where: { id: p.id },
+          data: { stepCurrent: nextStep, deliveryStatus: p.deliveryStatus === '미발송' ? '발송완료' : p.deliveryStatus },
+        });
+      } catch (e) {
+        console.error('[newsletter/send] participant 업데이트 실패:', e);
+      }
+    }));
 
     return NextResponse.json({
       success: true,

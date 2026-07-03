@@ -36,11 +36,18 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
     const positionGroup = peerRows.filter(p => p.position === participant!.position);
     const typeGroup = peerRows.filter(p => p.leadershipType === participant!.leadershipType);
 
-    // 본인 회사·유형에 매칭되는 뉴스레터 본문 (가장 최근 것)
-    const nl = await prisma.newsletter.findFirst({
+    // 본인 회사·유형에 매칭되는 뉴스레터 본문. 유형 정확 매칭이 없으면
+    // 미지정(전체 대상) 뉴스레터로 폴백. (가장 최근 것)
+    let nl = await prisma.newsletter.findFirst({
       where: { companyId: participant.companyId, leadershipType: participant.leadershipType },
       orderBy: { createdAt: 'desc' },
     });
+    if (!nl) {
+      nl = await prisma.newsletter.findFirst({
+        where: { companyId: participant.companyId, leadershipType: { in: ['미지정', ''] } },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
     const newsletter = nl
       ? { ...nl, createdAt: nl.createdAt.toISOString().slice(0, 10), updatedAt: nl.updatedAt.toISOString().slice(0, 10) }
       : null;
