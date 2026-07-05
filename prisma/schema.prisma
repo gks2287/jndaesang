@@ -77,6 +77,7 @@ model Newsletter {
   totalLeaders     Int      @default(0)
   savedRounds      Int[]    @default([])
   generatedContent Json? // SavedNewsletterContent (rounds/sections/interactions/surveys)
+  authoring        Json? // 제작 위저드 스냅샷 { storyline, totalRounds, roundDistribution, rounds } — 이어서/수정 복원용
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

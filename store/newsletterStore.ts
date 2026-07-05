@@ -1,7 +1,17 @@
 import { create } from 'zustand';
 import type { SavedNewsletterContent } from '@/components/newsletter/NewsletterRender';
+import type { Round } from '@/lib/content';
+import type { StorylineStep } from '@/lib/storyline';
 
 export type NewsletterStatus = '제작 중' | '제작완료';
+
+// 제작 위저드 스냅샷 — 이어서/수정 시 위저드를 그대로 복원하기 위한 저작(authoring) 정보
+export interface NewsletterAuthoring {
+  storyline: StorylineStep[];
+  totalRounds: number;
+  roundDistribution: { stepIndex: number; count: number }[];
+  rounds: Round[];
+}
 
 export interface Newsletter {
   id: number;
@@ -23,6 +33,8 @@ export interface Newsletter {
   savedRounds?: number[];
   // 제작완료 시 저장되는 회차별 생성 본문 (전체본문 + 요약본 미리보기용)
   generatedContent?: SavedNewsletterContent;
+  // 제작 위저드 스냅샷 — 이어서/수정 복원용 (구버전 레코드는 없을 수 있음)
+  authoring?: NewsletterAuthoring | null;
 }
 
 type NewsletterInput = Omit<Newsletter, 'id' | 'createdAt' | 'updatedAt'>;

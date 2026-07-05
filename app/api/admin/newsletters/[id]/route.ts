@@ -26,6 +26,7 @@ type UpdateBody = Partial<{
   totalLeaders: number;
   savedRounds: number[];
   generatedContent: unknown;
+  authoring: unknown;
 }>;
 
 // PATCH /api/admin/newsletters/[id] — 수정 (savedRounds 토글/제작완료 저장 등)
@@ -52,6 +53,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (b.savedRounds !== undefined) data.savedRounds = b.savedRounds;
     if (b.generatedContent !== undefined) {
       data.generatedContent = (b.generatedContent ?? Prisma.JsonNull) as Prisma.InputJsonValue;
+    }
+    if (b.authoring !== undefined) {
+      data.authoring = (b.authoring ?? Prisma.JsonNull) as Prisma.InputJsonValue;
     }
     const updated = await prisma.newsletter.update({ where: { id }, data });
     return NextResponse.json(serialize(updated));

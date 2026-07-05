@@ -27,6 +27,7 @@ type CreateBody = {
   totalLeaders?: number;
   savedRounds?: number[];
   generatedContent?: unknown;
+  authoring?: unknown;
 };
 
 // GET /api/admin/newsletters — 전체 뉴스레터(캠페인) 목록 (최신순)
@@ -64,6 +65,7 @@ export async function POST(req: NextRequest) {
         totalLeaders: b.totalLeaders ?? 0,
         savedRounds: b.savedRounds ?? [],
         generatedContent: (b.generatedContent ?? Prisma.JsonNull) as Prisma.InputJsonValue,
+        authoring: (b.authoring ?? Prisma.JsonNull) as Prisma.InputJsonValue,
       },
     });
     return NextResponse.json(serialize(created), { status: 201 });

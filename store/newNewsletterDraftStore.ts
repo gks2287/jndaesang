@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { DEFAULT_STORYLINE, type StorylineStep } from '@/lib/storyline';
 import { makeStepContents, type StepContent, type Round } from '@/lib/content';
+import type { SavedNewsletterContent } from '@/components/newsletter/NewsletterRender';
 
 export type WizardStep = 1 | 2 | 3 | 4 | 5;
 type DeliverySchedule = '주 1회' | '격주' | '월 1회';
@@ -27,6 +28,10 @@ interface NewNewsletterDraft {
   roundDistribution: { stepIndex: number; count: number }[];
   rounds: Round[];
   deliverySchedule: DeliverySchedule;
+
+  // 이어서/수정 진입용 — 편집 대상 뉴스레터 id(수정 모드)와 미리 불러온 본문
+  editingNewsletterId: number | null;
+  seededGeneratedContent: SavedNewsletterContent | null;
 }
 
 const DEFAULT_DRAFT: NewNewsletterDraft = {
@@ -42,6 +47,8 @@ const DEFAULT_DRAFT: NewNewsletterDraft = {
   roundDistribution: [],
   rounds: [],
   deliverySchedule: '주 1회',
+  editingNewsletterId: null,
+  seededGeneratedContent: null,
 };
 
 interface NewNewsletterDraftStore extends NewNewsletterDraft {

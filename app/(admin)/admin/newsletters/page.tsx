@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useNewNewsletterDraftStore } from '@/store/newNewsletterDraftStore';
+import { DEFAULT_STORYLINE } from '@/lib/storyline';
 import { useCompanyStore } from '@/store/companyStore';
 import { useNewsletterStore, type Newsletter } from '@/store/newsletterStore';
 import CompanyLogo from '@/components/CompanyLogo';
@@ -776,7 +777,7 @@ function PolarityRow({ group, companyId, companyName, openKeys, onToggle, isComp
 }
 
 // ── 1단계: 기업 행 ───────────────────────────────────────────────────
-function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, activeTab, selectedIds, onSelectRound, onSelectRoundBulk, onDelete, onSend, selectedNewsletterIds, onToggleNewsletters, newsletters, onToggleSaved }: {
+function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, activeTab, selectedIds, onSelectRound, onSelectRoundBulk, onDelete, onSend, selectedNewsletterIds, onToggleNewsletters, newsletters, onToggleSaved, onContinue, onEdit }: {
   company: CompanyData; openKeys: Set<string>; onToggle: (k: string) => void;
   isCompleteTab: boolean; onPreview: (t: PreviewTarget) => void; activeTab: TabType;
   selectedIds: Set<string>; onSelectRound: (selectionId: string, checked: boolean) => void;
@@ -785,7 +786,10 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
   onSend: (company: CompanyData) => void;
   selectedNewsletterIds: Set<number>; onToggleNewsletters: (ids: number[]) => void;
   newsletters: Newsletter[]; onToggleSaved: (id: number, roundNum: number) => void;
+  onContinue: (nl: Newsletter) => void; onEdit: (nl: Newsletter) => void;
 }) {
+  // 이 기업의 캠페인(뉴스레터) — 이어서/수정 대상
+  const companyNewsletters = newsletters.filter(n => n.companyId === company.companyId);
   const key = `c${company.companyId}`;
   const isOpen = openKeys.has(key);
 
@@ -895,6 +899,32 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
             ))}
           </div>
 
+          {/* 캠페인별 이어서 만들기 / 수정하기 */}
+          {companyNewsletters.length > 0 && (
+            <div className="border-t border-gray-100 px-5 py-3 bg-gray-50/40 space-y-2">
+              {companyNewsletters.map(nl => (
+                <div key={nl.id} className="flex items-center gap-3">
+                  <span className="text-xs font-semibold text-gray-600 flex-1 truncate">{nl.title}</span>
+                  <span className="text-[11px] text-gray-400 flex-shrink-0">{nl.completedRounds}/{nl.totalRounds}회차</span>
+                  <button
+                    onClick={e => { e.stopPropagation(); onContinue(nl); }}
+                    className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#2E7DB5] bg-[#EAF4FC] hover:bg-[#d9ecfa] transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                    이어서 만들기
+                  </button>
+                  <button
+                    onClick={e => { e.stopPropagation(); onEdit(nl); }}
+                    className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-gray-500 border border-gray-200 hover:bg-gray-100 transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                    수정하기
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* 회차별 전체선택 */}
           {isCompleteTab && availableRoundNums.length > 0 && (
             <div className="border-t border-gray-100 px-5 py-2.5 bg-gray-50/40 flex items-center gap-2 flex-wrap">
@@ -926,11 +956,41 @@ function NewslettersContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const resetDraft = useNewNewsletterDraftStore(s => s.resetDraft);
+  const setDraft = useNewNewsletterDraftStore(s => s.setDraft);
   const removeNewsletter = useNewsletterStore(s => s.removeNewsletter);
   const toggleRoundSaved = useNewsletterStore(s => s.toggleRoundSaved);
   const draftCompanyIds = useNewNewsletterDraftStore(s => s.companyIds);
   const draftWizardStep = useNewNewsletterDraftStore(s => s.wizardStep);
   const companies = useCompanyStore(s => s.companies);
+
+  // 이어서/수정: 기존 캠페인의 제작 스냅샷으로 위저드를 미리 채워 진입
+  function seedFromNewsletter(nl: Newsletter, mode: 'continue' | 'edit') {
+    const a = nl.authoring ?? null;
+    const storyline = a?.storyline?.length ? a.storyline : DEFAULT_STORYLINE;
+    const totalRounds = a?.totalRounds && a.totalRounds > 0 ? a.totalRounds : (nl.totalRounds || storyline.length);
+    const roundDistribution = a?.roundDistribution ?? [];
+    const baseRounds = a?.rounds ?? [];
+    // 이어서: 유형 배분(customGroups)은 유지하고 주제·콘텐츠는 비워 새로 작성
+    const rounds = mode === 'continue'
+      ? baseRounds.map(r => ({ ...r, topic: '', contents: [] }))
+      : baseRounds;
+    resetDraft();
+    setDraft({
+      companyIds: [nl.companyId],
+      customStoryline: storyline,
+      totalRounds,
+      roundDistribution,
+      rounds,
+      wizardStep: 1,
+      editingNewsletterId: mode === 'edit' ? nl.id : null,
+      seededGeneratedContent: mode === 'edit' ? (nl.generatedContent ?? null) : null,
+    });
+    // 초안 복구 팝업 억제
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('newsletter_draft_saved', JSON.stringify({ savedByUser: true }));
+    }
+    router.push('/admin/newsletters/new/configure');
+  }
   const [activeTab, setActiveTab] = useState<TabType>('최근');
   const [showRecovery, setShowRecovery] = useState(false);
   const hasDraft = draftCompanyIds.length > 0 || draftWizardStep > 1;
@@ -1389,6 +1449,8 @@ function NewslettersContent() {
                 onToggleNewsletters={toggleNewsletterSelect}
                 newsletters={newsletters}
                 onToggleSaved={toggleRoundSaved}
+                onContinue={nl => seedFromNewsletter(nl, 'continue')}
+                onEdit={nl => seedFromNewsletter(nl, 'edit')}
               />
             ))
           )}

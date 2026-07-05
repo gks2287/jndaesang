@@ -126,9 +126,12 @@ function calcTotalDuration(startDate: string, interval: DeliveryInterval, count:
 function ConfigureContent() {
   const router = useRouter();
   const addNewsletter = useNewsletterStore(s => s.addNewsletter);
+  const updateNewsletter = useNewsletterStore(s => s.updateNewsletter);
   const companies = useCompanyStore(s => s.companies);
 
   const configDraft = useNewNewsletterDraftStore();
+  // 수정 모드: 편집 대상 뉴스레터 id (이어서/신규는 null)
+  const editingNewsletterId = configDraft.editingNewsletterId;
   const allParticipants = useParticipantStore(s => s.participants);
 
   const targetCompanies = companies.filter(c => configDraft.companyIds.includes(c.id));
@@ -1101,6 +1104,11 @@ function ConfigureContent() {
     return savedRounds.length > 0 ? { rounds: savedRounds } : undefined;
   }
 
+  // 이어서/수정 복원용 위저드 스냅샷
+  function buildAuthoring() {
+    return { storyline: customStoryline, totalRounds, roundDistribution, rounds };
+  }
+
   async function handleSave(status: '제작 중' | '제작완료', savedContent?: SavedNewsletterContent) {
     const company = targetCompanies[0];
     const leadershipType = leadershipTypes.length > 0
@@ -1109,7 +1117,7 @@ function ConfigureContent() {
     const autoTitle = `${company?.name ?? '미지정'} ${leadershipType} 리더십 코칭`.trim();
     // 긍정/부정 구분 없이 실제 참여자 유형 전체를 대상으로 저장
     const allLeaderTypes = [...new Set(selectedParticipants.map(p => p.leadershipType))].filter(Boolean);
-    await addNewsletter({
+    const payload = {
       title: autoTitle,
       companyId: company?.id ?? 0,
       companyName: company?.name ?? '미지정',
@@ -1120,11 +1128,19 @@ function ConfigureContent() {
       negativeLeaders: { types: allLeaderTypes, count: selectedParticipants.length },
       totalRounds: customStoryline.length,
       completedRounds: status === '제작완료' ? customStoryline.length : 0,
-      type: 'general',
-      leaderType: 'negative',
+      type: 'general' as const,
+      leaderType: 'negative' as const,
       totalLeaders: selectedParticipants.length,
-      generatedContent: savedContent,
-    });
+      // 수정 모드에서 본문을 새로 만들지 않았으면 기존 본문 보존
+      generatedContent: savedContent ?? (editingNewsletterId != null ? (configDraft.seededGeneratedContent ?? undefined) : undefined),
+      authoring: buildAuthoring(),
+    };
+    // 수정 모드면 기존 레코드 덮어쓰기, 아니면 새 캠페인 생성
+    if (editingNewsletterId != null) {
+      await updateNewsletter(editingNewsletterId, payload);
+    } else {
+      await addNewsletter(payload);
+    }
     configDraft.resetDraft();
     router.push(`/admin/newsletters?tab=${encodeURIComponent(status)}`);
   }
@@ -1146,21 +1162,27 @@ function ConfigureContent() {
       : '미지정';
     // 긍정/부정 구분 없이 실제 참여자 유형 전체를 대상으로 저장
     const allLeaderTypes = [...new Set(selectedParticipants.map(p => p.leadershipType))].filter(Boolean);
-    await addNewsletter({
+    const draftPayload = {
       title: `${company?.name ?? '미지정'} ${leadershipType} 리더십 코칭`.trim(),
       companyId: company?.id ?? 0,
       companyName: company?.name ?? '미지정',
       leadershipType,
-      status: '제작 중',
+      status: '제작 중' as const,
       stepCount: customStoryline.length,
       positiveLeaders: { types: [], count: 0 },
       negativeLeaders: { types: allLeaderTypes, count: selectedParticipants.length },
       totalRounds: customStoryline.length,
       completedRounds: 0,
-      type: 'general',
-      leaderType: 'negative',
+      type: 'general' as const,
+      leaderType: 'negative' as const,
       totalLeaders: selectedParticipants.length,
-    });
+      authoring: buildAuthoring(),
+    };
+    if (editingNewsletterId != null) {
+      await updateNewsletter(editingNewsletterId, draftPayload);
+    } else {
+      await addNewsletter(draftPayload);
+    }
     // sessionStorage(Zustand) 클리어 → 이후 새로 만들기 시 팝업 안 뜸
     configDraft.resetDraft();
     setToastMessage('임시저장 완료');
