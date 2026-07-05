@@ -166,8 +166,8 @@ export default function ParticipantNewsletterPage() {
     <div className="min-h-screen bg-gray-50">
       {/* 상단 헤더 + 탭 */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto px-4 sm:px-6">
-          <div className="flex items-center justify-between py-3">
+        <div className="px-4 sm:px-6">
+          <div className="flex items-center py-3">
             <img
               src="/logo-jc.png"
               alt="J&Company"
@@ -175,7 +175,7 @@ export default function ParticipantNewsletterPage() {
               onError={ev => { (ev.target as HTMLImageElement).style.display = 'none'; }}
             />
           </div>
-          <div className="flex border-t border-gray-100">
+          <div className="max-w-3xl mx-auto flex border-t border-gray-100">
             {(['newsletter', 'mypage'] as Tab[]).map(tab => (
               <button
                 key={tab}
@@ -193,7 +193,7 @@ export default function ParticipantNewsletterPage() {
         </div>
       </header>
 
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6">
 
         {/* ── 뉴스레터 탭 ── */}
         {activeTab === 'newsletter' && (

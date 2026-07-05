@@ -516,7 +516,7 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
   });
 
   return (
-    <div className="bg-white max-w-2xl mx-auto rounded-2xl overflow-hidden shadow-sm border border-gray-100 break-keep break-words">
+    <div className="bg-white max-w-3xl mx-auto rounded-2xl overflow-hidden shadow-sm border border-gray-100 break-keep break-words">
       {/* ① 매스헤드 — 유틸바 + 대형 타이틀 + 원형 VOL 배지 + 블랙 더블 룰 */}
       <div className="px-6 sm:px-8 pt-6 pb-5">
         {/* 상단 유틸 바: 로고 + 온라인으로 보기 */}
