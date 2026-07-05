@@ -113,6 +113,8 @@ export default function CompanyEditPage() {
   // ── 리더십 유형 정보 ──
   const [historyOpen, setHistoryOpen] = useState(false);
   const [uploadToast, setUploadToast] = useState<{ name: string } | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const participants = useMemo(
@@ -141,35 +143,55 @@ export default function CompanyEditPage() {
   }
 
   // ── 핸들러: 리더십 파일 업로드 ──
+  // 다면진단 보고서(pdf/docx/txt/xlsx/csv)를 실제로 파싱해 리더십 유형 정보를 추출한다.
+  // 기업 추가 화면과 동일한 서버 파싱 API를 사용한다. (.json은 구조화된 수동 입력 포맷으로 직접 파싱)
   async function handleLeadershipFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = '';
 
+    setExtractError(null);
+
+    // 수동 입력용 JSON은 그대로 사용
+    if (file.name.toLowerCase().endsWith('.json')) {
+      try {
+        const parsed = JSON.parse(await file.text()) as LeadershipInfo[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          await updateInfo(companyId, infoYear, parsed, file.name);
+          setUploadToast({ name: file.name });
+          setTimeout(() => setUploadToast(null), 3000);
+        } else {
+          setExtractError('JSON에서 리더십 유형을 찾지 못했습니다.');
+        }
+      } catch {
+        setExtractError('JSON 형식이 올바르지 않습니다.');
+      }
+      return;
+    }
+
+    // 다면진단 보고서 → 서버에서 텍스트 추출 + AI 유형 분석
+    setExtracting(true);
     try {
-      const text = await file.text();
-      let parsed: LeadershipInfo[] = [];
-
-      if (file.name.endsWith('.json')) {
-        parsed = JSON.parse(text);
-      } else {
-        // CSV: type,definition,characteristics
-        const lines = text.trim().split('\n').slice(1);
-        parsed = lines.map(line => {
-          const [type, definition, characteristics] = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''));
-          return { type: type as LeadershipType, definition, characteristics };
-        });
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/admin/leadership-info/extract', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) {
+        setExtractError(data.error ?? '보고서 분석 중 오류가 발생했습니다.');
+        return;
       }
-
-      if (parsed.length > 0) {
-        updateInfo(companyId, infoYear, parsed, file.name);
-        setUploadToast({ name: file.name });
-        setTimeout(() => setUploadToast(null), 3000);
+      const info = (data.info ?? []) as LeadershipInfo[];
+      if (info.length === 0) {
+        setExtractError('보고서에서 리더십 유형을 찾지 못했습니다. 형식을 확인하거나 직접 입력해 주세요.');
+        return;
       }
-    } catch {
-      updateInfo(companyId, infoYear, leadershipCurrent, file.name);
+      await updateInfo(companyId, infoYear, info, file.name);
       setUploadToast({ name: file.name });
       setTimeout(() => setUploadToast(null), 3000);
+    } catch {
+      setExtractError('보고서 분석 중 오류가 발생했습니다.');
+    } finally {
+      setExtracting(false);
     }
   }
 
@@ -350,15 +372,23 @@ export default function CompanyEditPage() {
                   히스토리 {leadershipHistory.length}건
                 </button>
               )}
-              <input ref={fileInputRef} type="file" accept=".json,.csv,.txt,.xlsx" className="hidden" onChange={handleLeadershipFile} />
+              <input ref={fileInputRef} type="file" accept=".pdf,.docx,.txt,.xlsx,.csv,.json" className="hidden" onChange={handleLeadershipFile} />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#55A4DA] hover:bg-[#3A8BC4] px-3 py-1.5 rounded-lg transition-colors"
+                disabled={extracting}
+                className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#55A4DA] hover:bg-[#3A8BC4] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
               >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-                {infoYear}년 업로드
+                {extracting ? (
+                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={4} />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                ) : (
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                )}
+                {extracting ? '분석 중…' : `${infoYear}년 업로드`}
               </button>
             </div>
           </div>
@@ -377,6 +407,10 @@ export default function CompanyEditPage() {
               </button>
             ))}
           </div>
+
+          {extractError && !extracting && (
+            <p className="mb-4 text-xs text-amber-600">{extractError}</p>
+          )}
 
           {/* 리더십 유형 카드 */}
           <div className="grid grid-cols-2 gap-3">
