@@ -785,29 +785,46 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
   onPreview: (t: PreviewTarget) => void; activeTab: TabType;
   onToggleSaved: (nlId: number, roundNum: number) => void;
 }) {
-  const types = useMemo(() =>
-    company.groups.flatMap(g => g.types)
+  const types = useMemo(() => {
+    const all = company.groups.flatMap(g => g.types)
       .map(t => ({ ...t, visibleRounds: filterRounds(t.rounds, activeTab) }))
-      .filter(t => t.visibleRounds.length > 0),
-    [company.groups, activeTab]
-  );
+      .filter(t => t.visibleRounds.length > 0);
+    // 실제 유형이 있으면 합성 '전체 대상'(기업 전체 중복 행)은 제외 — 인원 중복 방지
+    const hasReal = all.some(t => t.typeName !== '전체 대상');
+    return hasReal ? all.filter(t => t.typeName !== '전체 대상') : all;
+  }, [company.groups, activeTab]);
   if (types.length === 0) return null;
 
   const roundNums = Array.from(new Set(types.flatMap(t => t.visibleRounds.map(r => r.round)))).sort((a, b) => a - b);
 
-  // 특정 회차의 유형들을 발송 그룹(authoring customGroups)으로 묶음. authoring 없으면 유형 하나가 곧 그룹.
+  // 같은 뉴스레터(=동일 발송 본문)를 받는 유형끼리 묶는다. authoring이 있으면 그 안에서 발송 그룹으로 세분화.
   function sendGroupsFor(typesInRound: typeof types, rn: number) {
-    const map = new Map<string, typeof types>();
+    const byNl = new Map<number | undefined, typeof types>();
     for (const t of typesInRound) {
-      const nl = newsletters.find(n => n.id === t.newsletterId);
-      const cg = nl?.authoring?.rounds?.[rn - 1]?.customGroups?.find(g => g.types.includes(t.typeName));
-      const members = cg ? cg.types.filter(tp => typesInRound.some(x => x.typeName === tp)) : [t.typeName];
-      const label = members.join(' · ') || t.typeName;
-      const arr = map.get(label) ?? [];
-      if (!arr.some(x => x.typeName === t.typeName)) arr.push(t);
-      map.set(label, arr);
+      const arr = byNl.get(t.newsletterId) ?? [];
+      arr.push(t);
+      byNl.set(t.newsletterId, arr);
     }
-    return Array.from(map.entries()).map(([label, members]) => ({ label, members }));
+    const result: { label: string; members: typeof types }[] = [];
+    for (const [nlId, members] of byNl) {
+      const nl = newsletters.find(n => n.id === nlId);
+      const cgs = nl?.authoring?.rounds?.[rn - 1]?.customGroups;
+      if (cgs && cgs.length > 0) {
+        const used = new Set<string>();
+        for (const cg of cgs) {
+          const mem = members.filter(t => cg.types.includes(t.typeName));
+          if (mem.length === 0) continue;
+          mem.forEach(m => used.add(m.typeName));
+          result.push({ label: mem.map(m => m.typeName).join(' · '), members: mem });
+        }
+        const rest = members.filter(t => !used.has(t.typeName));
+        if (rest.length) result.push({ label: rest.map(m => m.typeName).join(' · '), members: rest });
+      } else {
+        // authoring 없음 → 같은 뉴스레터를 받는 유형은 한 그룹으로
+        result.push({ label: members.map(m => m.typeName).join(' · '), members });
+      }
+    }
+    return result;
   }
 
   return (
