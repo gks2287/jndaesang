@@ -2302,13 +2302,8 @@ function ConfigureContent() {
 
               return (
                 <div>
-                  {/* 맞춤형 영역 (그룹들) */}
-                  <div className="rounded-2xl border-2 border-gray-200 bg-white">
-                    <div className="px-5 py-3.5 border-b border-gray-100 flex items-center gap-2">
-                      <p className="text-sm font-bold text-[#2E7DB5] flex-1">맞춤형</p>
-                      <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{groups.reduce((s, g) => s + g.types.reduce((a, t) => a + countOf(t), 0), 0)}명</span>
-                    </div>
-                    <div className="p-4 space-y-3 min-h-[180px]">
+                  {/* 유형 배분 그룹 (가로 배치) */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 items-start">
                       {groups.map((g, gi) => {
                         const groupCount = g.types.reduce((s, t) => s + countOf(t), 0);
                         return (
@@ -2343,11 +2338,10 @@ function ConfigureContent() {
                           </div>
                         );
                       })}
-                      <button onClick={addGroup} className="w-full py-2.5 border-2 border-dashed border-gray-200 rounded-xl text-xs font-semibold text-gray-400 hover:border-[#55A4DA] hover:text-[#55A4DA] transition-colors flex items-center justify-center gap-1.5">
+                      <button onClick={addGroup} className="min-h-[120px] py-2.5 border-2 border-dashed border-gray-200 rounded-xl text-xs font-semibold text-gray-400 hover:border-[#55A4DA] hover:text-[#55A4DA] transition-colors flex items-center justify-center gap-1.5">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                         그룹 추가
                       </button>
-                    </div>
                   </div>
                 </div>
               );
