@@ -635,7 +635,7 @@ export default function CompanyEditPage() {
 
         {/* ── 위험 구역: 기업 삭제 ── */}
         <div className="bg-white rounded-2xl border border-red-200 shadow-sm p-6">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-col items-center text-center gap-3">
             <div>
               <h2 className="text-sm font-bold text-red-600">기업 삭제</h2>
               <p className="text-xs text-gray-400 mt-0.5">
@@ -644,7 +644,7 @@ export default function CompanyEditPage() {
             </div>
             <button
               onClick={openDeleteModal}
-              className="flex-shrink-0 text-xs font-semibold text-white bg-red-500 hover:bg-red-600 px-4 py-2 rounded-lg transition-colors"
+              className="text-xs font-semibold text-white bg-red-500 hover:bg-red-600 px-4 py-2 rounded-lg transition-colors"
             >
               기업 삭제
             </button>
