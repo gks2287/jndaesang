@@ -776,6 +776,102 @@ function PolarityRow({ group, companyId, companyName, openKeys, onToggle, isComp
   );
 }
 
+// ── 회차 우선 뷰: 회차 → 발송 그룹 ──────────────────────────────────
+function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTab, selectedIds, onSelectRoundBulk, onPreview, activeTab, onToggleSaved }: {
+  company: CompanyData; newsletters: Newsletter[];
+  openKeys: Set<string>; onToggle: (k: string) => void; isCompleteTab: boolean;
+  selectedIds: Set<string>;
+  onSelectRoundBulk: (selectionIds: string[], checked: boolean) => void;
+  onPreview: (t: PreviewTarget) => void; activeTab: TabType;
+  onToggleSaved: (nlId: number, roundNum: number) => void;
+}) {
+  const types = useMemo(() =>
+    company.groups.flatMap(g => g.types)
+      .map(t => ({ ...t, visibleRounds: filterRounds(t.rounds, activeTab) }))
+      .filter(t => t.visibleRounds.length > 0),
+    [company.groups, activeTab]
+  );
+  if (types.length === 0) return null;
+
+  const roundNums = Array.from(new Set(types.flatMap(t => t.visibleRounds.map(r => r.round)))).sort((a, b) => a - b);
+
+  // 특정 회차의 유형들을 발송 그룹(authoring customGroups)으로 묶음. authoring 없으면 유형 하나가 곧 그룹.
+  function sendGroupsFor(typesInRound: typeof types, rn: number) {
+    const map = new Map<string, typeof types>();
+    for (const t of typesInRound) {
+      const nl = newsletters.find(n => n.id === t.newsletterId);
+      const cg = nl?.authoring?.rounds?.[rn - 1]?.customGroups?.find(g => g.types.includes(t.typeName));
+      const members = cg ? cg.types.filter(tp => typesInRound.some(x => x.typeName === tp)) : [t.typeName];
+      const label = members.join(' · ') || t.typeName;
+      const arr = map.get(label) ?? [];
+      if (!arr.some(x => x.typeName === t.typeName)) arr.push(t);
+      map.set(label, arr);
+    }
+    return Array.from(map.entries()).map(([label, members]) => ({ label, members }));
+  }
+
+  return (
+    <div>
+      {roundNums.map(rn => {
+        const typesInRound = types.filter(t => t.visibleRounds.some(r => r.round === rn));
+        const rep = typesInRound.map(t => t.visibleRounds.find(r => r.round === rn)).find(Boolean);
+        if (!rep) return null;
+        const totalCount = typesInRound.reduce((s, t) => s + t.count, 0);
+        const roundKey = `c${company.companyId}-r${rn}`;
+        const open = openKeys.has(roundKey);
+        const isDone = rep.status === 'completed';
+        const groups = sendGroupsFor(typesInRound, rn);
+        return (
+          <div key={rn}>
+            {/* 회차 헤더 */}
+            <button onClick={() => onToggle(roundKey)}
+              className="w-full flex items-center gap-3 pl-8 pr-5 py-2.5 bg-gray-50 hover:bg-gray-100/70 border-b border-gray-100 transition-colors text-left">
+              <span className="text-xs font-bold text-gray-700 w-11 flex-shrink-0">{rn}회차</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium flex-shrink-0 w-9 text-center">{rep.stage}</span>
+              <span className={`flex-1 text-sm min-w-0 truncate ${rep.topic ? 'text-gray-600' : 'text-gray-300 italic'}`}>{rep.topic ?? '주제 미선정'}</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 ${isDone ? 'bg-emerald-50 text-emerald-600' : 'bg-[#55A4DA]/10 text-[#55A4DA]'}`}>{isDone ? '제작완료' : '제작 중'}</span>
+              <span className="text-xs text-gray-400">{totalCount}명</span>
+              <svg className={`w-3.5 h-3.5 text-gray-400 flex-shrink-0 transition-transform duration-150 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+            </button>
+            {/* 발송 그룹 행 */}
+            {open && groups.map(grp => {
+              const ids = grp.members.map(t => `${t.typeName}-${rn}`);
+              const allSel = ids.length > 0 && ids.every(id => selectedIds.has(id));
+              const nl = newsletters.find(n => n.id === grp.members[0]?.newsletterId);
+              const count = grp.members.reduce((s, t) => s + t.count, 0);
+              return (
+                <div key={grp.label} className={`flex items-center gap-3 ${isCompleteTab ? 'pl-14' : 'pl-16'} pr-5 py-2.5 bg-white border-b border-gray-100 last:border-b-0 hover:bg-gray-50/50 transition-colors`}>
+                  {isCompleteTab && isDone && (
+                    <input type="checkbox" className="w-3.5 h-3.5 accent-[#55A4DA] cursor-pointer flex-shrink-0"
+                      checked={allSel} onChange={e => onSelectRoundBulk(ids, e.target.checked)} />
+                  )}
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#EAF4FC] text-[#2E7DB5] flex-shrink-0">{grp.label}</span>
+                  <span className="text-xs text-gray-500 flex-1">{count}명</span>
+                  {isDone && nl && (
+                    <button onClick={() => onToggleSaved(nl.id, rn)}
+                      className={`flex-shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors ${nl.savedRounds?.includes(rn) ? 'text-[#55A4DA]' : 'text-gray-300 hover:text-[#55A4DA]'}`}
+                      title={nl.savedRounds?.includes(rn) ? '저장소에서 제거' : '저장소에 저장'}>
+                      <svg className="w-3.5 h-3.5" fill={nl.savedRounds?.includes(rn) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
+                    </button>
+                  )}
+                  <div className="flex-shrink-0 w-[72px] text-right">
+                    {isDone ? (
+                      <button onClick={() => onPreview({ companyName: company.companyName, polarity: 'negative', typeName: grp.label, count, round: rep })}
+                        className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors whitespace-nowrap">미리보기</button>
+                    ) : (
+                      <Link href="/admin/newsletters/new/configure" className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-[#55A4DA]/10 text-[#55A4DA] hover:bg-[#55A4DA]/20 transition-colors whitespace-nowrap">이어하기</Link>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── 1단계: 기업 행 ───────────────────────────────────────────────────
 function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, activeTab, selectedIds, onSelectRound, onSelectRoundBulk, onDelete, onSend, selectedNewsletterIds, onToggleNewsletters, newsletters, onToggleSaved, onContinue, onEdit }: {
   company: CompanyData; openKeys: Set<string>; onToggle: (k: string) => void;
@@ -887,17 +983,11 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
 
       {isOpen && (
         <>
-          {/* 2~4단계 드릴다운 */}
-          <div>
-            {company.groups.map(group => (
-              <PolarityRow key={group.polarity} group={group} companyId={company.companyId}
-                companyName={company.companyName} openKeys={openKeys} onToggle={onToggle}
-                isCompleteTab={isCompleteTab} selectedIds={selectedIds}
-                onSelectRound={onSelectRound} onPreview={onPreview} activeTab={activeTab}
-                selectedNewsletterIds={selectedNewsletterIds} onToggleNewsletters={onToggleNewsletters}
-                newsletters={newsletters} onToggleRoundSaved={onToggleSaved} />
-            ))}
-          </div>
+          {/* 회차 → 발송 그룹 드릴다운 */}
+          <RoundFirstView company={company} newsletters={newsletters}
+            openKeys={openKeys} onToggle={onToggle} isCompleteTab={isCompleteTab}
+            selectedIds={selectedIds} onSelectRoundBulk={onSelectRoundBulk}
+            onPreview={onPreview} activeTab={activeTab} onToggleSaved={onToggleSaved} />
 
           {/* 캠페인별 이어서 만들기 / 수정하기 */}
           {companyNewsletters.length > 0 && (
