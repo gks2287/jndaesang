@@ -276,6 +276,9 @@ function ConfigureContent() {
 
   // ── 미리보기 모달 ──
   const [previewOpen, setPreviewOpen] = useState(false);
+  // 생성 확정 중복 저장 방지
+  const [isConfirming, setIsConfirming] = useState(false);
+  const confirmingRef = useRef(false);
   const [previewTab, setPreviewTab] = useState(0);
   // 미리보기 모달: 회차 내 그룹 탭 ('general' 또는 그룹 id)
   const [previewGroupId, setPreviewGroupId] = useState<string>('general');
@@ -1205,8 +1208,11 @@ function ConfigureContent() {
     setPreviewOpen(true);
   }
 
-  function handleConfirmCreate() {
+  async function handleConfirmCreate() {
     if (!deliveryInterval || !startDate) return;
+    if (confirmingRef.current) return; // 중복 저장 방지
+    confirmingRef.current = true;
+    setIsConfirming(true);
     const schedDates = calcScheduleDates(startDate, deliveryInterval, rounds.length);
     console.log('[뉴스레터 생성 완료]', {
       meta: { targetCompanies, leadershipTypes },
@@ -1224,7 +1230,12 @@ function ConfigureContent() {
         })),
       },
     });
-    handleSave('제작완료', buildSavedContent());
+    try {
+      await handleSave('제작완료', buildSavedContent());
+    } catch {
+      confirmingRef.current = false;
+      setIsConfirming(false);
+    }
   }
 
   function switchRound(idx: number) {
@@ -3457,9 +3468,10 @@ function ConfigureContent() {
                 </button>
                 <button
                   onClick={handleConfirmCreate}
-                  className="flex items-center gap-2 px-6 py-2 bg-[#55A4DA] hover:bg-[#3A8BC4] text-white text-sm font-bold rounded-lg transition-colors shadow-sm"
+                  disabled={isConfirming}
+                  className="flex items-center gap-2 px-6 py-2 bg-[#55A4DA] hover:bg-[#3A8BC4] text-white text-sm font-bold rounded-lg transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  생성 확정
+                  {isConfirming ? '생성 중…' : '생성 확정'}
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>

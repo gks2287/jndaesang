@@ -481,13 +481,14 @@ function SendRoundModal({ company, newsletters, participants, onClose }: {
     [newsletters, company.companyId],
   );
   // 회차별 발송 그룹 목록 — authoring의 customGroups 기준(유형 묶음별). 없으면 전체 대상 1그룹.
-  type SendGroup = { key: string; label: string; recipients: Participant[] };
+  type SendGroup = { key: string; label: string; topic: string; recipients: Participant[] };
   const sendGroupsForRound = (nl: Newsletter, roundIdx: number): SendGroup[] => {
     const cgs = nl.authoring?.rounds?.[roundIdx]?.customGroups?.filter(g => g.types.length > 0);
     if (cgs && cgs.length > 0) {
       return cgs.map(cg => ({
         key: cg.types.join(','),
         label: cg.types.join(' · '),
+        topic: cg.topic?.trim() ?? '',
         recipients: participants.filter(p => p.companyId === company.companyId && cg.types.includes(p.leadershipType)),
       }));
     }
@@ -497,10 +498,11 @@ function SendRoundModal({ company, newsletters, participants, onClose }: {
       return types.map(t => ({
         key: t,
         label: t,
+        topic: '',
         recipients: participants.filter(p => p.companyId === company.companyId && p.leadershipType === t),
       }));
     }
-    return [{ key: 'all', label: '전체 대상', recipients: participants.filter(p => p.companyId === company.companyId) }];
+    return [{ key: 'all', label: '전체 대상', topic: '', recipients: participants.filter(p => p.companyId === company.companyId) }];
   };
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -569,9 +571,8 @@ function SendRoundModal({ company, newsletters, participants, onClose }: {
                   const groups = sendGroupsForRound(nl, i);
                   return (
                     <div key={`${nl.id}-r${i + 1}`} className="px-4 py-3">
-                      <div className="flex items-center gap-2 mb-2">
+                      <div className="mb-2">
                         <span className="text-xs font-bold text-gray-600">Vol.{r.vol} · {i + 1}회차</span>
-                        <span className="text-xs text-gray-400 truncate flex-1">{r.generated?.headline ?? ''}</span>
                       </div>
                       <div className="space-y-1.5 pl-1">
                         {groups.map(g => {
@@ -580,8 +581,9 @@ function SendRoundModal({ company, newsletters, participants, onClose }: {
                           return (
                             <label key={k} className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border ${disabled ? 'opacity-50 cursor-not-allowed border-gray-100' : 'cursor-pointer border-gray-200 hover:bg-gray-50/60'}`}>
                               <input type="checkbox" disabled={disabled} checked={selected.has(k)} onChange={() => toggle(k)} className="w-4 h-4 rounded border-gray-300 text-[#55A4DA] focus:ring-[#55A4DA]/30" />
-                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#EAF4FC] text-[#2E7DB5]">{g.label}</span>
-                              <span className={`text-[11px] flex-1 text-right ${disabled ? 'text-red-400' : 'text-gray-400'}`}>수신 {g.recipients.length}명</span>
+                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#EAF4FC] text-[#2E7DB5] flex-shrink-0">{g.label}</span>
+                              <span className={`text-xs flex-1 min-w-0 truncate ${g.topic ? 'text-gray-600' : 'text-gray-300 italic'}`}>{g.topic || '주제 미선정'}</span>
+                              <span className={`text-[11px] flex-shrink-0 ${disabled ? 'text-red-400' : 'text-gray-400'}`}>수신 {g.recipients.length}명</span>
                             </label>
                           );
                         })}
