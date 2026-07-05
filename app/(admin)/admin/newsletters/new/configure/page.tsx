@@ -1120,7 +1120,7 @@ function ConfigureContent() {
     const leadershipType = leadershipTypes.length > 0
       ? leadershipTypes[0]
       : '미지정';
-    const autoTitle = `${company?.name ?? '미지정'} ${leadershipType} 리더십 코칭`.trim();
+    const autoTitle = `${company?.name ?? '대상 기업'} 리더십 코칭`.trim();
     // 긍정/부정 구분 없이 실제 참여자 유형 전체를 대상으로 저장
     const allLeaderTypes = [...new Set(selectedParticipants.map(p => p.leadershipType))].filter(Boolean);
     const payload = {
@@ -1169,7 +1169,7 @@ function ConfigureContent() {
     // 긍정/부정 구분 없이 실제 참여자 유형 전체를 대상으로 저장
     const allLeaderTypes = [...new Set(selectedParticipants.map(p => p.leadershipType))].filter(Boolean);
     const draftPayload = {
-      title: `${company?.name ?? '미지정'} ${leadershipType} 리더십 코칭`.trim(),
+      title: `${company?.name ?? '대상 기업'} 리더십 코칭`.trim(),
       companyId: company?.id ?? 0,
       companyName: company?.name ?? '미지정',
       leadershipType,
