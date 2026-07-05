@@ -912,8 +912,14 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
   );
 
   const allRounds = useMemo(() => company.groups.flatMap(g => g.types.flatMap(t => t.rounds)), [company.groups]);
-  const completedCount = allRounds.filter(r => r.status === 'completed').length;
-  const totalCount = allRounds.length;
+  // 여러 유형이 같은 회차를 공유하므로 회차 번호 기준으로 중복 제거해 실제 회차 수/완료 수 계산
+  const distinctRounds = useMemo(() => {
+    const map = new Map<number, RoundData>();
+    allRounds.forEach(r => { if (!map.has(r.round) || r.status === 'completed') map.set(r.round, r); });
+    return Array.from(map.values());
+  }, [allRounds]);
+  const completedCount = distinctRounds.filter(r => r.status === 'completed').length;
+  const totalCount = distinctRounds.length;
   const progressPct = totalCount > 0 ? Math.round(completedCount / totalCount * 100) : 0;
 
   const availableRoundNums = useMemo(() => {
@@ -1125,14 +1131,19 @@ function NewslettersContent() {
       if (companyPs.length === 0 && companyNLs.length === 0) continue;
 
       function buildRoundsFromNL(nl: typeof companyNLs[number]): RoundData[] {
-        return Array.from({ length: nl.totalRounds }, (_, i) => ({
-          id: `nl-${nl.id}-r${i + 1}`,
-          round: i + 1,
-          stage: STAGES[i % STAGES.length],
-          topic: nl.generatedContent?.rounds[i]?.generated?.headline ?? null,
-          status: (i < nl.completedRounds ? 'completed' : 'inProgress') as RoundStatus,
-          progressPct: i < nl.completedRounds ? 100 : 0,
-        }));
+        return Array.from({ length: nl.totalRounds }, (_, i) => {
+          // 실제 생성 본문(headline)이 있는 회차만 '제작완료'로 판정 — 아직 안 만든 회차는 미리보기 숨김
+          const headline = nl.generatedContent?.rounds[i]?.generated?.headline ?? null;
+          const isMade = !!headline;
+          return {
+            id: `nl-${nl.id}-r${i + 1}`,
+            round: i + 1,
+            stage: STAGES[i % STAGES.length],
+            topic: headline,
+            status: (isMade ? 'completed' : 'inProgress') as RoundStatus,
+            progressPct: isMade ? 100 : 0,
+          };
+        });
       }
 
       function buildTypes(ps: typeof companyPs): TypeData[] {
