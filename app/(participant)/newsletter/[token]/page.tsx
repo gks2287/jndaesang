@@ -166,16 +166,16 @@ export default function ParticipantNewsletterPage() {
     <div className="min-h-screen bg-gray-50">
       {/* 상단 헤더 + 탭 */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="px-4 sm:px-6">
-          <div className="flex items-center py-3">
-            <img
-              src="/logo-jc.png"
-              alt="J&Company"
-              className="h-8 object-contain"
-              onError={ev => { (ev.target as HTMLImageElement).style.display = 'none'; }}
-            />
-          </div>
-          <div className="max-w-3xl mx-auto flex border-t border-gray-100">
+        <div className="px-4 sm:px-6 flex items-center py-3">
+          <img
+            src="/logo-jc.png"
+            alt="J&Company"
+            className="h-8 object-contain"
+            onError={ev => { (ev.target as HTMLImageElement).style.display = 'none'; }}
+          />
+        </div>
+        <div className="border-t border-gray-100">
+          <div className="max-w-3xl mx-auto flex px-4 sm:px-6">
             {(['newsletter', 'mypage'] as Tab[]).map(tab => (
               <button
                 key={tab}
