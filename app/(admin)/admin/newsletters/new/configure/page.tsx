@@ -11,7 +11,7 @@ import { LEADERSHIP_COLOR } from '@/lib/constants/leadershipColors';
 import { type Round, type CustomGroup, type RoundAttachment, makeCustomGroup } from '@/lib/content';
 import { getContentList, type ContentPoolItem, type ContentCategory } from '@/lib/api/contentPool';
 import { useNewNewsletterDraftStore, type TopicSuggestion as DraftTopicSuggestion } from '@/store/newNewsletterDraftStore';
-import { useParticipantStore, POSITIVE_TYPES, NEGATIVE_TYPES } from '@/store/participantStore';
+import { useParticipantStore } from '@/store/participantStore';
 import { useLeadershipInfoStore } from '@/store/leadershipInfoStore';
 import {
   renderGeneratedFullBody,
@@ -42,8 +42,6 @@ const WIZARD_STEPS: Array<{ n: WizardStep; label: string }> = [
   { n: 4, label: '콘텐츠 구성' },
   { n: 5, label: '발송 주기' },
 ];
-
-const POSITIVE_LEADERSHIP_TYPES = new Set(['코칭형', '민주형', '서번트형', '비전형', '관계중심형']);
 
 // zustand selector가 매 렌더마다 새 배열을 만들지 않도록 하는 안정적인 빈 배열 참조
 const EMPTY_LEADERSHIP_INFO: import('@/store/leadershipInfoStore').LeadershipInfo[] = [];
@@ -137,8 +135,6 @@ function ConfigureContent() {
   const leadershipTypes: string[] = [];
 
   const selectedParticipants = allParticipants.filter(p => configDraft.companyIds?.includes(p.companyId) ?? false);
-  const positiveParticipants = selectedParticipants.filter(p => POSITIVE_TYPES.includes(p.leadershipType));
-  const negativeParticipants = selectedParticipants.filter(p => NEGATIVE_TYPES.includes(p.leadershipType));
 
   // 이 기업 다면진단 기반 리더십 유형 정보 (뉴스레터 주제·본문 맞춤용)
   const leadershipInfoYear = new Date().getFullYear();
@@ -232,9 +228,7 @@ function ConfigureContent() {
   // 아코디언 접힘 상태 (key가 들어있으면 접힘 / 없으면 펼침) — 그룹/일반형 공용
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
 
-  // 긍정 리더 펼침 (Step 3)
-  const [positiveExpanded, setPositiveExpanded] = useState(false);
-  // 부정 리더 유형 칩 펼침 (Step 3) — 키 absent = 접힘(기본)
+  // 유형 칩 펼침 (Step 3) — 키 absent = 접힘(기본)
   const [expandedTypeChips, setExpandedTypeChips] = useState<Set<string>>(new Set());
 
   // 콘텐츠 풀
@@ -1040,12 +1034,14 @@ function ConfigureContent() {
       const nextRounds = rounds.map(r => {
         // 그룹별 leaderIds 재계산 + 빈 그룹 제거
         const groups = r.customGroups
-          .map(g => ({ ...g, leaderIds: negativeParticipants.filter(p => g.types.includes(p.leadershipType)).map(p => p.id) }))
+          .map(g => ({ ...g, leaderIds: selectedParticipants.filter(p => g.types.includes(p.leadershipType)).map(p => p.id) }))
           .filter(g => g.types.length > 0);
         const customLeaderIds = Array.from(new Set(groups.flatMap(g => g.leaderIds)));
         const generalLeaderIds = selectedParticipants.filter(p => !customLeaderIds.includes(p.id)).map(p => p.id);
         const customTypesAll = groups.flatMap(g => g.types);
-        const generalTypes = NEGATIVE_TYPES.filter(t => !customTypesAll.includes(t) && negativeParticipants.some(p => p.leadershipType === t));
+        // 그룹에 없는(카탈로그 미매칭) 참여자 유형만 일반형으로 — 긍정/부정 구분 없이 실제 유형 기준
+        const generalTypes = Array.from(new Set(selectedParticipants.map(p => p.leadershipType)))
+          .filter(t => t && !customTypesAll.includes(t));
         return {
           ...r,
           customGroups: groups,
@@ -1111,9 +1107,8 @@ function ConfigureContent() {
       ? leadershipTypes[0]
       : '미지정';
     const autoTitle = `${company?.name ?? '미지정'} ${leadershipType} 리더십 코칭`.trim();
-    const isNegative = NEGATIVE_TYPES.includes(leadershipType as typeof NEGATIVE_TYPES[number]);
-    const posTypes = [...new Set(positiveParticipants.map(p => p.leadershipType))];
-    const negTypes = [...new Set(negativeParticipants.map(p => p.leadershipType))];
+    // 긍정/부정 구분 없이 실제 참여자 유형 전체를 대상으로 저장
+    const allLeaderTypes = [...new Set(selectedParticipants.map(p => p.leadershipType))].filter(Boolean);
     await addNewsletter({
       title: autoTitle,
       companyId: company?.id ?? 0,
@@ -1121,12 +1116,12 @@ function ConfigureContent() {
       leadershipType,
       status,
       stepCount: customStoryline.length,
-      positiveLeaders: { types: posTypes, count: positiveParticipants.length },
-      negativeLeaders: { types: negTypes, count: negativeParticipants.length },
+      positiveLeaders: { types: [], count: 0 },
+      negativeLeaders: { types: allLeaderTypes, count: selectedParticipants.length },
       totalRounds: customStoryline.length,
       completedRounds: status === '제작완료' ? customStoryline.length : 0,
       type: 'general',
-      leaderType: isNegative ? 'negative' : 'positive',
+      leaderType: 'negative',
       totalLeaders: selectedParticipants.length,
       generatedContent: savedContent,
     });
@@ -1149,9 +1144,8 @@ function ConfigureContent() {
     const leadershipType = leadershipTypes.length > 0
       ? leadershipTypes[0]
       : '미지정';
-    const isNegative = NEGATIVE_TYPES.includes(leadershipType as typeof NEGATIVE_TYPES[number]);
-    const posTypes = [...new Set(positiveParticipants.map(p => p.leadershipType))];
-    const negTypes = [...new Set(negativeParticipants.map(p => p.leadershipType))];
+    // 긍정/부정 구분 없이 실제 참여자 유형 전체를 대상으로 저장
+    const allLeaderTypes = [...new Set(selectedParticipants.map(p => p.leadershipType))].filter(Boolean);
     await addNewsletter({
       title: `${company?.name ?? '미지정'} ${leadershipType} 리더십 코칭`.trim(),
       companyId: company?.id ?? 0,
@@ -1159,12 +1153,12 @@ function ConfigureContent() {
       leadershipType,
       status: '제작 중',
       stepCount: customStoryline.length,
-      positiveLeaders: { types: posTypes, count: positiveParticipants.length },
-      negativeLeaders: { types: negTypes, count: negativeParticipants.length },
+      positiveLeaders: { types: [], count: 0 },
+      negativeLeaders: { types: allLeaderTypes, count: selectedParticipants.length },
       totalRounds: customStoryline.length,
       completedRounds: 0,
       type: 'general',
-      leaderType: isNegative ? 'negative' : 'positive',
+      leaderType: 'negative',
       totalLeaders: selectedParticipants.length,
     });
     // sessionStorage(Zustand) 클리어 → 이후 새로 만들기 시 팝업 안 뜸
@@ -1226,7 +1220,7 @@ function ConfigureContent() {
           makeCustomGroup(
             `g-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             [...g.types],
-            negativeParticipants.filter(p => g.types.includes(p.leadershipType)).map(p => p.id),
+            selectedParticipants.filter(p => g.types.includes(p.leadershipType)).map(p => p.id),
           ),
         );
         return { ...round, customGroups: newGroups };
@@ -2175,13 +2169,14 @@ function ConfigureContent() {
             {/* 배분 카드 */}
             {rounds[distributionRoundIdx] !== undefined && (() => {
               const r = rounds[distributionRoundIdx];
-              const negTypes = NEGATIVE_TYPES.filter(t => negativeParticipants.some(p => p.leadershipType === t));
+              // 긍정/부정 구분 없이 실제 참여자 유형 전체를 대상으로 함
+              const allTypes = Array.from(new Set(selectedParticipants.map(p => p.leadershipType))).filter(Boolean);
               const groups = r.customGroups;
               const typesInGroups = new Set(groups.flatMap(g => g.types));
-              const negInGeneral = negTypes.filter(t => !typesInGroups.has(t));
+              const negInGeneral = allTypes.filter(t => !typesInGroups.has(t));
 
-              const countOf = (type: string) => negativeParticipants.filter(p => p.leadershipType === type).length;
-              const generalCount = positiveParticipants.length + negInGeneral.reduce((s, t) => s + countOf(t), 0);
+              const countOf = (type: string) => selectedParticipants.filter(p => p.leadershipType === type).length;
+              const generalCount = negInGeneral.reduce((s, t) => s + countOf(t), 0);
 
               // 유형을 특정 그룹(또는 일반형)으로 이동
               function moveType(type: string, targetGroupId: string | 'general') {
@@ -2191,7 +2186,7 @@ function ConfigureContent() {
                   const next = targetGroupId === 'general'
                     ? stripped
                     : stripped.map(g => g.id === targetGroupId ? { ...g, types: g.types.includes(type) ? g.types : [...g.types, type] } : g);
-                  const withCounts = next.map(g => ({ ...g, leaderIds: negativeParticipants.filter(p => g.types.includes(p.leadershipType)).map(p => p.id) }));
+                  const withCounts = next.map(g => ({ ...g, leaderIds: selectedParticipants.filter(p => g.types.includes(p.leadershipType)).map(p => p.id) }));
                   return { ...round, customGroups: withCounts };
                 }));
               }
@@ -2211,7 +2206,7 @@ function ConfigureContent() {
               }
 
               const TypeChip = ({ type, sourceId }: { type: string; sourceId: string }) => {
-                const members = negativeParticipants.filter(p => p.leadershipType === type);
+                const members = selectedParticipants.filter(p => p.leadershipType === type);
                 const key = `${sourceId}:${type}`;
                 const expanded = expandedTypeChips.has(key);
                 return (
@@ -2264,31 +2259,11 @@ function ConfigureContent() {
                       <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{generalCount}명</span>
                     </div>
                     <div className="p-4 space-y-2 min-h-[180px]">
-                      {/* 긍정 리더 토글 */}
-                      {positiveParticipants.length > 0 && (
-                        <div className="border border-gray-200 rounded-xl overflow-hidden">
-                          <button onClick={() => setPositiveExpanded(prev => !prev)} className="w-full flex items-center gap-2.5 px-3.5 py-2.5 hover:bg-gray-50 transition-colors text-left">
-                            <svg className={`w-3 h-3 text-gray-400 flex-shrink-0 transition-transform ${positiveExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                            <span className="text-xs font-bold text-gray-900 flex-1">긍정 리더</span>
-                            <span className="text-[10px] font-semibold text-gray-500">{positiveParticipants.length}명</span>
-                          </button>
-                          {positiveExpanded && (
-                            <div className="px-3.5 pb-2.5 pt-0.5 space-y-1 border-t border-gray-100">
-                              {positiveParticipants.map(p => (
-                                <div key={p.id} className="flex items-center gap-2 py-1">
-                                  <span className="text-xs font-medium text-gray-700 flex-1">{p.name} {p.position}</span>
-                                  <span className="text-[10px] text-gray-400">{p.leadershipType}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      {/* 이동된 부정 리더 (드래그 가능) */}
+                      {/* 그룹에 속하지 않은 유형 (드래그 가능) */}
                       {negInGeneral.map(type => (
                         <TypeChip key={type} type={type} sourceId="general" />
                       ))}
-                      {positiveParticipants.length === 0 && negInGeneral.length === 0 && (
+                      {negInGeneral.length === 0 && (
                         <div className="flex items-center justify-center h-24 text-xs text-gray-300">
                           유형을 드래그해 이동하세요
                         </div>
@@ -2428,9 +2403,7 @@ function ConfigureContent() {
                   const targetDesc = (() => {
                     if (current === 'general') {
                       const gParts = selectedParticipants.filter(p => r.generalLeaderIds.includes(p.id));
-                      const posCount = gParts.filter(p => POSITIVE_TYPES.includes(p.leadershipType)).length;
                       const detailArr: string[] = [];
-                      if (posCount > 0) detailArr.push(`긍정 리더 ${posCount}명`);
                       (r.generalTypes ?? []).forEach(t => {
                         const n = gParts.filter(p => p.leadershipType === t).length;
                         if (n > 0) detailArr.push(`${t} ${n}명`);
@@ -2621,14 +2594,10 @@ function ConfigureContent() {
                   {/* 일반형 섹션 (일반형 탭일 때만) */}
                   {currentTarget === 'general' && (() => {
                     const generalParticipants = selectedParticipants.filter(p => r.generalLeaderIds.includes(p.id));
-                    const posCount = generalParticipants.filter(p => POSITIVE_TYPES.includes(p.leadershipType)).length;
-                    const negParts = (r.generalTypes ?? []).map(t => {
+                    const parts = (r.generalTypes ?? []).map(t => {
                       const n = generalParticipants.filter(p => p.leadershipType === t).length;
                       return n > 0 ? `${t} ${n}명` : null;
                     }).filter(Boolean) as string[];
-                    const parts: string[] = [];
-                    if (posCount > 0) parts.push(`긍정 리더 ${posCount}명`);
-                    negParts.forEach(g => parts.push(g));
                     return (
                   <div className="bg-[#F0F7FF] rounded-xl p-6 space-y-4">
                     <div>

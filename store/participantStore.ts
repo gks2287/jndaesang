@@ -1,22 +1,18 @@
 import { create } from 'zustand';
 
-export type LeadershipType =
-  | '코칭형'
-  | '민주형'
-  | '서번트형'
-  | '비전형'
-  | '관계중심형'
-  | '독재형'
-  | '방관형'
-  | '불통형'
-  | '불명확형'
-  | '성과압박형'
-  | '감정기복형'
-  | '완벽주의형'
-  | '우유부단형';
+// 리더십 유형은 기업별 업로드 파일의 워딩을 그대로 사용하므로 자유 문자열이다.
+// (아래 KNOWN_LEADERSHIP_TYPES는 기본 색상/예시용 참고 목록일 뿐 제약이 아니다.)
+export type LeadershipType = string;
 
-export const POSITIVE_TYPES: LeadershipType[] = ['코칭형', '민주형', '서번트형', '비전형', '관계중심형'];
-export const NEGATIVE_TYPES: LeadershipType[] = ['독재형', '방관형', '불통형', '성과압박형', '감정기복형', '완벽주의형', '우유부단형'];
+// 색상 맵·기본값 참고용으로 남겨둔 표준 유형 목록 (긍정/부정 구분은 더 이상 사용하지 않음)
+export const KNOWN_LEADERSHIP_TYPES: string[] = [
+  '코칭형', '민주형', '서번트형', '비전형', '관계중심형',
+  '독재형', '방관형', '불통형', '불명확형', '성과압박형', '감정기복형', '완벽주의형', '우유부단형',
+];
+
+// @deprecated 긍정/부정 구분은 폐기 예정 — 마이그레이션 중 하위 호환용으로만 유지.
+export const POSITIVE_TYPES: string[] = ['코칭형', '민주형', '서번트형', '비전형', '관계중심형'];
+export const NEGATIVE_TYPES: string[] = ['독재형', '방관형', '불통형', '성과압박형', '감정기복형', '완벽주의형', '우유부단형'];
 
 export type DeliveryStatus = '발송완료' | '열람' | '미발송' | '완료';
 

@@ -86,6 +86,10 @@ export default function CompanyEditPage() {
   const updateInfo = useLeadershipInfoStore(s => s.updateInfo);
   const loadLeadershipInfo = useLeadershipInfoStore(s => s.loadForCompany);
   const leadershipCurrent = useLeadershipInfoStore(s => s.current[`${companyId}-${infoYear}`] ?? DEFAULT_INFO);
+  // 직책자 유형 드롭다운 옵션: 이 기업 리더십 카탈로그(파일 워딩) 기준, 없으면 표준 목록
+  const typeOptions = leadershipCurrent.length > 0
+    ? Array.from(new Set(leadershipCurrent.map(i => i.type).filter(Boolean)))
+    : LEADERSHIP_TYPES;
   const leadershipHistory = useLeadershipInfoStore(s => s.history[`${companyId}-${infoYear}`] ?? EMPTY_HISTORY);
   useEffect(() => { void loadLeadershipInfo(companyId, infoYear); }, [companyId, infoYear, loadLeadershipInfo]);
 
@@ -263,7 +267,6 @@ export default function CompanyEditPage() {
     const wb = read(buffer, { type: 'array' });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const rows = utils.sheet_to_json<Record<string, string>>(ws, { defval: '' });
-    const VALID: LeadershipType[] = ['독재형', '방관형', '성과압박형', '불통형', '불명확형', '감정기복형'];
     const parsed = rows
       .filter(r => r['이름']?.trim())
       .map(r => ({
@@ -272,7 +275,8 @@ export default function CompanyEditPage() {
         department: r['부서']?.trim() ?? '',
         position: r['직책']?.trim() ?? '',
         email: r['이메일']?.trim() ?? '',
-        leadershipType: (VALID.includes(r['리더십유형']?.trim() as LeadershipType) ? r['리더십유형'].trim() : '불명확형') as LeadershipType,
+        // 파일에 적힌 리더십 유형 워딩을 그대로 저장 (표준 목록 강제 없음)
+        leadershipType: (r['리더십유형']?.trim() || '미지정') as LeadershipType,
         assessmentRound: 1,
         deliveryStatus: '미발송' as const,
         lastOpenedAt: null,
@@ -441,7 +445,7 @@ export default function CompanyEditPage() {
             {leadershipCurrent.map(info => (
               <div key={info.type} className="rounded-xl border border-gray-100 p-4 bg-gray-50/50">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${leadershipColor[info.type]}`}>{info.type}</span>
+                  <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${leadershipColor[info.type] ?? 'bg-gray-100 text-gray-600'}`}>{info.type}</span>
                 </div>
                 <p className="text-xs font-semibold text-gray-700 mb-1">{info.definition}</p>
                 <p className="text-xs text-gray-500 leading-relaxed">{info.characteristics}</p>
@@ -588,7 +592,7 @@ export default function CompanyEditPage() {
                     <input value={editForm.position} onChange={e => setEditForm(f => f && ({ ...f, position: e.target.value }))} className={rowInputCls} />
                     <input value={editForm.email} onChange={e => setEditForm(f => f && ({ ...f, email: e.target.value }))} className={rowInputCls} />
                     <select value={editForm.leadershipType} onChange={e => setEditForm(f => f && ({ ...f, leadershipType: e.target.value as LeadershipType }))} className={rowInputCls}>
-                      {LEADERSHIP_TYPES.map(t => <option key={t}>{t}</option>)}
+                      {typeOptions.map(t => <option key={t}>{t}</option>)}
                     </select>
                     <input type="number" min={1} max={9} value={editForm.assessmentRound} onChange={e => setEditForm(f => f && ({ ...f, assessmentRound: Number(e.target.value) }))} className={rowInputCls} />
                     <div className="flex items-center gap-1 justify-end">
@@ -602,7 +606,7 @@ export default function CompanyEditPage() {
                     <p className="text-sm text-gray-500 truncate">{p.department}</p>
                     <p className="text-sm text-gray-500">{p.position}</p>
                     <p className="text-xs text-gray-400 truncate">{p.email}</p>
-                    <span className={`inline-flex w-fit text-xs font-semibold px-2.5 py-0.5 rounded-full ${leadershipColor[p.leadershipType]}`}>{p.leadershipType}</span>
+                    <span className={`inline-flex w-fit text-xs font-semibold px-2.5 py-0.5 rounded-full ${leadershipColor[p.leadershipType] ?? 'bg-gray-100 text-gray-600'}`}>{p.leadershipType}</span>
                     <p className="text-sm text-gray-500">{p.assessmentRound}회차</p>
                     <div className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                       <button onClick={() => startEdit(p)} className="text-xs text-gray-500 px-2 py-1 rounded hover:bg-gray-200 transition-colors">편집</button>

@@ -97,6 +97,7 @@ export default function ParticipantDetailPage() {
   const company = useCompanyStore(s => s.companies.find(c => c.id === companyId));
   const participant = useParticipantStore(s => s.participants.find(p => p.id === participantId));
   const updateParticipant = useParticipantStore(s => s.updateParticipant);
+  const companyParticipants = useParticipantStore(s => s.participants.filter(p => p.companyId === companyId));
   const rawHistory = useDiagnosisHistoryStore(s => s.history);
   const diagnosisHistory = useMemo(
     () => rawHistory.filter(h => h.participantId === participantId).sort((a, b) => b.id - a.id),
@@ -114,6 +115,13 @@ export default function ParticipantDetailPage() {
   const badge = deliveryBadge[participant.deliveryStatus];
   const leaderColor = leadershipColor[participant.leadershipType] ?? 'bg-gray-100 text-gray-600';
   const leaderInfo = leadershipDesc[participant.leadershipType];
+
+  // 유형 드롭다운 옵션: 이 기업 직책자에게 실제 지정된 유형(파일 워딩) + 현재 값 (없으면 표준 목록)
+  const assignedTypes = Array.from(new Set(companyParticipants.map(p => p.leadershipType).filter(Boolean)));
+  const typeOptions = Array.from(new Set([
+    ...(assignedTypes.length > 0 ? assignedTypes : ALL_LEADERSHIP_TYPES),
+    participant.leadershipType,
+  ].filter(Boolean)));
 
   // 아직 뉴스레터가 발송되지 않은 직책자는 빈 상태로 표시
   const hasStarted = participant.stepCurrent > 0 || participant.deliveryStatus !== '미발송';
@@ -547,12 +555,7 @@ export default function ParticipantDetailPage() {
                   onChange={e => setEditForm(f => ({ ...f, leadershipType: e.target.value as LeadershipType }))}
                   className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition bg-white"
                 >
-                  <optgroup label="긍정적 유형">
-                    {POSITIVE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </optgroup>
-                  <optgroup label="부정적 유형">
-                    {NEGATIVE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </optgroup>
+                  {typeOptions.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
 

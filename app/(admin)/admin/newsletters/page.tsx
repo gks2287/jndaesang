@@ -7,7 +7,7 @@ import { useNewNewsletterDraftStore } from '@/store/newNewsletterDraftStore';
 import { useCompanyStore } from '@/store/companyStore';
 import { useNewsletterStore, type Newsletter } from '@/store/newsletterStore';
 import CompanyLogo from '@/components/CompanyLogo';
-import { useParticipantStore, participantToken, POSITIVE_TYPES, NEGATIVE_TYPES, type Participant } from '@/store/participantStore';
+import { useParticipantStore, participantToken, type Participant } from '@/store/participantStore';
 import { SavedNewsletterPreviewModal, type SavedNewsletterContent } from '@/components/newsletter/NewsletterRender';
 
 // ── 타입 ─────────────────────────────────────────────────────────────
@@ -720,7 +720,7 @@ function PolarityRow({ group, companyId, companyName, openKeys, onToggle, isComp
   return (
     <div>
       <button onClick={() => onToggle(key)}
-        className={`w-full flex items-center gap-3 pl-8 pr-5 py-2.5 border-b border-gray-100 transition-colors text-left ${isPositive ? 'bg-blue-50/30 hover:bg-blue-50/50' : 'bg-red-50/20 hover:bg-red-50/40'}`}>
+        className={`w-full flex items-center gap-3 pl-8 pr-5 py-2.5 border-b border-gray-100 transition-colors text-left ${isPositive ? 'bg-blue-50/30 hover:bg-blue-50/50' : 'bg-gray-50 hover:bg-gray-100/70'}`}>
         {group.newsletterIds.length > 0 && (
           <input
             type="checkbox"
@@ -730,9 +730,9 @@ function PolarityRow({ group, companyId, companyName, openKeys, onToggle, isComp
             className="w-3.5 h-3.5 rounded border-gray-300 accent-[#55A4DA] cursor-pointer flex-shrink-0"
           />
         )}
-        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isPositive ? 'bg-blue-400' : 'bg-red-400'}`} />
-        <span className={`text-sm font-semibold flex-1 ${isPositive ? 'text-blue-700' : 'text-red-700'}`}>
-          {isPositive ? '긍정적 리더' : '부정적 리더'}
+        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isPositive ? 'bg-blue-400' : 'bg-[#55A4DA]'}`} />
+        <span className={`text-sm font-semibold flex-1 ${isPositive ? 'text-blue-700' : 'text-gray-700'}`}>
+          {isPositive ? '긍정적 리더' : '대상 리더'}
         </span>
         <span className="text-xs text-gray-500">{group.totalCount}명</span>
         <span className="text-xs text-gray-400 ml-1">{totalVisible}회차</span>
@@ -957,9 +957,6 @@ function NewslettersContent() {
       // 직책자도 없고 뉴스레터도 없으면 스킵 (뉴스레터가 있으면 표시)
       if (companyPs.length === 0 && companyNLs.length === 0) continue;
 
-      const positivePs = companyPs.filter(p => POSITIVE_TYPES.includes(p.leadershipType));
-      const negativePs = companyPs.filter(p => NEGATIVE_TYPES.includes(p.leadershipType));
-
       function buildRoundsFromNL(nl: typeof companyNLs[number]): RoundData[] {
         return Array.from({ length: nl.totalRounds }, (_, i) => ({
           id: `nl-${nl.id}-r${i + 1}`,
@@ -979,40 +976,30 @@ function NewslettersContent() {
           // 1순위: 유형이 정확히 일치하는 뉴스레터
           // 2순위: 기업 전체 대상 뉴스레터 (leadershipType이 '미지정' 등)
           const nl = companyNLs.find(n => n.leadershipType === typeName)
-            ?? companyNLs.find(n =>
-              !POSITIVE_TYPES.includes(n.leadershipType as typeof POSITIVE_TYPES[number])
-              && !NEGATIVE_TYPES.includes(n.leadershipType as typeof NEGATIVE_TYPES[number])
-            );
+            ?? companyNLs.find(n => !n.leadershipType || n.leadershipType === '미지정');
 
           const rounds = nl ? buildRoundsFromNL(nl) : [];
           return { typeName, count, rounds, newsletterId: nl?.id };
         });
       }
 
-      const positiveNLIds = companyNLs.filter(n => n.leaderType === 'positive').map(n => n.id);
-      const negativeNLIds = companyNLs.filter(n => n.leaderType === 'negative').map(n => n.id);
-
+      // 긍정/부정 구분 없이 이 기업 직책자 전체를 하나의 그룹으로 (유형별 세부는 buildTypes가 처리)
       const groups: PolarityGroup[] = [];
-      if (positivePs.length > 0) {
-        groups.push({ polarity: 'positive', newsletterIds: positiveNLIds, totalCount: positivePs.length, types: buildTypes(positivePs) });
-      }
-      if (negativePs.length > 0) {
-        groups.push({ polarity: 'negative', newsletterIds: negativeNLIds, totalCount: negativePs.length, types: buildTypes(negativePs) });
+      if (companyPs.length > 0) {
+        groups.push({ polarity: 'negative', newsletterIds: companyNLs.map(n => n.id), totalCount: companyPs.length, types: buildTypes(companyPs) });
       }
 
-      // 어느 유형에도 매칭되지 않은 뉴스레터(직책자가 긍정/부정으로 분류되지 않거나 없는 경우)를
-      // leaderType 그룹에 fallback으로 붙여 목록에서 누락되지 않게 한다.
+      // 어느 유형에도 매칭되지 않은 뉴스레터를 그룹에 fallback으로 붙여 목록에서 누락되지 않게 한다.
       const attachedNLIds = new Set<number>();
       groups.forEach(g => g.types.forEach(t => { if (t.newsletterId != null) attachedNLIds.add(t.newsletterId); }));
       for (const nl of companyNLs) {
         if (attachedNLIds.has(nl.id)) continue;
-        const pol: Polarity = nl.leaderType === 'negative' ? 'negative' : 'positive';
-        let grp = groups.find(g => g.polarity === pol);
+        let grp = groups[0];
         if (!grp) {
-          grp = { polarity: pol, newsletterIds: [], totalCount: companyPs.length, types: [] };
+          grp = { polarity: 'negative', newsletterIds: [], totalCount: companyPs.length, types: [] };
           groups.push(grp);
         }
-        grp.newsletterIds.push(nl.id);
+        if (!grp.newsletterIds.includes(nl.id)) grp.newsletterIds.push(nl.id);
         const typeName = nl.leadershipType && nl.leadershipType !== '미지정' ? nl.leadershipType : '전체 대상';
         grp.types.push({ typeName, count: companyPs.length, rounds: buildRoundsFromNL(nl), newsletterId: nl.id });
         attachedNLIds.add(nl.id);
@@ -1203,20 +1190,16 @@ function NewslettersContent() {
     try {
       for (const { company, typeRounds } of sendConfirmTarget.selections) {
         for (const { typeName, roundNums } of typeRounds) {
-          // 해당 유형의 직책자 목록 필터
-          const isPositive = typeName === '긍정 리더';
-          const typeParticipants = participants.filter(p => {
-            if (p.companyId !== company.companyId) return false;
-            if (isPositive) return POSITIVE_TYPES.includes(p.leadershipType);
-            return p.leadershipType === typeName;
-          });
+          // 해당 유형의 직책자 목록 필터 (유형명 그대로 매칭)
+          const typeParticipants = participants.filter(p =>
+            p.companyId === company.companyId && p.leadershipType === typeName
+          );
           if (typeParticipants.length === 0) continue;
 
           // 해당 유형의 뉴스레터 찾기 (생성 본문이 있는 제작완료 뉴스레터)
           const nl = newsletters.find(n => {
             if (n.companyId !== company.companyId || n.status !== '제작완료') return false;
             if (!n.generatedContent || n.generatedContent.rounds.length === 0) return false;
-            if (isPositive) return n.leaderType === 'positive';
             return n.leadershipType === typeName;
           });
           if (!nl?.generatedContent) continue;

@@ -648,7 +648,7 @@ export default function CompanyDetailPage() {
                           {!byType && (
                             <td className="px-6 py-3.5">
                               <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                                style={{ backgroundColor: `${LEADERSHIP_COLORS[p.leadershipType]}22`, color: LEADERSHIP_COLORS[p.leadershipType] }}>
+                                style={{ backgroundColor: `${LEADERSHIP_COLORS[p.leadershipType] ?? '#9CA3AF'}22`, color: LEADERSHIP_COLORS[p.leadershipType] ?? '#6B7280' }}>
                                 {p.leadershipType}
                               </span>
                             </td>

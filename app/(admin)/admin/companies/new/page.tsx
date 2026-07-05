@@ -43,6 +43,13 @@ function getInitials(name: string) {
   return trimmed.slice(0, 2).toUpperCase();
 }
 
+// 파일 크기 표시 (작은 파일은 KB/B로 — 0.0MB로 보이는 혼동 방지)
+function fmtFileSize(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
 // 업로드 이미지를 정사각 축소 data URL로 (DB에 가볍게 저장)
 function resizeImageToDataUrl(file: File, max = 256): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -135,6 +142,11 @@ export default function NewCompanyPage() {
     setExtractedInfo(prev => prev.filter((_, i) => i !== idx));
   }
 
+  // 직책자 유형 드롭다운 옵션: 업로드 파일에서 추출한 유형(워딩 그대로) 우선, 없으면 표준 목록
+  const typeOptions = extractedInfo.length > 0
+    ? Array.from(new Set(extractedInfo.map(i => i.type).filter(Boolean)))
+    : LEADERSHIP_TYPES;
+
   const [draftParticipants, setDraftParticipants] = useState<DraftParticipant[]>([]);
   const [showAddRow, setShowAddRow] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -212,7 +224,6 @@ export default function NewCompanyPage() {
     const wb = read(buffer, { type: 'array' });
     const ws = wb.Sheets[wb.SheetNames[0]];
     const rows = utils.sheet_to_json<Record<string, string>>(ws, { defval: '' });
-    const VALID: LeadershipType[] = ['독재형', '방관형', '성과압박형', '불통형', '불명확형', '감정기복형'];
     const parsed: DraftParticipant[] = rows
       .filter(r => r['이름']?.trim())
       .map(r => ({
@@ -220,9 +231,8 @@ export default function NewCompanyPage() {
         department: r['부서']?.trim() ?? '',
         position: r['직책']?.trim() ?? '',
         email: r['이메일']?.trim() ?? '',
-        leadershipType: (VALID.includes(r['리더십유형']?.trim() as LeadershipType)
-          ? r['리더십유형'].trim()
-          : '불명확형') as LeadershipType,
+        // 파일에 적힌 리더십 유형 워딩을 그대로 저장 (표준 목록 강제 없음)
+        leadershipType: (r['리더십유형']?.trim() || '미지정') as LeadershipType,
       }));
     if (parsed.length > 0) setDraftParticipants(prev => [...prev, ...parsed]);
   }
@@ -383,7 +393,7 @@ export default function NewCompanyPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
                       <span className="text-sm text-gray-700 truncate">{file.name}</span>
-                      <span className="text-xs text-gray-400 flex-shrink-0">{(file.size / 1024 / 1024).toFixed(1)}MB</span>
+                      <span className="text-xs text-gray-400 flex-shrink-0">{fmtFileSize(file.size)}</span>
                     </div>
                     <button
                       type="button"
@@ -543,7 +553,7 @@ export default function NewCompanyPage() {
                     <p className="text-sm text-gray-500 truncate">{p.department}</p>
                     <p className="text-sm text-gray-500">{p.position}</p>
                     <p className="text-xs text-gray-400 truncate">{p.email}</p>
-                    <span className={`inline-flex w-fit text-xs font-semibold px-2.5 py-0.5 rounded-full ${leadershipColor[p.leadershipType]}`}>
+                    <span className={`inline-flex w-fit text-xs font-semibold px-2.5 py-0.5 rounded-full ${leadershipColor[p.leadershipType] ?? 'bg-gray-100 text-gray-600'}`}>
                       {p.leadershipType}
                     </span>
                     <button
@@ -565,7 +575,7 @@ export default function NewCompanyPage() {
                     <input value={addForm.position} onChange={e => setAddForm(f => ({ ...f, position: e.target.value }))} placeholder="직책" className={rowInputCls} />
                     <input value={addForm.email} onChange={e => setAddForm(f => ({ ...f, email: e.target.value }))} placeholder="이메일" className={rowInputCls} />
                     <select value={addForm.leadershipType} onChange={e => setAddForm(f => ({ ...f, leadershipType: e.target.value as LeadershipType }))} className={rowInputCls}>
-                      {LEADERSHIP_TYPES.map(t => <option key={t}>{t}</option>)}
+                      {typeOptions.map(t => <option key={t}>{t}</option>)}
                     </select>
                     <div className="flex items-center gap-1">
                       <button type="button" onClick={saveAddRow} className="text-xs font-semibold text-emerald-600 px-1.5 py-1 rounded hover:bg-emerald-100 transition-colors">추가</button>

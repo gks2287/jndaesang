@@ -32,8 +32,6 @@ const leadershipColor: Record<LeadershipType, string> = {
   '관계중심형': 'bg-blue-100 text-blue-700',
 };
 
-const VALID_LEADERSHIP: LeadershipType[] = ['독재형', '방관형', '성과압박형', '불통형', '불명확형', '감정기복형'];
-
 function parseRows(rows: Record<string, string>[], companyId: number, year: number): Omit<Participant, 'id'>[] {
   return rows
     .filter(row => row['이름']?.trim())
@@ -44,9 +42,8 @@ function parseRows(rows: Record<string, string>[], companyId: number, year: numb
       department: row['부서']?.trim() ?? '',
       position: row['직책']?.trim() ?? '',
       email: row['이메일']?.trim() ?? '',
-      leadershipType: (VALID_LEADERSHIP.includes(row['리더십유형']?.trim() as LeadershipType)
-        ? row['리더십유형'].trim()
-        : '불명확형') as LeadershipType,
+      // 파일에 적힌 리더십 유형 워딩을 그대로 저장 (표준 목록 강제 없음)
+      leadershipType: (row['리더십유형']?.trim() || '미지정') as LeadershipType,
       assessmentRound: 1,
       deliveryStatus: '미발송',
       lastOpenedAt: null,
@@ -77,6 +74,11 @@ export default function ParticipantsPage() {
   const participants = useMemo(
     () => allParticipants.filter(p => p.year === selectedYear),
     [allParticipants, selectedYear],
+  );
+  // 필터 옵션: 실제 직책자에게 지정된 유형(파일 워딩 포함)만 노출
+  const leadershipOptions = useMemo(
+    () => Array.from(new Set(participants.map(p => p.leadershipType).filter(Boolean))),
+    [participants],
   );
 
 const [search, setSearch] = useState('');
@@ -291,7 +293,7 @@ const [search, setSearch] = useState('');
                   className="appearance-none text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg pl-3 pr-7 py-1.5 outline-none cursor-pointer hover:border-[#55A4DA]/60 focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/20 transition-all shadow-sm"
                 >
                   <option value="">리더십 유형</option>
-                  {VALID_LEADERSHIP.map(t => (
+                  {leadershipOptions.map(t => (
                     <option key={t} value={t}>{t}</option>
                   ))}
                 </select>
@@ -329,7 +331,7 @@ const [search, setSearch] = useState('');
               </div>
             ) : (
               filtered.map(p => {
-                const leaderColor = leadershipColor[p.leadershipType];
+                const leaderColor = leadershipColor[p.leadershipType] ?? 'bg-gray-100 text-gray-600';
 
                 return (
                   <Link
