@@ -135,13 +135,6 @@ export default function NewCompanyPage() {
       setExtracting(false);
     }
   }
-  function updateExtracted(idx: number, field: 'characteristics' | 'developmentPoints', value: string) {
-    setExtractedInfo(prev => prev.map((it, i) => (i === idx ? { ...it, [field]: value } : it)));
-  }
-  function removeExtracted(idx: number) {
-    setExtractedInfo(prev => prev.filter((_, i) => i !== idx));
-  }
-
   // 직책자 유형 드롭다운 옵션: 업로드 파일에서 추출한 유형(워딩 그대로) 우선, 없으면 표준 목록
   const typeOptions = extractedInfo.length > 0
     ? Array.from(new Set(extractedInfo.map(i => i.type).filter(Boolean)))
@@ -197,10 +190,16 @@ export default function NewCompanyPage() {
     router.push('/admin/dashboard');
   };
 
+  // 추가 행 열기 — 리더십 유형 기본값을 카탈로그 첫 유형으로 세팅(드롭다운 표시값과 저장값 일치)
+  function openAddRow() {
+    setAddForm({ name: '', department: '', position: '', email: '', leadershipType: (typeOptions[0] ?? '미지정') as LeadershipType });
+    setShowAddRow(true);
+  }
+
   function saveAddRow() {
     if (!addForm.name.trim()) return;
     setDraftParticipants(prev => [...prev, { ...addForm }]);
-    setAddForm({ name: '', department: '', position: '', email: '', leadershipType: '불명확형' });
+    setAddForm({ name: '', department: '', position: '', email: '', leadershipType: (typeOptions[0] ?? '미지정') as LeadershipType });
     setShowAddRow(false);
   }
 
@@ -421,35 +420,15 @@ export default function NewCompanyPage() {
             )}
             {extractedInfo.length > 0 && (
               <div className="mt-5">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-sm font-semibold text-gray-800">추출된 리더십 유형 <span className="text-[#55A4DA]">{extractedInfo.length}</span>개 <span className="text-xs font-normal text-gray-400">· 저장 전 수정할 수 있어요</span></p>
-                </div>
-                <div className="space-y-3">
+                <p className="text-sm font-semibold text-gray-800 mb-3">추출된 리더십 유형 <span className="text-[#55A4DA]">{extractedInfo.length}</span>개</p>
+                <div className="flex flex-wrap gap-2">
                   {extractedInfo.map((it, idx) => (
-                    <div key={idx} className="rounded-xl border border-[#E1EFFB] p-4" style={{ backgroundColor: '#F8FBFE' }}>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-[#EAF4FC] text-[#2E7DB5]">{it.type}</span>
-                        <button type="button" onClick={() => removeExtracted(idx)} className="text-xs text-gray-400 hover:text-red-400">제외</button>
-                      </div>
-                      <label className="block text-[11px] font-semibold text-gray-500 mb-1">특징</label>
-                      <textarea
-                        value={it.characteristics}
-                        onChange={e => updateExtracted(idx, 'characteristics', e.target.value)}
-                        rows={2}
-                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-y focus:border-[#55A4DA] focus:outline-none focus:ring-1 focus:ring-[#55A4DA]/30 mb-2"
-                      />
-                      <label className="block text-[11px] font-semibold text-gray-500 mb-1">개발 포인트</label>
-                      <textarea
-                        value={it.developmentPoints ?? ''}
-                        onChange={e => updateExtracted(idx, 'developmentPoints', e.target.value)}
-                        rows={2}
-                        placeholder="개발 포인트(선택)"
-                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-y focus:border-[#55A4DA] focus:outline-none focus:ring-1 focus:ring-[#55A4DA]/30"
-                      />
-                    </div>
+                    <span key={idx} className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold bg-[#EAF4FC] text-[#2E7DB5]">
+                      {it.type}
+                    </span>
                   ))}
                 </div>
-                <p className="text-xs text-gray-400 mt-2">이 정보는 기업 생성 시 저장되고, 이 기업 뉴스레터 제작 시 주제·본문에 반영됩니다.</p>
+                <p className="text-xs text-gray-400 mt-3">이 유형 정보는 기업 생성 시 저장되고, 이 기업 뉴스레터 제작 시 주제·본문에 반영됩니다.</p>
               </div>
             )}
           </section>
@@ -512,7 +491,7 @@ export default function NewCompanyPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => { setAddMenuOpen(false); setShowAddRow(true); }}
+                        onClick={() => { setAddMenuOpen(false); openAddRow(); }}
                         className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-700 hover:bg-[#55A4DA]/8 hover:text-[#2E7DB5] transition-colors group"
                       >
                         <span className="w-8 h-8 rounded-lg bg-gray-100 group-hover:bg-[#55A4DA]/15 flex items-center justify-center transition-colors flex-shrink-0">
@@ -534,7 +513,7 @@ export default function NewCompanyPage() {
 
             <div className="rounded-xl border border-gray-200 overflow-hidden">
               {/* 테이블 헤더 */}
-              <div className="grid grid-cols-[2fr_1.2fr_1fr_2fr_1.4fr_40px] px-4 py-2.5 bg-gray-50 border-b border-gray-200">
+              <div className="grid grid-cols-[2fr_1.2fr_1fr_2fr_1.4fr_72px] px-4 py-2.5 bg-gray-50 border-b border-gray-200">
                 {['이름', '부서', '직책', '이메일', '리더십 유형', ''].map(h => (
                   <p key={h} className="text-xs font-semibold text-gray-400 tracking-wider uppercase">{h}</p>
                 ))}
@@ -548,7 +527,7 @@ export default function NewCompanyPage() {
                 )}
 
                 {draftParticipants.map((p, idx) => (
-                  <div key={idx} className="grid grid-cols-[2fr_1.2fr_1fr_2fr_1.4fr_40px] px-4 py-3 items-center hover:bg-gray-50 transition-colors">
+                  <div key={idx} className="grid grid-cols-[2fr_1.2fr_1fr_2fr_1.4fr_72px] px-4 py-3 items-center hover:bg-gray-50 transition-colors">
                     <p className="text-sm font-medium text-gray-800 truncate">{p.name}</p>
                     <p className="text-sm text-gray-500 truncate">{p.department}</p>
                     <p className="text-sm text-gray-500">{p.position}</p>
@@ -569,7 +548,7 @@ export default function NewCompanyPage() {
                 ))}
 
                 {showAddRow && (
-                  <div className="grid grid-cols-[2fr_1.2fr_1fr_2fr_1.4fr_40px] px-4 py-2.5 items-center bg-emerald-50/40 gap-2">
+                  <div className="grid grid-cols-[2fr_1.2fr_1fr_2fr_1.4fr_72px] px-4 py-2.5 items-center bg-emerald-50/40 gap-2">
                     <input value={addForm.name} onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))} placeholder="이름" className={rowInputCls} />
                     <input value={addForm.department} onChange={e => setAddForm(f => ({ ...f, department: e.target.value }))} placeholder="부서" className={rowInputCls} />
                     <input value={addForm.position} onChange={e => setAddForm(f => ({ ...f, position: e.target.value }))} placeholder="직책" className={rowInputCls} />
@@ -577,11 +556,25 @@ export default function NewCompanyPage() {
                     <select value={addForm.leadershipType} onChange={e => setAddForm(f => ({ ...f, leadershipType: e.target.value as LeadershipType }))} className={rowInputCls}>
                       {typeOptions.map(t => <option key={t}>{t}</option>)}
                     </select>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 whitespace-nowrap">
                       <button type="button" onClick={saveAddRow} className="text-xs font-semibold text-emerald-600 px-1.5 py-1 rounded hover:bg-emerald-100 transition-colors">추가</button>
                       <button type="button" onClick={() => setShowAddRow(false)} className="text-xs text-gray-400 px-1.5 py-1 rounded hover:bg-gray-100 transition-colors">✕</button>
                     </div>
                   </div>
+                )}
+
+                {/* 개별 추가 후 계속 추가할 수 있는 + 버튼 */}
+                {!showAddRow && draftParticipants.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={openAddRow}
+                    className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-semibold text-[#55A4DA] hover:bg-[#55A4DA]/8 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    직책자 추가
+                  </button>
                 )}
               </div>
             </div>
