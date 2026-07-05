@@ -1254,6 +1254,25 @@ function ConfigureContent() {
     setCopyDistMenuOpen(false);
   }
 
+  // ── Step 3: 현재 회차의 유형 배분을 다른 모든 회차에 동일하게 적용 ──
+  function applyDistributionToAll() {
+    setRounds(prev => {
+      const src = prev[distributionRoundIdx];
+      if (!src) return prev;
+      return prev.map((round, i) => {
+        if (i === distributionRoundIdx) return round;
+        const newGroups = src.customGroups.map(g =>
+          makeCustomGroup(
+            `g-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
+            [...g.types],
+            selectedParticipants.filter(p => g.types.includes(p.leadershipType)).map(p => p.id),
+          ),
+        );
+        return { ...round, customGroups: newGroups };
+      });
+    });
+  }
+
   // ── Step 4: 타깃(일반형/그룹)별 추가 자료(파일) 업로드/파싱/삭제 ──
   // targetId === 'general' → Round.attachments, 그 외 → 해당 CustomGroup.attachments
   function patchTargetAttachments(
@@ -2119,7 +2138,7 @@ function ConfigureContent() {
           <div className="w-full px-8 py-6 space-y-5">
             <div>
               <h2 className="text-base font-bold text-gray-800 mb-1">리더십 유형 배분</h2>
-              <p className="text-xs text-gray-400">회차별로 맞춤형/일반형 대상 리더를 설정합니다. 부정 리더는 유형 단위로 드래그해 이동할 수 있습니다.</p>
+              <p className="text-xs text-gray-400">회차별로 그룹 단위 대상 리더를 설정합니다. 유형을 드래그해 그룹 간 이동할 수 있습니다.</p>
             </div>
 
             {/* 회차 탭 */}
@@ -2142,6 +2161,19 @@ function ConfigureContent() {
                   );
                 })}
               </div>
+            )}
+
+            {/* 전 회차 동일하게 — 현재 회차의 배분을 모든 회차에 복사 */}
+            {rounds.length > 1 && (
+              <button
+                onClick={() => { if (confirm('현재 회차의 유형 배분을 다른 모든 회차에 동일하게 적용할까요?')) applyDistributionToAll(); }}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border border-[#55A4DA] bg-[#55A4DA] text-white hover:bg-[#3A8BC4] transition-colors mr-2"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+                전 회차 동일하게
+              </button>
             )}
 
             {/* 이전 회차와 동일하게 — 2회차부터 노출 (1회차는 복사할 이전 회차가 없음) */}
@@ -2269,36 +2301,7 @@ function ConfigureContent() {
               };
 
               return (
-                <div className="grid grid-cols-2 gap-4 items-start">
-                  {/* 일반형 카드 */}
-                  <div
-                    onDragOver={e => { e.preventDefault(); setDragOverTarget('general'); }}
-                    onDragLeave={() => setDragOverTarget(null)}
-                    onDrop={e => {
-                      e.preventDefault();
-                      const type = e.dataTransfer.getData('leadershipType');
-                      if (type) moveType(type, 'general');
-                      setDragOverTarget(null);
-                    }}
-                    className={`rounded-2xl border-2 transition-all ${dragOverTarget === 'general' ? 'border-blue-400 bg-blue-50/30' : 'border-gray-200 bg-white'}`}
-                  >
-                    <div className="px-5 py-3.5 border-b border-gray-100 flex items-center gap-2">
-                      <p className="text-sm font-bold text-gray-800 flex-1">일반형</p>
-                      <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{generalCount}명</span>
-                    </div>
-                    <div className="p-4 space-y-2 min-h-[180px]">
-                      {/* 그룹에 속하지 않은 유형 (드래그 가능) */}
-                      {negInGeneral.map(type => (
-                        <TypeChip key={type} type={type} sourceId="general" />
-                      ))}
-                      {negInGeneral.length === 0 && (
-                        <div className="flex items-center justify-center h-24 text-xs text-gray-300">
-                          유형을 드래그해 이동하세요
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
+                <div>
                   {/* 맞춤형 영역 (그룹들) */}
                   <div className="rounded-2xl border-2 border-gray-200 bg-white">
                     <div className="px-5 py-3.5 border-b border-gray-100 flex items-center gap-2">
