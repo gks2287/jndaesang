@@ -41,7 +41,7 @@ export function buildEmailHtml(generated: GeneratedNewsletter, opts: { vol: numb
 <body style="margin:0;padding:0;background:#F3F4F6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#F3F4F6">
 <tr><td align="center" style="padding:32px 16px">
-<table width="100%" cellpadding="0" cellspacing="0" style="max-width:448px;background:#FFFFFF;border-radius:16px;overflow:hidden;border:1px solid #E5E7EB">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#FFFFFF;border-radius:16px;overflow:hidden;border:1px solid #E5E7EB">
 
   <!-- 헤더 -->
   <tr><td style="padding:32px 24px 8px;text-align:center">
