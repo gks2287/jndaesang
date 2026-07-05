@@ -634,7 +634,7 @@ export default function CompanyEditPage() {
         </div>
 
         {/* ── 위험 구역: 기업 삭제 ── */}
-        <div className="bg-white rounded-2xl border border-red-200 shadow-sm p-6">
+        <div className="bg-white rounded-2xl border border-red-200 shadow-sm p-6 max-w-md mx-auto">
           <div className="flex flex-col items-center text-center gap-3">
             <div>
               <h2 className="text-sm font-bold text-red-600">기업 삭제</h2>
