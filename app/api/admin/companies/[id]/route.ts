@@ -36,3 +36,23 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: '기업 수정 중 오류가 발생했습니다.' }, { status: 500 });
   }
 }
+
+// DELETE /api/admin/companies/[id] — 기업 삭제
+// 직책자·뉴스레터는 FK onDelete: Cascade로 자동 삭제되고,
+// 리더십 정보 버전(FK 없음)은 수동으로 정리한다.
+export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const id = Number(params.id);
+    if (!Number.isInteger(id)) {
+      return NextResponse.json({ error: '잘못된 기업 ID입니다.' }, { status: 400 });
+    }
+    await prisma.$transaction([
+      prisma.leadershipInfoVersion.deleteMany({ where: { companyId: id } }),
+      prisma.company.delete({ where: { id } }),
+    ]);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error('[admin/companies DELETE]', err);
+    return NextResponse.json({ error: '기업 삭제 중 오류가 발생했습니다.' }, { status: 500 });
+  }
+}

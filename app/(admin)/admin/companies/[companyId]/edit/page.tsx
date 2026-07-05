@@ -60,6 +60,7 @@ export default function CompanyEditPage() {
   // ── 스토어 ──
   const company = useCompanyStore(s => s.companies.find(c => c.id === companyId));
   const updateCompany = useCompanyStore(s => s.updateCompany);
+  const deleteCompany = useCompanyStore(s => s.deleteCompany);
 
   const rawParticipants = useParticipantStore(s => s.participants);
   const allParticipants = useMemo(
@@ -117,6 +118,12 @@ export default function CompanyEditPage() {
   const [extractError, setExtractError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ── 기업 삭제 ──
+  const DELETE_PHRASE = '삭제하겠습니다';
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
   const participants = useMemo(
     () => allParticipants.filter(p => p.year === selectedYear),
     [allParticipants, selectedYear],
@@ -140,6 +147,23 @@ export default function CompanyEditPage() {
   async function saveCompany() {
     await updateCompany(companyId, { ...companyForm, logoUrl: logoDataUrl });
     router.push(`/admin/companies/${companyId}/participants`);
+  }
+
+  // ── 핸들러: 기업 삭제 (확인 문구 일치 시에만) ──
+  function openDeleteModal() {
+    setDeleteConfirmText('');
+    setDeleteOpen(true);
+  }
+  async function handleDeleteCompany() {
+    if (deleteConfirmText.trim() !== DELETE_PHRASE) return;
+    setDeleting(true);
+    const ok = await deleteCompany(companyId);
+    setDeleting(false);
+    if (ok) {
+      router.push('/admin/companies');
+    } else {
+      alert('기업 삭제에 실패했습니다. 다시 시도해주세요.');
+    }
   }
 
   // ── 핸들러: 리더십 파일 업로드 ──
@@ -609,7 +633,65 @@ export default function CompanyEditPage() {
 
         </div>
 
+        {/* ── 위험 구역: 기업 삭제 ── */}
+        <div className="bg-white rounded-2xl border border-red-200 shadow-sm p-6">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-sm font-bold text-red-600">기업 삭제</h2>
+              <p className="text-xs text-gray-400 mt-0.5">
+                이 기업의 직책자·뉴스레터·리더십 정보가 모두 영구 삭제됩니다. 되돌릴 수 없습니다.
+              </p>
+            </div>
+            <button
+              onClick={openDeleteModal}
+              className="flex-shrink-0 text-xs font-semibold text-white bg-red-500 hover:bg-red-600 px-4 py-2 rounded-lg transition-colors"
+            >
+              기업 삭제
+            </button>
+          </div>
+        </div>
+
       </div>
+
+      {/* ── 삭제 확인 모달 ── */}
+      {deleteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-6">
+            <h3 className="text-base font-bold text-gray-900">정말 삭제하시겠어요?</h3>
+            <p className="text-sm text-gray-500 mt-2 leading-relaxed">
+              <span className="font-semibold text-gray-800">{company.name}</span> 기업과 소속 직책자·뉴스레터·리더십 정보가
+              모두 <span className="font-semibold text-red-600">영구 삭제</span>됩니다. 이 작업은 되돌릴 수 없습니다.
+            </p>
+            <p className="text-xs text-gray-500 mt-4 mb-2">
+              계속하려면 아래 입력란에 <span className="font-semibold text-red-600">{DELETE_PHRASE}</span> 를 입력하세요.
+            </p>
+            <input
+              autoFocus
+              type="text"
+              value={deleteConfirmText}
+              onChange={e => setDeleteConfirmText(e.target.value)}
+              placeholder={DELETE_PHRASE}
+              className="w-full text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-red-400 focus:ring-1 focus:ring-red-400/20 transition-all"
+            />
+            <div className="flex items-center justify-end gap-2 mt-5">
+              <button
+                onClick={() => setDeleteOpen(false)}
+                disabled={deleting}
+                className="text-sm font-medium text-gray-500 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-60"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleDeleteCompany}
+                disabled={deleting || deleteConfirmText.trim() !== DELETE_PHRASE}
+                className="text-sm font-semibold text-white bg-red-500 hover:bg-red-600 px-4 py-2 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {deleting ? '삭제 중…' : '삭제'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

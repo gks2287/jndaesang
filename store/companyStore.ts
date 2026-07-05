@@ -27,6 +27,7 @@ interface CompanyStore {
   loadCompanies: (force?: boolean) => Promise<void>;
   addCompany: (data: CompanyInput) => Promise<Company | null>;
   updateCompany: (id: number, data: Partial<CompanyInput>) => Promise<void>;
+  deleteCompany: (id: number) => Promise<boolean>;
 }
 
 export const useCompanyStore = create<CompanyStore>((set, get) => ({
@@ -82,6 +83,19 @@ export const useCompanyStore = create<CompanyStore>((set, get) => ({
       set({ companies: get().companies.map(c => (c.id === id ? updated : c)) });
     } catch (e) {
       console.error('기업 수정 오류:', e);
+    }
+  },
+
+  // 삭제 → DB에서 제거 후 목록에서 제외 (성공 여부 반환)
+  deleteCompany: async (id) => {
+    try {
+      const res = await fetch(`/api/admin/companies/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('삭제 실패');
+      set({ companies: get().companies.filter(c => c.id !== id) });
+      return true;
+    } catch (e) {
+      console.error('기업 삭제 오류:', e);
+      return false;
     }
   },
 }));
