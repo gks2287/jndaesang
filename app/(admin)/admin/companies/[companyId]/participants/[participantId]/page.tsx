@@ -104,6 +104,20 @@ export default function ParticipantDetailPage() {
     [rawHistory, participantId],
   );
 
+  // 훅은 조기 return 이전에 모두 호출해야 함 (participant 로딩 프레임에서 훅 개수 불일치 방지)
+  const [expandedLog, setExpandedLog] = useState<number | null>(null);
+  const [activeRound, setActiveRound] = useState<number | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: participant?.name ?? '',
+    department: participant?.department ?? '',
+    position: participant?.position ?? '',
+    email: participant?.email ?? '',
+    leadershipType: (participant?.leadershipType ?? '독재형') as LeadershipType,
+    assessmentRound: participant?.assessmentRound ?? 1,
+    deliveryStatus: (participant?.deliveryStatus ?? '미발송') as DeliveryStatus,
+  });
+
   if (!company || !participant) {
     return (
       <div className="flex items-center justify-center h-full text-gray-400 text-sm">
@@ -131,18 +145,6 @@ export default function ParticipantDetailPage() {
   const activeAvailableRounds = hasStarted ? AVAILABLE_ROUNDS : [];
 
   const progressPct = Math.round((participant.stepCurrent / participant.stepTotal) * 100);
-  const [expandedLog, setExpandedLog] = useState<number | null>(null);
-  const [activeRound, setActiveRound] = useState<number | null>(null);
-  const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState({
-    name: participant?.name ?? '',
-    department: participant?.department ?? '',
-    position: participant?.position ?? '',
-    email: participant?.email ?? '',
-    leadershipType: (participant?.leadershipType ?? '독재형') as LeadershipType,
-    assessmentRound: participant?.assessmentRound ?? 1,
-    deliveryStatus: (participant?.deliveryStatus ?? '미발송') as DeliveryStatus,
-  });
 
   function openEdit() {
     if (!participant) return;
