@@ -933,7 +933,7 @@ export function renderNewsletterEmailPreview(generated: GeneratedNewsletter, opt
     </div>
   );
   return (
-    <div className="bg-white max-w-md mx-auto rounded-2xl overflow-hidden shadow-sm border border-gray-100 break-keep break-words">
+    <div className="bg-white max-w-2xl mx-auto rounded-2xl overflow-hidden shadow-sm border border-gray-100 break-keep break-words">
       {/* 상단 헤더 — 흰 배경에 로고 크게 + 발행 정보 (작게) */}
       <div className="px-6 pt-8 pb-2 text-center">
         <img src="/logo-jc.png" alt="J&Company" className="h-16 object-contain mx-auto" onError={e => { const t = e.target as HTMLImageElement; t.outerHTML = '<span class="text-xl font-black text-[#55A4DA] tracking-wider">J&COMPANY</span>'; }} />
