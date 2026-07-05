@@ -2301,7 +2301,7 @@ function ConfigureContent() {
               };
 
               return (
-                <div>
+                <div className="rounded-2xl border border-gray-200 bg-white p-4">
                   {/* 유형 배분 그룹 (가로 배치) */}
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 items-start">
                       {groups.map((g, gi) => {
