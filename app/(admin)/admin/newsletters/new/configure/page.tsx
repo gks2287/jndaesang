@@ -277,6 +277,8 @@ function ConfigureContent() {
   // ── 미리보기 모달 ──
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewTab, setPreviewTab] = useState(0);
+  // 미리보기 모달: 회차 내 그룹 탭 ('general' 또는 그룹 id)
+  const [previewGroupId, setPreviewGroupId] = useState<string>('general');
   const [previewOpenGroups, setPreviewOpenGroups] = useState<Set<number>>(new Set([0]));
   const [generatedContent, setGeneratedContent] = useState<Record<number, GeneratedNewsletter>>({});
   // 최신 생성 결과 미러 (사전 생성 루프에서 stale closure 없이 참조)
@@ -435,6 +437,7 @@ function ConfigureContent() {
   // 미리보기 모달: 회차 탭 클릭 — 저장된 데이터만 재활용 (API 호출 X)
   function selectPreviewTab(idx: number) {
     setPreviewTab(idx);
+    setPreviewGroupId('general');
     setEditMode(false);
     setEditDraft(null);
     if (generatedContentRef.current[idx]) return; // 이미 보유
@@ -3226,14 +3229,8 @@ function ConfigureContent() {
                                   const date = schedDates[r.globalIdx];
                                   return (
                                     <div key={r.id} className="px-5 py-3">
-                                      <div className="flex items-center gap-2 mb-1">
+                                      <div className="flex items-center gap-3 flex-wrap mb-2">
                                         <span className="text-xs font-bold text-gray-700">{r.globalIdx + 1}회차</span>
-                                        {r.topic.trim()
-                                          ? <span className="text-xs text-gray-600">{r.topic}</span>
-                                          : <span className="text-[11px] text-gray-300 italic">주제 미선정</span>
-                                        }
-                                      </div>
-                                      <div className="flex items-center gap-3 flex-wrap">
                                         <span className="text-[11px] text-gray-400">콘텐츠 {r.contents.length}개</span>
                                         {r.interactions.length > 0 && (
                                           <span className="text-[11px] text-[#55A4DA]">
@@ -3248,16 +3245,37 @@ function ConfigureContent() {
                                         {date && (
                                           <span className="text-[11px] text-gray-400">📅 {formatKoreanDate(date)}</span>
                                         )}
-                                        {r.customGroups.filter(g => g.types.length > 0).length > 0 ? (
-                                          <span className="text-[11px] text-amber-600 font-semibold">
-                                            {r.customGroups.filter(g => g.types.length > 0).map((g, gi) => `그룹${gi + 1} ${g.leaderIds.length}명`).join(' + ')} + 일반 {r.generalLeaderIds.length}명
-                                          </span>
-                                        ) : (
-                                          <span className="text-[11px] text-gray-400">
-                                            전체 {selectedParticipants.length}명 수신
-                                          </span>
-                                        )}
                                       </div>
+                                      {/* 그룹별 주제 — 그룹마다 주제가 다를 수 있으므로 그룹 단위로 표시 */}
+                                      {(() => {
+                                        const activeGroups = r.customGroups.filter(g => g.types.length > 0);
+                                        if (activeGroups.length === 0 && r.generalLeaderIds.length === 0) {
+                                          return (
+                                            <div className="flex items-baseline gap-2">
+                                              <span className={`text-xs flex-1 min-w-0 ${r.topic.trim() ? 'text-gray-600' : 'text-gray-300 italic'}`}>{r.topic.trim() || '주제 미선정'}</span>
+                                              <span className="text-[11px] text-gray-400 flex-shrink-0">전체 {selectedParticipants.length}명</span>
+                                            </div>
+                                          );
+                                        }
+                                        return (
+                                          <div className="space-y-1">
+                                            {activeGroups.map(g => (
+                                              <div key={g.id} className="flex items-baseline gap-2">
+                                                <span className="text-[11px] font-semibold text-[#2E7DB5] flex-shrink-0">{g.types.join(' · ')}</span>
+                                                <span className={`text-xs flex-1 min-w-0 truncate ${g.topic?.trim() ? 'text-gray-600' : 'text-gray-300 italic'}`}>{g.topic?.trim() || '주제 미선정'}</span>
+                                                <span className="text-[11px] text-gray-400 flex-shrink-0">{g.leaderIds.length}명</span>
+                                              </div>
+                                            ))}
+                                            {r.generalLeaderIds.length > 0 && (
+                                              <div className="flex items-baseline gap-2">
+                                                <span className="text-[11px] font-semibold text-gray-500 flex-shrink-0">일반</span>
+                                                <span className={`text-xs flex-1 min-w-0 truncate ${r.topic.trim() ? 'text-gray-600' : 'text-gray-300 italic'}`}>{r.topic.trim() || '주제 미선정'}</span>
+                                                <span className="text-[11px] text-gray-400 flex-shrink-0">{r.generalLeaderIds.length}명</span>
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })()}
                                     </div>
                                   );
                                 })}
@@ -3291,27 +3309,51 @@ function ConfigureContent() {
                   </div>
                   {/* AI 생성 영역 */}
                   {activeRound && (() => {
-                    const generated = generatedContent[previewTab];
+                    // 회차 내 발송 그룹 탭 (일반 + 각 그룹) — 그룹이 있을 때만 노출
+                    const activeGroups = activeRound.customGroups.filter(g => g.types.length > 0);
+                    const groupTabs = activeGroups.length > 0
+                      ? [{ id: 'general', label: '일반' }, ...activeGroups.map(g => ({ id: g.id, label: g.types.join('·') }))]
+                      : [];
+                    const curGroup = groupTabs.some(t => t.id === previewGroupId) ? previewGroupId : 'general';
+                    const generalGen = generatedContent[previewTab] ?? livePreviewContent[`${previewTab}:general`];
+                    const displayGenerated = curGroup === 'general' ? generalGen : livePreviewContent[`${previewTab}:${curGroup}`];
                     const contentTab = previewContentTab[previewTab] ?? 'full';
                     const firstThumbnail = activeRound.contents[0]?.thumbnail ?? '';
                     const schedDate = schedDates[previewTab];
 
+                    const groupTabsUI = groupTabs.length > 0 ? (
+                      <div className="flex gap-1.5 overflow-x-auto pb-2 flex-nowrap mb-3">
+                        {groupTabs.map(t => (
+                          <button key={t.id} onClick={() => { setPreviewGroupId(t.id); setEditMode(false); }}
+                            className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors ${curGroup === t.id ? 'bg-[#2E7DB5] text-white' : 'bg-[#EAF4FC] text-[#2E7DB5] hover:bg-[#d9ecfa]'}`}>
+                            {t.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null;
+
                     // 저장된 데이터만 표시 — 없으면 안내 (API 호출/스피너 없음)
-                    if (!generated) {
+                    if (!displayGenerated) {
                       return (
-                        <div className="flex flex-col items-center justify-center py-20 px-6 gap-3 text-center">
-                          <svg className="w-9 h-9 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                          <div>
-                            <p className="text-sm font-semibold text-gray-600">아직 생성된 본문이 없어요</p>
-                            <p className="text-xs text-gray-400 mt-1">콘텐츠 구성 단계에서 이 회차를 먼저 생성해주세요</p>
+                        <>
+                          {groupTabsUI}
+                          <div className="flex flex-col items-center justify-center py-20 px-6 gap-3 text-center">
+                            <svg className="w-9 h-9 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                            <div>
+                              <p className="text-sm font-semibold text-gray-600">{curGroup === 'general' ? '아직 생성된 본문이 없어요' : '이 그룹의 본문이 아직 생성되지 않았어요'}</p>
+                              <p className="text-xs text-gray-400 mt-1">콘텐츠 구성 단계에서 {curGroup === 'general' ? '이 회차를' : '이 그룹을'} 먼저 생성해주세요</p>
+                            </div>
                           </div>
-                        </div>
+                        </>
                       );
                     }
 
+                    const generated = displayGenerated;
+                    const canEdit = curGroup === 'general';
                     const isEdited = editedRoundsRef.current.has(previewTab);
                     return (
                       <div className="space-y-3">
+                        {groupTabsUI}
                         {/* 서브탭 + 편집/다시생성 */}
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex gap-1">
@@ -3335,13 +3377,15 @@ function ConfigureContent() {
                           </div>
                           {!editMode && (
                             <div className="flex items-center gap-2">
-                              <button
-                                onClick={startEdit}
-                                className="flex items-center gap-1 text-xs font-semibold text-[#55A4DA] hover:text-[#3A8BC4] transition-colors"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                                본문 편집
-                              </button>
+                              {canEdit && (
+                                <button
+                                  onClick={startEdit}
+                                  className="flex items-center gap-1 text-xs font-semibold text-[#55A4DA] hover:text-[#3A8BC4] transition-colors"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                  본문 편집
+                                </button>
+                              )}
                               {generated && (
                                 <button
                                   onClick={async () => {

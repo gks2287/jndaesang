@@ -736,9 +736,9 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
           })}
         </div>
 
-        {/* 인터랙션 — 템플릿 override 시 선택된 타입을 즉시 렌더 */}
-        {useTemplateInteractions && renderInteractionTemplates(templateInteractions!)}
-        {!useTemplateInteractions && generated.interactions.length > 0 && (
+        {/* 인터랙션 — 실제 생성 내용이 있으면 그것을 우선 렌더, 없을 때만 예시 템플릿으로 폴백 */}
+        {useTemplateInteractions && generated.interactions.length === 0 && renderInteractionTemplates(templateInteractions!)}
+        {generated.interactions.length > 0 && (
           <>
             {renderSectionHeader('🎯', '함께 생각해봐요', 'Interaction')}
             <div className="space-y-5">
