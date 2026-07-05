@@ -360,7 +360,7 @@ function ConfigureContent() {
 
   // Step 4: 활성 회차의 일반형 + 그룹 본문을 주제/콘텐츠 기준으로 백그라운드 자동 생성 (debounce 1초)
   // - 진입/회차전환 시 활성 회차의 전 대상 생성([수정1·4]), 탭 전환과 무관하게 미리 준비됨([수정5])
-  // - 인터랙션/만족도는 시그니처에서 제외 → 토글해도 본문 재생성 안 함
+  // - 인터랙션/만족도가 바뀌면 본문(실제 내용 기반 인터랙션)을 다시 생성해야 하므로 시그니처에 포함
   // - 주제/콘텐츠가 바뀌면 편집 보호와 무관하게 항상 재생성([수정1·3]) · 현재 구성과 sig 다르면 재생성([수정2])
   useEffect(() => {
     if (wizardStep !== 4) return;
@@ -368,13 +368,13 @@ function ConfigureContent() {
     if (!r) return;
     const activeGroups = r.customGroups.filter(g => g.types.length > 0);
     const targetList = [
-      { targetId: 'general', topic: r.topic, ids: r.contents.map(c => c.id) },
-      ...activeGroups.map(g => ({ targetId: g.id, topic: g.topic, ids: g.contents.map(c => c.id) })),
+      { targetId: 'general', topic: r.topic, ids: r.contents.map(c => c.id), interactions: r.interactions, surveys: r.surveys },
+      ...activeGroups.map(g => ({ targetId: g.id, topic: g.topic, ids: g.contents.map(c => c.id), interactions: g.interactions, surveys: g.surveys })),
     ];
     const timers = livePreviewTimers.current;
-    targetList.forEach(({ targetId, topic, ids }) => {
+    targetList.forEach(({ targetId, topic, ids, interactions, surveys }) => {
       if (!topic.trim() && ids.length === 0) return; // 주제/콘텐츠 없으면 생성하지 않음
-      const sig = JSON.stringify({ roundIdx: activeRoundIdx, targetId, topic, ids });
+      const sig = JSON.stringify({ roundIdx: activeRoundIdx, targetId, topic, ids, interactions, surveys });
       const key = `${activeRoundIdx}:${targetId}`;
       if (livePreviewSigRef.current[key] === sig) return; // 현재 구성과 동일 — 이미 최신 (탭 전환 등)
       // 주제/콘텐츠 변경 → 편집 본문은 폐기하고 새로 생성 (general은 모달 캐시·편집 표시도 무효화)
@@ -3306,12 +3306,12 @@ function ConfigureContent() {
                   </div>
                   {/* AI 생성 영역 */}
                   {activeRound && (() => {
-                    // 회차 내 발송 그룹 탭 (일반 + 각 그룹) — 그룹이 있을 때만 노출
+                    // 회차 내 발송 그룹 탭 (일반 대상자가 있을 때만 일반 탭 + 각 그룹) — 그룹이 있을 때만 노출
                     const activeGroups = activeRound.customGroups.filter(g => g.types.length > 0);
                     const groupTabs = activeGroups.length > 0
-                      ? [{ id: 'general', label: '일반' }, ...activeGroups.map(g => ({ id: g.id, label: g.types.join('·') }))]
+                      ? [...(activeRound.generalLeaderIds.length > 0 ? [{ id: 'general', label: '일반' }] : []), ...activeGroups.map(g => ({ id: g.id, label: g.types.join('·') }))]
                       : [];
-                    const curGroup = groupTabs.some(t => t.id === previewGroupId) ? previewGroupId : 'general';
+                    const curGroup = groupTabs.some(t => t.id === previewGroupId) ? previewGroupId : (groupTabs[0]?.id ?? 'general');
                     const generalGen = generatedContent[previewTab] ?? livePreviewContent[`${previewTab}:general`];
                     const displayGenerated = curGroup === 'general' ? generalGen : livePreviewContent[`${previewTab}:${curGroup}`];
                     const contentTab = previewContentTab[previewTab] ?? 'full';
