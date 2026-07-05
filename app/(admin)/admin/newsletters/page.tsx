@@ -798,14 +798,15 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
   const roundNums = Array.from(new Set(types.flatMap(t => t.visibleRounds.map(r => r.round)))).sort((a, b) => a - b);
 
   // 같은 뉴스레터(=동일 발송 본문)를 받는 유형끼리 묶는다. authoring이 있으면 그 안에서 발송 그룹으로 세분화.
-  function sendGroupsFor(typesInRound: typeof types, rn: number) {
+  // 주제는 그룹별(authoring customGroup.topic) — 없으면 회차 공통 주제(fallbackTopic)로 폴백.
+  function sendGroupsFor(typesInRound: typeof types, rn: number, fallbackTopic: string | null) {
     const byNl = new Map<number | undefined, typeof types>();
     for (const t of typesInRound) {
       const arr = byNl.get(t.newsletterId) ?? [];
       arr.push(t);
       byNl.set(t.newsletterId, arr);
     }
-    const result: { label: string; members: typeof types }[] = [];
+    const result: { label: string; members: typeof types; topic: string | null }[] = [];
     for (const [nlId, members] of byNl) {
       const nl = newsletters.find(n => n.id === nlId);
       const cgs = nl?.authoring?.rounds?.[rn - 1]?.customGroups;
@@ -815,13 +816,13 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
           const mem = members.filter(t => cg.types.includes(t.typeName));
           if (mem.length === 0) continue;
           mem.forEach(m => used.add(m.typeName));
-          result.push({ label: mem.map(m => m.typeName).join(' · '), members: mem });
+          result.push({ label: mem.map(m => m.typeName).join(' · '), members: mem, topic: cg.topic?.trim() || fallbackTopic });
         }
         const rest = members.filter(t => !used.has(t.typeName));
-        if (rest.length) result.push({ label: rest.map(m => m.typeName).join(' · '), members: rest });
+        if (rest.length) result.push({ label: rest.map(m => m.typeName).join(' · '), members: rest, topic: fallbackTopic });
       } else {
-        // authoring 없음 → 같은 뉴스레터를 받는 유형은 한 그룹으로
-        result.push({ label: members.map(m => m.typeName).join(' · '), members });
+        // authoring 없음 → 같은 뉴스레터를 받는 유형은 한 그룹으로 (회차 공통 주제)
+        result.push({ label: members.map(m => m.typeName).join(' · '), members, topic: fallbackTopic });
       }
     }
     return result;
@@ -837,7 +838,7 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
         const roundKey = `c${company.companyId}-r${rn}`;
         const open = openKeys.has(roundKey);
         const isDone = rep.status === 'completed';
-        const groups = sendGroupsFor(typesInRound, rn);
+        const groups = sendGroupsFor(typesInRound, rn, rep.topic);
         return (
           <div key={rn}>
             {/* 회차 헤더 */}
@@ -845,7 +846,7 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
               className="w-full flex items-center gap-3 pl-8 pr-5 py-2.5 bg-gray-50 hover:bg-gray-100/70 border-b border-gray-100 transition-colors text-left">
               <span className="text-xs font-bold text-gray-700 w-11 flex-shrink-0">{rn}회차</span>
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium flex-shrink-0 w-9 text-center">{rep.stage}</span>
-              <span className={`flex-1 text-sm min-w-0 truncate ${rep.topic ? 'text-gray-600' : 'text-gray-300 italic'}`}>{rep.topic ?? '주제 미선정'}</span>
+              <span className="flex-1" />
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 ${isDone ? 'bg-emerald-50 text-emerald-600' : 'bg-[#55A4DA]/10 text-[#55A4DA]'}`}>{isDone ? '제작완료' : '제작 중'}</span>
               <span className="text-xs text-gray-400">{totalCount}명</span>
               <svg className={`w-3.5 h-3.5 text-gray-400 flex-shrink-0 transition-transform duration-150 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
@@ -863,7 +864,8 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
                       checked={allSel} onChange={e => onSelectRoundBulk(ids, e.target.checked)} />
                   )}
                   <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#EAF4FC] text-[#2E7DB5] flex-shrink-0">{grp.label}</span>
-                  <span className="text-xs text-gray-500 flex-1">{count}명</span>
+                  <span className={`flex-1 text-sm min-w-0 truncate ${grp.topic ? 'text-gray-600' : 'text-gray-300 italic'}`}>{grp.topic ?? '주제 미선정'}</span>
+                  <span className="text-xs text-gray-400 flex-shrink-0">{count}명</span>
                   {isDone && nl && (
                     <button onClick={() => onToggleSaved(nl.id, rn)}
                       className={`flex-shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors ${nl.savedRounds?.includes(rn) ? 'text-[#55A4DA]' : 'text-gray-300 hover:text-[#55A4DA]'}`}
