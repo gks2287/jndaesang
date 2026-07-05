@@ -2141,9 +2141,10 @@ function ConfigureContent() {
               <p className="text-xs text-gray-400">회차별로 그룹 단위 대상 리더를 설정합니다. 유형을 드래그해 그룹 간 이동할 수 있습니다.</p>
             </div>
 
-            {/* 회차 탭 */}
+            {/* 회차 탭 + 전 회차 동일하게 (같은 줄) */}
             {rounds.length > 0 && (
-              <div className="flex gap-2 flex-wrap">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex gap-2 flex-wrap">
                 {rounds.map((r, idx) => {
                   const s = customStoryline[r.stepIndex];
                   const isActive = idx === distributionRoundIdx;
@@ -2160,20 +2161,19 @@ function ConfigureContent() {
                     </button>
                   );
                 })}
+                </div>
+                {rounds.length > 1 && (
+                  <button
+                    onClick={() => { if (confirm('현재 회차의 유형 배분을 다른 모든 회차에 동일하게 적용할까요?')) applyDistributionToAll(); }}
+                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border border-[#55A4DA] bg-[#55A4DA] text-white hover:bg-[#3A8BC4] transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                    </svg>
+                    전 회차 동일하게
+                  </button>
+                )}
               </div>
-            )}
-
-            {/* 전 회차 동일하게 — 현재 회차의 배분을 모든 회차에 복사 */}
-            {rounds.length > 1 && (
-              <button
-                onClick={() => { if (confirm('현재 회차의 유형 배분을 다른 모든 회차에 동일하게 적용할까요?')) applyDistributionToAll(); }}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border border-[#55A4DA] bg-[#55A4DA] text-white hover:bg-[#3A8BC4] transition-colors mr-2"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                </svg>
-                전 회차 동일하게
-              </button>
             )}
 
             {/* 이전 회차와 동일하게 — 2회차부터 노출 (1회차는 복사할 이전 회차가 없음) */}
