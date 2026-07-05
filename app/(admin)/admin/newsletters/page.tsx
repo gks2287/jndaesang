@@ -480,19 +480,34 @@ function SendRoundModal({ company, newsletters, participants, onClose }: {
       n.generatedContent && n.generatedContent.rounds.length > 0),
     [newsletters, company.companyId],
   );
-  // 뉴스레터 유형에 매칭되는 직책자 (미지정/전체 대상이면 그 회사 전체)
-  const matchParticipants = (nl: Newsletter): Participant[] => {
-    const generic = !nl.leadershipType || nl.leadershipType === '미지정';
-    return participants.filter(p =>
-      p.companyId === company.companyId && (generic || p.leadershipType === nl.leadershipType));
+  // 회차별 발송 그룹 목록 — authoring의 customGroups 기준(유형 묶음별). 없으면 전체 대상 1그룹.
+  type SendGroup = { key: string; label: string; recipients: Participant[] };
+  const sendGroupsForRound = (nl: Newsletter, roundIdx: number): SendGroup[] => {
+    const cgs = nl.authoring?.rounds?.[roundIdx]?.customGroups?.filter(g => g.types.length > 0);
+    if (cgs && cgs.length > 0) {
+      return cgs.map(cg => ({
+        key: cg.types.join(','),
+        label: cg.types.join(' · '),
+        recipients: participants.filter(p => p.companyId === company.companyId && cg.types.includes(p.leadershipType)),
+      }));
+    }
+    // authoring 없음 → 유형별 전체(그 회사 참여자를 유형 단위로 묶어 각각 발송 가능하게)
+    const types = [...new Set(participants.filter(p => p.companyId === company.companyId).map(p => p.leadershipType).filter(Boolean))];
+    if (types.length > 0) {
+      return types.map(t => ({
+        key: t,
+        label: t,
+        recipients: participants.filter(p => p.companyId === company.companyId && p.leadershipType === t),
+      }));
+    }
+    return [{ key: 'all', label: '전체 대상', recipients: participants.filter(p => p.companyId === company.companyId) }];
   };
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
-  const toggle = (nlId: number, round: number) => {
-    const k = `${nlId}-${round}`;
+  const toggle = (k: string) => {
     setSelected(prev => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   };
 
@@ -502,20 +517,23 @@ function SendRoundModal({ company, newsletters, participants, onClose }: {
     let sent = 0; const errs: string[] = [];
     try {
       for (const nl of companyNLs) {
-        const recipients = matchParticipants(nl).map(p => ({ email: p.email, name: p.name, token: participantToken(p) }));
-        if (recipients.length === 0) continue;
         const rounds = nl.generatedContent!.rounds;
         for (let i = 0; i < rounds.length; i++) {
-          if (!selected.has(`${nl.id}-${i + 1}`)) continue;
           const round = rounds[i];
-          try {
-            const res = await fetch('/api/newsletter/send', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ recipients, round: { vol: round.vol, dateLabel: round.dateLabel, generated: round.generated }, companyName: company.companyName }),
-            });
-            if (res.ok) { const d = await res.json(); sent += d.sent ?? recipients.length; }
-            else { const e = await res.json().catch(() => ({})); errs.push(`${i + 1}회차: ${e.error ?? '발송 실패'}`); }
-          } catch { errs.push(`${i + 1}회차: 네트워크 오류`); }
+          for (const g of sendGroupsForRound(nl, i)) {
+            const k = `${nl.id}-${i + 1}-${g.key}`;
+            if (!selected.has(k)) continue;
+            const recipients = g.recipients.map(p => ({ email: p.email, name: p.name, token: participantToken(p) }));
+            if (recipients.length === 0) continue;
+            try {
+              const res = await fetch('/api/newsletter/send', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ recipients, round: { vol: round.vol, dateLabel: round.dateLabel, generated: round.generated }, companyName: company.companyName }),
+              });
+              if (res.ok) { const d = await res.json(); sent += d.sent ?? recipients.length; }
+              else { const e = await res.json().catch(() => ({})); errs.push(`${i + 1}회차 ${g.label}: ${e.error ?? '발송 실패'}`); }
+            } catch { errs.push(`${i + 1}회차 ${g.label}: 네트워크 오류`); }
+          }
         }
       }
       setResult({ ok: errs.length === 0, msg: errs.length ? `${sent}건 발송 · 일부 실패\n${errs.join('\n')}` : `${sent}건의 이메일을 발송했습니다.` });
@@ -526,11 +544,11 @@ function SendRoundModal({ company, newsletters, participants, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white w-full max-w-lg max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="bg-white w-full max-w-3xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
           <div>
             <h3 className="text-sm font-bold text-gray-800">{company.companyName} 뉴스레터 발송</h3>
-            <p className="text-xs text-gray-400 mt-0.5">보낼 회차를 선택하세요 · 유형에 맞는 직책자에게 발송됩니다</p>
+            <p className="text-xs text-gray-400 mt-0.5">회차·리더십 유형 그룹별로 선택해 해당 직책자에게 발송합니다</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -541,31 +559,39 @@ function SendRoundModal({ company, newsletters, participants, onClose }: {
           {companyNLs.length === 0 && (
             <p className="text-sm text-gray-400 text-center py-8">발송 가능한 제작완료 뉴스레터가 없습니다.</p>
           )}
-          {companyNLs.map(nl => {
-            const recips = matchParticipants(nl);
-            const typeLabel = !nl.leadershipType || nl.leadershipType === '미지정' ? '전체 대상' : nl.leadershipType;
-            return (
-              <div key={nl.id} className="rounded-xl border border-gray-100 overflow-hidden">
-                <div className="px-4 py-2.5 bg-gray-50/70 flex items-center justify-between">
-                  <span className="text-xs font-bold text-gray-700">{typeLabel}</span>
-                  <span className={`text-[11px] ${recips.length === 0 ? 'text-red-400' : 'text-gray-400'}`}>수신 직책자 {recips.length}명</span>
-                </div>
-                <div className="divide-y divide-gray-50">
-                  {nl.generatedContent!.rounds.map((r, i) => {
-                    const k = `${nl.id}-${i + 1}`;
-                    const disabled = recips.length === 0;
-                    return (
-                      <label key={k} className={`flex items-center gap-3 px-4 py-2.5 ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-50/60'}`}>
-                        <input type="checkbox" disabled={disabled} checked={selected.has(k)} onChange={() => toggle(nl.id, i + 1)} className="w-4 h-4 rounded border-gray-300 text-[#55A4DA] focus:ring-[#55A4DA]/30" />
-                        <span className="text-sm text-gray-700">Vol.{r.vol} · {i + 1}회차</span>
-                        <span className="text-xs text-gray-400 truncate flex-1">{r.generated?.headline ?? ''}</span>
-                      </label>
-                    );
-                  })}
-                </div>
+          {companyNLs.map(nl => (
+            <div key={nl.id} className="rounded-xl border border-gray-100 overflow-hidden">
+              <div className="px-4 py-2.5 bg-gray-50/70">
+                <span className="text-xs font-bold text-gray-700">{nl.title}</span>
               </div>
-            );
-          })}
+              <div className="divide-y divide-gray-100">
+                {nl.generatedContent!.rounds.map((r, i) => {
+                  const groups = sendGroupsForRound(nl, i);
+                  return (
+                    <div key={`${nl.id}-r${i + 1}`} className="px-4 py-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-bold text-gray-600">Vol.{r.vol} · {i + 1}회차</span>
+                        <span className="text-xs text-gray-400 truncate flex-1">{r.generated?.headline ?? ''}</span>
+                      </div>
+                      <div className="space-y-1.5 pl-1">
+                        {groups.map(g => {
+                          const k = `${nl.id}-${i + 1}-${g.key}`;
+                          const disabled = g.recipients.length === 0;
+                          return (
+                            <label key={k} className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border ${disabled ? 'opacity-50 cursor-not-allowed border-gray-100' : 'cursor-pointer border-gray-200 hover:bg-gray-50/60'}`}>
+                              <input type="checkbox" disabled={disabled} checked={selected.has(k)} onChange={() => toggle(k)} className="w-4 h-4 rounded border-gray-300 text-[#55A4DA] focus:ring-[#55A4DA]/30" />
+                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#EAF4FC] text-[#2E7DB5]">{g.label}</span>
+                              <span className={`text-[11px] flex-1 text-right ${disabled ? 'text-red-400' : 'text-gray-400'}`}>수신 {g.recipients.length}명</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
           {result && (
             <p className={`text-sm whitespace-pre-line ${result.ok ? 'text-emerald-600' : 'text-amber-600'}`}>{result.msg}</p>
           )}
