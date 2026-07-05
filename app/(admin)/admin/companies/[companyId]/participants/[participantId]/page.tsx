@@ -97,7 +97,12 @@ export default function ParticipantDetailPage() {
   const company = useCompanyStore(s => s.companies.find(c => c.id === companyId));
   const participant = useParticipantStore(s => s.participants.find(p => p.id === participantId));
   const updateParticipant = useParticipantStore(s => s.updateParticipant);
-  const companyParticipants = useParticipantStore(s => s.participants.filter(p => p.companyId === companyId));
+  // 셀렉터에서 새 배열을 만들면 React18 useSyncExternalStore 무한 루프가 나므로 raw 선택 후 useMemo로 필터
+  const allParticipantsRaw = useParticipantStore(s => s.participants);
+  const companyParticipants = useMemo(
+    () => allParticipantsRaw.filter(p => p.companyId === companyId),
+    [allParticipantsRaw, companyId],
+  );
   const rawHistory = useDiagnosisHistoryStore(s => s.history);
   const diagnosisHistory = useMemo(
     () => rawHistory.filter(h => h.participantId === participantId).sort((a, b) => b.id - a.id),
