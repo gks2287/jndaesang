@@ -513,7 +513,7 @@ function ConfigureContent() {
     const r = rounds[activeRoundIdx];
     if (!r) return;
     const activeGroups = r.customGroups.filter(g => g.types.length > 0);
-    const tabs = [{ id: 'general', label: '일반형' }, ...activeGroups.map((g) => ({ id: g.id, label: g.types.join('·') || '새 그룹' }))];
+    const tabs = [...(r.generalLeaderIds.length > 0 ? [{ id: 'general', label: '일반형' }] : []), ...activeGroups.map((g) => ({ id: g.id, label: g.types.join('·') || '새 그룹' }))];
     const currentTarget = tabs.some(t => t.id === previewTargetId) ? previewTargetId : (tabs[0]?.id ?? 'general');
     const key = `${activeRoundIdx}:${currentTarget}`;
     setLivePreviewContent(prev => {
@@ -2408,7 +2408,7 @@ function ConfigureContent() {
                 const r = rounds[activeRoundIdx];
                 if (!r) return null;
                 const activeGroups = r.customGroups.filter(g => g.types.length > 0);
-                const tabs = [{ id: 'general', label: '일반형' }, ...activeGroups.map((g) => ({ id: g.id, label: g.types.join('·') || '새 그룹' }))];
+                const tabs = [...(r.generalLeaderIds.length > 0 ? [{ id: 'general', label: '일반형' }] : []), ...activeGroups.map((g) => ({ id: g.id, label: g.types.join('·') || '새 그룹' }))];
                 const currentTarget = tabs.some(t => t.id === previewTargetId) ? previewTargetId : (tabs[0]?.id ?? 'general');
                 return (
                   <div className="flex gap-1.5 flex-wrap">
@@ -2428,7 +2428,7 @@ function ConfigureContent() {
                   const r = rounds[activeRoundIdx];
                   if (!r) return null;
                   const activeGroups = r.customGroups.filter(g => g.types.length > 0);
-                  const tabs = [{ id: 'general', label: '일반형' }, ...activeGroups.map((g) => ({ id: g.id, label: g.types.join('·') || '새 그룹' }))];
+                  const tabs = [...(r.generalLeaderIds.length > 0 ? [{ id: 'general', label: '일반형' }] : []), ...activeGroups.map((g) => ({ id: g.id, label: g.types.join('·') || '새 그룹' }))];
                   const current = tabs.some(t => t.id === previewTargetId) ? previewTargetId : (tabs[0]?.id ?? 'general');
                   // 현재 미리보기 대상 설명 (우측 헤더와 동일 표현)
                   const targetDesc = (() => {
@@ -2520,7 +2520,7 @@ function ConfigureContent() {
               if (!r) return null;
               const s = customStoryline[r.stepIndex];
               const activeGroups = r.customGroups.filter(g => g.types.length > 0);
-              const tabs = [{ id: 'general', label: '일반형' }, ...activeGroups.map((g) => ({ id: g.id, label: g.types.join('·') || '새 그룹' }))];
+              const tabs = [...(r.generalLeaderIds.length > 0 ? [{ id: 'general', label: '일반형' }] : []), ...activeGroups.map((g) => ({ id: g.id, label: g.types.join('·') || '새 그룹' }))];
               const currentTarget = tabs.some(t => t.id === previewTargetId) ? previewTargetId : (tabs[0]?.id ?? 'general');
               return (
                 <div className="space-y-4">
