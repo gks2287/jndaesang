@@ -507,7 +507,7 @@ function ConfigureContent() {
     const r = rounds[activeRoundIdx];
     if (!r) return;
     const activeGroups = r.customGroups.filter(g => g.types.length > 0);
-    const tabs = [{ id: 'general', label: '일반형' }, ...activeGroups.map((g, gi) => ({ id: g.id, label: `그룹 ${gi + 1}` }))];
+    const tabs = [{ id: 'general', label: '일반형' }, ...activeGroups.map((g) => ({ id: g.id, label: g.types.join('·') || '새 그룹' }))];
     const currentTarget = tabs.some(t => t.id === previewTargetId) ? previewTargetId : (tabs[0]?.id ?? 'general');
     const key = `${activeRoundIdx}:${currentTarget}`;
     setLivePreviewContent(prev => {
@@ -2186,7 +2186,10 @@ function ConfigureContent() {
                   const next = targetGroupId === 'general'
                     ? stripped
                     : stripped.map(g => g.id === targetGroupId ? { ...g, types: g.types.includes(type) ? g.types : [...g.types, type] } : g);
-                  const withCounts = next.map(g => ({ ...g, leaderIds: selectedParticipants.filter(p => g.types.includes(p.leadershipType)).map(p => p.id) }));
+                  // 유형이 모두 빠진(빈) 그룹은 박스 자동 제거
+                  const withCounts = next
+                    .filter(g => g.types.length > 0)
+                    .map(g => ({ ...g, leaderIds: selectedParticipants.filter(p => g.types.includes(p.leadershipType)).map(p => p.id) }));
                   return { ...round, customGroups: withCounts };
                 }));
               }
@@ -2294,7 +2297,7 @@ function ConfigureContent() {
                             className={`rounded-xl border transition-all ${dragOverTarget === g.id ? 'border-[#55A4DA] bg-[#55A4DA]/5' : 'border-gray-200 bg-gray-50/40'}`}
                           >
                             <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2">
-                              <p className="text-xs font-bold text-[#2E7DB5] flex-1">그룹 {gi + 1}</p>
+                              <p className="text-xs font-bold text-[#2E7DB5] flex-1">{g.types.length > 0 ? g.types.join(' · ') : '새 그룹'}</p>
                               <span className="text-[10px] font-semibold text-gray-500 bg-white px-2 py-0.5 rounded-full">{groupCount}명</span>
                               <button onClick={() => removeGroup(g.id)} className="text-gray-300 hover:text-red-400 transition-colors flex-shrink-0" title="그룹 삭제">
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -2377,7 +2380,7 @@ function ConfigureContent() {
                 const r = rounds[activeRoundIdx];
                 if (!r) return null;
                 const activeGroups = r.customGroups.filter(g => g.types.length > 0);
-                const tabs = [{ id: 'general', label: '일반형' }, ...activeGroups.map((g, gi) => ({ id: g.id, label: `그룹 ${gi + 1}` }))];
+                const tabs = [{ id: 'general', label: '일반형' }, ...activeGroups.map((g) => ({ id: g.id, label: g.types.join('·') || '새 그룹' }))];
                 const currentTarget = tabs.some(t => t.id === previewTargetId) ? previewTargetId : (tabs[0]?.id ?? 'general');
                 return (
                   <div className="flex gap-1.5 flex-wrap">
@@ -2397,7 +2400,7 @@ function ConfigureContent() {
                   const r = rounds[activeRoundIdx];
                   if (!r) return null;
                   const activeGroups = r.customGroups.filter(g => g.types.length > 0);
-                  const tabs = [{ id: 'general', label: '일반형' }, ...activeGroups.map((g, gi) => ({ id: g.id, label: `그룹 ${gi + 1}` }))];
+                  const tabs = [{ id: 'general', label: '일반형' }, ...activeGroups.map((g) => ({ id: g.id, label: g.types.join('·') || '새 그룹' }))];
                   const current = tabs.some(t => t.id === previewTargetId) ? previewTargetId : (tabs[0]?.id ?? 'general');
                   // 현재 미리보기 대상 설명 (우측 헤더와 동일 표현)
                   const targetDesc = (() => {
@@ -2412,7 +2415,7 @@ function ConfigureContent() {
                     }
                     const gi = activeGroups.findIndex(g => g.id === current);
                     const g = activeGroups[gi];
-                    return { title: `맞춤형 그룹 ${gi + 1}`, detail: g ? g.types.join('+') : '', count: g?.leaderIds.length ?? 0 };
+                    return { title: g ? g.types.join(' · ') : '맞춤형', detail: '', count: g?.leaderIds.length ?? 0 };
                   })();
                   const previewKey = `${activeRoundIdx}:${current}`;
                   const canRefine = revealedPreviews.has(previewKey) && !!livePreviewContent[previewKey];
@@ -2489,7 +2492,7 @@ function ConfigureContent() {
               if (!r) return null;
               const s = customStoryline[r.stepIndex];
               const activeGroups = r.customGroups.filter(g => g.types.length > 0);
-              const tabs = [{ id: 'general', label: '일반형' }, ...activeGroups.map((g, gi) => ({ id: g.id, label: `그룹 ${gi + 1}` }))];
+              const tabs = [{ id: 'general', label: '일반형' }, ...activeGroups.map((g) => ({ id: g.id, label: g.types.join('·') || '새 그룹' }))];
               const currentTarget = tabs.some(t => t.id === previewTargetId) ? previewTargetId : (tabs[0]?.id ?? 'general');
               return (
                 <div className="space-y-4">
@@ -2558,7 +2561,7 @@ function ConfigureContent() {
                       <div key={g.id} className="bg-[#F0F7FF] rounded-xl p-6 space-y-4">
                         <div>
                           <div className="flex items-center justify-between gap-2">
-                            <p className="text-lg font-semibold text-gray-900">맞춤형 그룹 {gi + 1}</p>
+                            <p className="text-lg font-semibold text-gray-900">{g.types.join(' · ')}</p>
                             <span className="text-sm text-gray-500 flex-shrink-0">{g.leaderIds.length}명</span>
                           </div>
                           <div className="flex flex-wrap gap-1.5 mt-2">
