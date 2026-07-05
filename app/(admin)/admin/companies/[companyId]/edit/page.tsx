@@ -240,10 +240,16 @@ export default function CompanyEditPage() {
   }
   function cancelEdit() { setEditingId(null); setEditForm(null); }
 
+  // 추가 행 열기 — 리더십 유형 기본값을 이 기업 카탈로그(파일 워딩) 첫 유형으로 세팅
+  function openAddRow() {
+    setAddForm({ companyId, year: selectedYear, name: '', department: '', position: '', email: '', leadershipType: (typeOptions[0] ?? '미지정') as LeadershipType, assessmentRound: 1 });
+    setShowAddRow(true);
+  }
+
   function saveAddRow() {
     if (!addForm.name.trim()) return;
     addParticipants([{ ...addForm, year: selectedYear, companyId, deliveryStatus: '미발송', lastOpenedAt: null, stepCurrent: 0, stepTotal: 6 }]);
-    setAddForm({ companyId, year: selectedYear, name: '', department: '', position: '', email: '', leadershipType: '불명확형', assessmentRound: 1 });
+    setAddForm({ companyId, year: selectedYear, name: '', department: '', position: '', email: '', leadershipType: (typeOptions[0] ?? '미지정') as LeadershipType, assessmentRound: 1 });
     setShowAddRow(false);
   }
 
@@ -550,7 +556,7 @@ export default function CompanyEditPage() {
                       </div>
                     </button>
                     <button
-                      onClick={() => { setAddMenuOpen(false); setShowAddRow(true); cancelEdit(); }}
+                      onClick={() => { setAddMenuOpen(false); openAddRow(); cancelEdit(); }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-700 hover:bg-[#55A4DA]/8 hover:text-[#2E7DB5] transition-colors group"
                     >
                       <span className="w-8 h-8 rounded-lg bg-gray-100 group-hover:bg-[#55A4DA]/15 flex items-center justify-center transition-colors flex-shrink-0">
@@ -623,7 +629,7 @@ export default function CompanyEditPage() {
                   <input value={addForm.position} onChange={e => setAddForm(f => ({ ...f, position: e.target.value }))} placeholder="직책" className={rowInputCls} />
                   <input value={addForm.email} onChange={e => setAddForm(f => ({ ...f, email: e.target.value }))} placeholder="이메일" className={rowInputCls} />
                   <select value={addForm.leadershipType} onChange={e => setAddForm(f => ({ ...f, leadershipType: e.target.value as LeadershipType }))} className={rowInputCls}>
-                    {LEADERSHIP_TYPES.map(t => <option key={t}>{t}</option>)}
+                    {typeOptions.map(t => <option key={t}>{t}</option>)}
                   </select>
                   <input type="number" min={1} max={9} value={addForm.assessmentRound} onChange={e => setAddForm(f => ({ ...f, assessmentRound: Number(e.target.value) }))} className={rowInputCls} />
                   <div className="flex items-center gap-1 justify-end">
