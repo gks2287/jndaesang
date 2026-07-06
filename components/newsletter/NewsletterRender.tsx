@@ -169,13 +169,9 @@ export function renderSectionHeader(_emoji: string, title: string, eyebrow?: str
 }
 
 // 인터랙션 템플릿: 선택된 타입을 AI 생성과 무관하게 예시 UI로 즉시 렌더
-export function renderInteractionTemplates(types: InteractionTypeKey[]) {
+export function renderInteractionTemplates(types: InteractionTypeKey[], headerless = false) {
   if (types.length === 0) return null;
-  return (
-    <>
-      {renderSectionHeader('🎯', '함께 생각해봐요', 'Interaction')}
-      <div className="space-y-5">
-        {types.map(type => {
+  const cards = types.map(type => {
           if (type === 'quiz') {
             return (
               <div key={type} className="rounded-2xl p-6 space-y-3 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
@@ -259,8 +255,12 @@ export function renderInteractionTemplates(types: InteractionTypeKey[]) {
               </div>
             </div>
           );
-        })}
-      </div>
+  });
+  if (headerless) return <>{cards}</>;
+  return (
+    <>
+      {renderSectionHeader('🎯', '함께 생각해봐요', 'Interaction')}
+      <div className="space-y-5">{cards}</div>
     </>
   );
 }
@@ -485,7 +485,6 @@ function HeroOverlay({ sources, label, children }: {
 // 전체 본문 렌더 (실시간 미리보기·미리보기 모달·제작완료 미리보기 공통)
 export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: FullBodyOpts) {
   const { vol, dateLabel, leadershipLabel, templateInteractions, templateSurveys, templateSurveyContentLabels, templateSurveyInteractionLabels, onInlineEdit } = opts;
-  const useTemplateInteractions = templateInteractions !== undefined;
   const useTemplateSurveys = templateSurveys !== undefined;
   const e = onInlineEdit; // shorthand
 
@@ -736,13 +735,16 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
           })}
         </div>
 
-        {/* 인터랙션 — 실제 생성 내용이 있으면 그것을 우선 렌더, 없을 때만 예시 템플릿으로 폴백 */}
-        {useTemplateInteractions && generated.interactions.length === 0 && renderInteractionTemplates(templateInteractions!)}
-        {generated.interactions.length > 0 && (
+        {/* 인터랙션 — AI 생성 항목은 실제 렌더 + 선택했지만 아직 생성 안 된 타입은 템플릿으로 즉시 표시 */}
+        {(() => {
+          const genList = generated.interactions ?? [];
+          const missing = (templateInteractions ?? []).filter(t => !genList.some(i => i.type === t));
+          if (genList.length === 0 && missing.length === 0) return null;
+          return (
           <>
             {renderSectionHeader('🎯', '함께 생각해봐요', 'Interaction')}
             <div className="space-y-5">
-              {generated.interactions.map((ia, idx) => {
+              {genList.map((ia, idx) => {
                 if (ia.type === 'quiz') {
                   const c = ia.content as { question: string; options: string[]; answer: number };
                   return (
@@ -834,9 +836,11 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
                 }
                 return null;
               })}
+              {renderInteractionTemplates(missing, true)}
             </div>
           </>
-        )}
+          );
+        })()}
 
         {/* 만족도 — 템플릿 override 시 선택된 타입을 즉시 렌더 */}
         {useTemplateSurveys && renderSurveyTemplates(templateSurveys!, { contentLabels: templateSurveyContentLabels, interactionLabels: templateSurveyInteractionLabels })}
