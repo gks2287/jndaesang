@@ -981,38 +981,6 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
   const totalCount = distinctRounds.length;
   const progressPct = totalCount > 0 ? Math.round(completedCount / totalCount * 100) : 0;
 
-  const availableRoundNums = useMemo(() => {
-    const nums = new Set<number>();
-    allRounds.filter(r => r.status === 'completed').forEach(r => nums.add(r.round));
-    return Array.from(nums).sort((a, b) => a - b);
-  }, [allRounds]);
-
-
-  // 회차번호 → 해당 회차의 모든 "유형명-회차번호" selectionId 목록
-  const roundToSelectionIds = useMemo(() => {
-    const map = new Map<number, string[]>();
-    company.groups.forEach(g => {
-      if (g.polarity === 'positive') {
-        // 긍정 리더는 회차 번호 기준 통합 selectionId 사용 (TypeRow 없이 렌더)
-        const seen = new Set<number>();
-        g.types.forEach(t => t.rounds.filter(r => r.status === 'completed').forEach(r => {
-          if (seen.has(r.round)) return;
-          seen.add(r.round);
-          const arr = map.get(r.round) ?? [];
-          arr.push(`긍정 리더-${r.round}`);
-          map.set(r.round, arr);
-        }));
-      } else {
-        g.types.forEach(t => t.rounds.filter(r => r.status === 'completed').forEach(r => {
-          const arr = map.get(r.round) ?? [];
-          arr.push(`${t.typeName}-${r.round}`);
-          map.set(r.round, arr);
-        }));
-      }
-    });
-    return map;
-  }, [company.groups]);
-
   if (!hasVisible) return null;
 
   return (
@@ -1084,26 +1052,6 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
             onPreview={onPreview} activeTab={activeTab} onToggleSaved={onToggleSaved}
             onResumeRound={onResumeRound} onEditRound={onEditRound} onEditRoundGroups={onEditRoundGroups} />
 
-          {/* 회차별 전체선택 */}
-          {isCompleteTab && availableRoundNums.length > 0 && (
-            <div className="border-t border-gray-100 px-5 py-2.5 bg-gray-50/40 flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-gray-400 font-medium flex-shrink-0">회차별 전체선택:</span>
-              {availableRoundNums.map(num => {
-                const ids = roundToSelectionIds.get(num) ?? [];
-                const isActive = ids.length > 0 && ids.every(id => selectedIds.has(id));
-                return (
-                  <button key={num} onClick={() => onSelectRoundBulk(ids, !isActive)}
-                    className={`text-xs font-semibold px-2.5 py-1 rounded-lg border transition-colors ${
-                      isActive
-                        ? 'bg-[#55A4DA] border-[#55A4DA] text-white'
-                        : 'bg-white border-gray-200 text-gray-500 hover:border-[#55A4DA] hover:text-[#55A4DA]'
-                    }`}>
-                    {num}회차
-                  </button>
-                );
-              })}
-            </div>
-          )}
         </>
       )}
     </div>
