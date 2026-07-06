@@ -904,6 +904,12 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
                     </button>
                   )}
                   <div className="flex-shrink-0 flex items-center gap-1.5">
+                    <button
+                      onClick={() => { if (nl) onEditRound(nl, rn - 1); }}
+                      disabled={!nl}
+                      className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 transition-colors whitespace-nowrap disabled:opacity-50"
+                      title="수정하기 · 콘텐츠 구성(5단계)"
+                    >수정하기</button>
                     {isDone ? (
                       <button onClick={() => onPreview({ companyName: company.companyName, polarity: 'negative', typeName: grp.label, count, round: rep })}
                         className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors whitespace-nowrap">미리보기</button>
@@ -914,12 +920,6 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
                         className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-[#55A4DA]/10 text-[#55A4DA] hover:bg-[#55A4DA]/20 transition-colors whitespace-nowrap disabled:opacity-50"
                       >이어만들기</button>
                     )}
-                    <button
-                      onClick={() => { if (nl) onEditRound(nl, rn - 1); }}
-                      disabled={!nl}
-                      className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 transition-colors whitespace-nowrap disabled:opacity-50"
-                      title="수정하기 · 콘텐츠 구성(5단계)"
-                    >수정하기</button>
                   </div>
                 </div>
               );
@@ -1022,18 +1022,6 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
           </div>
         </div>
         <span className="text-xs text-gray-400 flex-shrink-0">{formatRelativeTime(company.updatedAt)}</span>
-        {completedCount > 0 && (
-          <button
-            onClick={e => { e.stopPropagation(); onSend(company); }}
-            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#55A4DA] hover:bg-[#3A8BC4] text-white text-xs font-semibold transition-colors"
-            title="발송"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
-            </svg>
-            발송
-          </button>
-        )}
         {companyNewsletters.length > 0 && (
           <button
             onClick={e => { e.stopPropagation(); onEditTypes(companyNewsletters[0]); }}
@@ -1044,6 +1032,18 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
             </svg>
             수정하기
+          </button>
+        )}
+        {completedCount > 0 && (
+          <button
+            onClick={e => { e.stopPropagation(); onSend(company); }}
+            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#55A4DA] hover:bg-[#3A8BC4] text-white text-xs font-semibold transition-colors"
+            title="발송"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+            </svg>
+            발송
           </button>
         )}
         <button
