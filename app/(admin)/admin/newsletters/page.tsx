@@ -805,7 +805,7 @@ function PolarityRow({ group, companyId, companyName, openKeys, onToggle, isComp
 }
 
 // ── 회차 우선 뷰: 회차 → 발송 그룹 ──────────────────────────────────
-function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTab, selectedIds, onSelectRoundBulk, onPreview, activeTab, onToggleSaved, onResumeRound, onEditRound }: {
+function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTab, selectedIds, onSelectRoundBulk, onPreview, activeTab, onToggleSaved, onResumeRound, onEditRound, onEditRoundGroups }: {
   company: CompanyData; newsletters: Newsletter[];
   openKeys: Set<string>; onToggle: (k: string) => void; isCompleteTab: boolean;
   selectedIds: Set<string>;
@@ -814,6 +814,7 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
   onToggleSaved: (nlId: number, roundNum: number) => void;
   onResumeRound: (nl: Newsletter, roundIdx: number) => void;
   onEditRound: (nl: Newsletter, roundIdx: number) => void;
+  onEditRoundGroups: (nl: Newsletter, roundIdx: number) => void;
 }) {
   const types = useMemo(() => {
     const all = company.groups.flatMap(g => g.types)
@@ -869,6 +870,7 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
         const open = openKeys.has(roundKey);
         const isDone = rep.status === 'completed';
         const groups = sendGroupsFor(typesInRound, rn, rep.topic);
+        const roundNl = newsletters.find(n => n.id === typesInRound[0]?.newsletterId);
         return (
           <div key={rn}>
             {/* 회차 헤더 */}
@@ -879,6 +881,17 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
               <span className="flex-1" />
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 ${isDone ? 'bg-emerald-50 text-emerald-600' : 'bg-[#55A4DA]/10 text-[#55A4DA]'}`}>{isDone ? '제작완료' : '제작 중'}</span>
               <span className="text-xs text-gray-400">{totalCount}명</span>
+              <button
+                onClick={e => { e.stopPropagation(); if (roundNl) onEditRoundGroups(roundNl, rn - 1); }}
+                disabled={!roundNl}
+                className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 text-xs font-semibold transition-colors disabled:opacity-50"
+                title="수정하기 · 그룹 설정(4단계)부터"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                수정하기
+              </button>
               <svg className={`w-3.5 h-3.5 text-gray-400 flex-shrink-0 transition-transform duration-150 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
             </button>
             {/* 발송 그룹 행 */}
@@ -932,7 +945,7 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
 }
 
 // ── 1단계: 기업 행 ───────────────────────────────────────────────────
-function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, activeTab, selectedIds, onSelectRound, onSelectRoundBulk, onDelete, onSend, selectedNewsletterIds, onToggleNewsletters, newsletters, onToggleSaved, onContinue, onEdit, onResumeRound, onEditTypes, onEditRound }: {
+function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, activeTab, selectedIds, onSelectRound, onSelectRoundBulk, onDelete, onSend, selectedNewsletterIds, onToggleNewsletters, newsletters, onToggleSaved, onContinue, onEdit, onResumeRound, onEditTypes, onEditRoundGroups, onEditRound }: {
   company: CompanyData; openKeys: Set<string>; onToggle: (k: string) => void;
   isCompleteTab: boolean; onPreview: (t: PreviewTarget) => void; activeTab: TabType;
   selectedIds: Set<string>; onSelectRound: (selectionId: string, checked: boolean) => void;
@@ -944,6 +957,7 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
   onContinue: (nl: Newsletter) => void; onEdit: (nl: Newsletter) => void;
   onResumeRound: (nl: Newsletter, roundIdx: number) => void;
   onEditTypes: (nl: Newsletter) => void;
+  onEditRoundGroups: (nl: Newsletter, roundIdx: number) => void;
   onEditRound: (nl: Newsletter, roundIdx: number) => void;
 }) {
   // 이 기업의 캠페인(뉴스레터) — 이어서/수정 대상
@@ -1026,7 +1040,7 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
           <button
             onClick={e => { e.stopPropagation(); onEditTypes(companyNewsletters[0]); }}
             className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 text-xs font-semibold transition-colors"
-            title="수정하기 · 리더십 유형 분류(4단계)부터"
+            title="수정하기 · 스토리라인 설정(1단계)부터"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -1068,7 +1082,7 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
             openKeys={openKeys} onToggle={onToggle} isCompleteTab={isCompleteTab}
             selectedIds={selectedIds} onSelectRoundBulk={onSelectRoundBulk}
             onPreview={onPreview} activeTab={activeTab} onToggleSaved={onToggleSaved}
-            onResumeRound={onResumeRound} onEditRound={onEditRound} />
+            onResumeRound={onResumeRound} onEditRound={onEditRound} onEditRoundGroups={onEditRoundGroups} />
 
           {/* 회차별 전체선택 */}
           {isCompleteTab && availableRoundNums.length > 0 && (
@@ -1606,7 +1620,8 @@ function NewslettersContent() {
                 onContinue={nl => seedFromNewsletter(nl, 'continue')}
                 onResumeRound={(nl, roundIdx) => seedFromNewsletter(nl, 'continue', { targetRoundIdx: roundIdx })}
                 onEdit={nl => seedFromNewsletter(nl, 'edit', { targetStep: 5 })}
-                onEditTypes={nl => seedFromNewsletter(nl, 'edit', { targetStep: 4 })}
+                onEditTypes={nl => seedFromNewsletter(nl, 'edit', { targetStep: 1 })}
+                onEditRoundGroups={(nl, roundIdx) => seedFromNewsletter(nl, 'edit', { targetStep: 4, targetRoundIdx: roundIdx })}
                 onEditRound={(nl, roundIdx) => seedFromNewsletter(nl, 'edit', { targetStep: 5, targetRoundIdx: roundIdx })}
               />
             ))

@@ -183,7 +183,8 @@ function ConfigureContent() {
   );
 
   // ── 4단계: 리더십 유형 배분 ──
-  const [distributionRoundIdx, setDistributionRoundIdx] = useState(0);
+  // 수정 진입 시 지정 회차(seededActiveRoundIdx)의 그룹 설정 탭으로 바로 열리도록 초기화
+  const [distributionRoundIdx, setDistributionRoundIdx] = useState(configDraft.seededActiveRoundIdx ?? 0);
   const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
   // Step 4: '이전 회차와 동일하게' 배분 복사 메뉴 열림 상태
   const [copyDistMenuOpen, setCopyDistMenuOpen] = useState(false);
