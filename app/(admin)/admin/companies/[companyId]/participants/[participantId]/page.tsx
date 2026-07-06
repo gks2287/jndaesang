@@ -2,9 +2,10 @@
 
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useCompanyStore } from '@/store/companyStore';
-import { useParticipantStore, POSITIVE_TYPES, NEGATIVE_TYPES, type LeadershipType, type DeliveryStatus } from '@/store/participantStore';
+import { useParticipantStore, type LeadershipType, type DeliveryStatus } from '@/store/participantStore';
+import { useLeadershipInfoStore, DEFAULT_INFO } from '@/store/leadershipInfoStore';
 import { useDiagnosisHistoryStore } from '@/store/diagnosisHistoryStore';
 import { DEFAULT_STORYLINE, STEP_COLORS } from '@/lib/storyline';
 
@@ -85,7 +86,6 @@ const LOG_ROUNDS: number[] = (() => {
 })();
 const AVAILABLE_ROUNDS = [...new Set(LOG_ROUNDS)].filter(r => r > 0).sort((a, b) => a - b);
 
-const ALL_LEADERSHIP_TYPES: LeadershipType[] = [...POSITIVE_TYPES, ...NEGATIVE_TYPES];
 const POSITIONS = ['부장', '차장', '과장', '대리', '팀장', '이사', '상무', '전무', '본부장'];
 const DELIVERY_STATUSES: DeliveryStatus[] = ['미발송', '발송완료', '열람', '완료'];
 
@@ -108,6 +108,12 @@ export default function ParticipantDetailPage() {
     () => rawHistory.filter(h => h.participantId === participantId).sort((a, b) => b.id - a.id),
     [rawHistory, participantId],
   );
+
+  // 이 기업+연도의 리더십 유형 카탈로그(다면진단 보고서 업로드 워딩) 로드
+  const infoYear = participant?.year ?? new Date().getFullYear();
+  const leadershipCatalog = useLeadershipInfoStore(s => s.current[`${companyId}-${infoYear}`] ?? DEFAULT_INFO);
+  const loadLeadershipInfo = useLeadershipInfoStore(s => s.loadForCompany);
+  useEffect(() => { void loadLeadershipInfo(companyId, infoYear); }, [companyId, infoYear, loadLeadershipInfo]);
 
   // 훅은 조기 return 이전에 모두 호출해야 함 (participant 로딩 프레임에서 훅 개수 불일치 방지)
   const [expandedLog, setExpandedLog] = useState<number | null>(null);
@@ -135,10 +141,10 @@ export default function ParticipantDetailPage() {
   const leaderColor = leadershipColor[participant.leadershipType] ?? 'bg-gray-100 text-gray-600';
   const leaderInfo = leadershipDesc[participant.leadershipType];
 
-  // 유형 드롭다운 옵션: 이 기업 직책자에게 실제 지정된 유형(파일 워딩) + 현재 값 (없으면 표준 목록)
-  const assignedTypes = Array.from(new Set(companyParticipants.map(p => p.leadershipType).filter(Boolean)));
+  // 유형 드롭다운 옵션: 이 기업 리더십 카탈로그(파일 워딩) 전체 + 실제 배정된 유형 + 현재 값 (표준 목록 미사용)
   const typeOptions = Array.from(new Set([
-    ...(assignedTypes.length > 0 ? assignedTypes : ALL_LEADERSHIP_TYPES),
+    ...leadershipCatalog.map(i => i.type),
+    ...companyParticipants.map(p => p.leadershipType),
     participant.leadershipType,
   ].filter(Boolean)));
 
