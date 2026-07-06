@@ -7,7 +7,19 @@ import { useCompanyStore, CoachingStatus } from '@/store/companyStore';
 import { useParticipantStore, type LeadershipType } from '@/store/participantStore';
 import { useLeadershipInfoStore, type LeadershipInfo } from '@/store/leadershipInfoStore';
 
-const INDUSTRIES = ['화학/소재', '자동차 부품', '반도체', '철강', '배터리/전자', '소비재', '화학', '에너지', '금융', 'IT/소프트웨어', '유통/물류', '제약/바이오', '건설/부동산', '기타'];
+const INDUSTRIES = [
+  { name: '제조업', desc: '자동차, 기계, 화학, 철강, 소재' },
+  { name: '식음료/생활소비재', desc: '식품, 음료, 생필품, 화장품' },
+  { name: '유통/서비스', desc: '백화점, 마트, 편의점, 외식, 호텔/레저' },
+  { name: '건설/부동산', desc: '건설사, 시행/시공, 부동산 개발' },
+  { name: '금융', desc: '은행, 보험, 증권, 카드' },
+  { name: 'IT/테크', desc: '소프트웨어, 반도체, 플랫폼, 게임' },
+  { name: '통신/미디어', desc: '통신사, 방송, 엔터테인먼트' },
+  { name: '헬스케어/제약', desc: '제약, 바이오, 병원, 의료기기' },
+  { name: '에너지/화학', desc: '정유, 가스, 신재생에너지' },
+  { name: '공공/공기업', desc: '정부기관, 공기업, 지자체' },
+  { name: '교육', desc: '학교, 교육기업, 에듀테크' },
+];
 const STATUS_OPTIONS = ['진행 전', '진행 중', '진행 완료'];
 const LEADERSHIP_TYPES: LeadershipType[] = ['독재형', '방관형', '성과압박형', '불통형', '불명확형', '감정기복형'];
 
@@ -279,7 +291,7 @@ export default function NewCompanyPage() {
               <p className="text-sm text-gray-400">{form.industry || '산업군 미선택'}</p>
               {logoDataUrl
                 ? <button type="button" onClick={() => setLogoDataUrl(null)} className="text-xs text-gray-400 hover:text-red-400 mt-1">로고 제거</button>
-                : <p className="text-xs text-gray-300 mt-1">로고를 클릭해 이미지 첨부 (선택)</p>}
+                : <p className="text-xs text-gray-500 mt-1">로고를 클릭해 이미지 첨부 (선택)</p>}
             </div>
           </div>
 
@@ -310,7 +322,7 @@ export default function NewCompanyPage() {
                     className={inputCls + ' bg-white'}
                   >
                     <option value="">산업군 선택</option>
-                    {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
+                    {INDUSTRIES.map(i => <option key={i.name} value={i.name}>{i.name} — {i.desc}</option>)}
                   </select>
                 </div>
               </div>
