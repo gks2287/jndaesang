@@ -1138,7 +1138,7 @@ function NewslettersContent() {
   const [showRecovery, setShowRecovery] = useState(false);
   const hasDraft = draftCompanyIds.length > 0 || draftWizardStep > 1;
   const draftCompanyNames = draftCompanyIds.map(id => companies.find(c => c.id === id)?.name ?? '').filter(Boolean);
-  const draftStepLabel = (['', '스토리라인 구성 중', '회차 설계 중', '발송 주기 설정 중', '유형 배분 중', '콘텐츠 구성 중'] as const)[draftWizardStep] ?? '작업 중';
+  const draftStepLabel = (['', '스토리라인 구성 중', '회차 설계 중', '발송 주기 설정 중', '그룹 설정 중', '콘텐츠 구성 중'] as const)[draftWizardStep] ?? '작업 중';
   const [search, setSearch] = useState('');
   const [companyFilter, setCompanyFilter] = useState('');
   const [openKeys, setOpenKeys] = useState<Set<string>>(new Set());

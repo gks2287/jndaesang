@@ -39,7 +39,7 @@ const WIZARD_STEPS: Array<{ n: WizardStep; label: string }> = [
   { n: 1, label: '스토리라인' },
   { n: 2, label: '회차 설계' },
   { n: 3, label: '발송 주기' },
-  { n: 4, label: '유형 배분' },
+  { n: 4, label: '그룹 설정' },
   { n: 5, label: '콘텐츠 구성' },
 ];
 
@@ -2148,7 +2148,7 @@ function ConfigureContent() {
         <div className="flex-1 overflow-y-auto bg-[#F8FAFC]">
           <div className="w-full px-8 py-6 space-y-5">
             <div>
-              <h2 className="text-base font-bold text-gray-800 mb-1">리더십 유형 배분</h2>
+              <h2 className="text-base font-bold text-gray-800 mb-1">리더십 그룹 설정</h2>
               <p className="text-xs text-gray-400">회차별로 그룹 단위 대상 리더를 설정합니다. 유형을 드래그해 그룹 간 이동할 수 있습니다.</p>
             </div>
 
@@ -2175,7 +2175,7 @@ function ConfigureContent() {
                 </div>
                 {rounds.length > 1 && (
                   <button
-                    onClick={() => { if (confirm('현재 회차의 유형 배분을 다른 모든 회차에 동일하게 적용할까요?')) applyDistributionToAll(); }}
+                    onClick={() => { if (confirm('현재 회차의 그룹 설정을 다른 모든 회차에 동일하게 적용할까요?')) applyDistributionToAll(); }}
                     className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border border-[#55A4DA] bg-[#55A4DA] text-white hover:bg-[#3A8BC4] transition-colors"
                   >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2536,7 +2536,7 @@ function ConfigureContent() {
                       <div>
                         <p className="text-xl font-bold text-gray-900">{activeRoundIdx + 1}회차 콘텐츠 구성</p>
                         <p className="text-sm text-gray-500 mt-0.5">{s?.title} · {s?.subtitle}</p>
-                        <p className="text-xs text-gray-400 mt-1">유형 배분은 이전 단계에서 변경하세요.</p>
+                        <p className="text-xs text-gray-400 mt-1">그룹 설정은 이전 단계에서 변경하세요.</p>
                       </div>
                       {savedRoundItems.length > 0 && (
                         <div className="relative flex-shrink-0">
