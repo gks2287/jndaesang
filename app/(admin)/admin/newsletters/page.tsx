@@ -2,8 +2,8 @@
 
 import { useState, useMemo, useEffect, Suspense } from 'react';
 import Link from 'next/link';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { useNewNewsletterDraftStore } from '@/store/newNewsletterDraftStore';
+import { useRouter } from 'next/navigation';
+import { useNewNewsletterDraftStore, type WizardStep } from '@/store/newNewsletterDraftStore';
 import { DEFAULT_STORYLINE } from '@/lib/storyline';
 import { useCompanyStore } from '@/store/companyStore';
 import { useNewsletterStore, type Newsletter } from '@/store/newsletterStore';
@@ -925,7 +925,7 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
 }
 
 // ── 1단계: 기업 행 ───────────────────────────────────────────────────
-function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, activeTab, selectedIds, onSelectRound, onSelectRoundBulk, onDelete, onSend, selectedNewsletterIds, onToggleNewsletters, newsletters, onToggleSaved, onContinue, onEdit, onResumeRound }: {
+function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, activeTab, selectedIds, onSelectRound, onSelectRoundBulk, onDelete, onSend, selectedNewsletterIds, onToggleNewsletters, newsletters, onToggleSaved, onContinue, onEdit, onResumeRound, onEditTypes }: {
   company: CompanyData; openKeys: Set<string>; onToggle: (k: string) => void;
   isCompleteTab: boolean; onPreview: (t: PreviewTarget) => void; activeTab: TabType;
   selectedIds: Set<string>; onSelectRound: (selectionId: string, checked: boolean) => void;
@@ -936,6 +936,7 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
   newsletters: Newsletter[]; onToggleSaved: (id: number, roundNum: number) => void;
   onContinue: (nl: Newsletter) => void; onEdit: (nl: Newsletter) => void;
   onResumeRound: (nl: Newsletter, roundIdx: number) => void;
+  onEditTypes: (nl: Newsletter) => void;
 }) {
   // 이 기업의 캠페인(뉴스레터) — 이어서/수정 대상
   const companyNewsletters = newsletters.filter(n => n.companyId === company.companyId);
@@ -1025,6 +1026,18 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
             발송
           </button>
         )}
+        {companyNewsletters.length > 0 && (
+          <button
+            onClick={e => { e.stopPropagation(); onEditTypes(companyNewsletters[0]); }}
+            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 text-xs font-semibold transition-colors"
+            title="수정하기 (리더십 유형 분류부터)"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            수정하기
+          </button>
+        )}
         <button
           onClick={e => { e.stopPropagation(); onDelete(company); }}
           className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-gray-300 hover:text-red-400 hover:bg-red-50 transition-colors"
@@ -1103,7 +1116,6 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
 
 // ── 메인 콘텐츠 ─────────────────────────────────────────────────────
 function NewslettersContent() {
-  const searchParams = useSearchParams();
   const router = useRouter();
   const resetDraft = useNewNewsletterDraftStore(s => s.resetDraft);
   const setDraft = useNewNewsletterDraftStore(s => s.setDraft);
@@ -1114,7 +1126,7 @@ function NewslettersContent() {
   const companies = useCompanyStore(s => s.companies);
 
   // 이어서/수정: 기존 캠페인의 제작 스냅샷으로 위저드를 미리 채워 진입
-  function seedFromNewsletter(nl: Newsletter, mode: 'continue' | 'edit', targetRoundIdx?: number) {
+  function seedFromNewsletter(nl: Newsletter, mode: 'continue' | 'edit', opts?: { targetRoundIdx?: number; targetStep?: WizardStep }) {
     const a = nl.authoring ?? null;
     const storyline = a?.storyline?.length ? a.storyline : DEFAULT_STORYLINE;
     const totalRounds = a?.totalRounds && a.totalRounds > 0 ? a.totalRounds : (nl.totalRounds || storyline.length);
@@ -1132,7 +1144,7 @@ function NewslettersContent() {
       : baseRounds;
     // 이어서 진입 회차: 지정 회차 우선, 없으면 첫 미완성 회차(모두 완료면 0)
     const firstIncomplete = baseRounds.findIndex((_, i) => !madeIdx.has(i));
-    const activeRoundIdx = targetRoundIdx ?? (firstIncomplete >= 0 ? firstIncomplete : 0);
+    const activeRoundIdx = opts?.targetRoundIdx ?? (firstIncomplete >= 0 ? firstIncomplete : 0);
     resetDraft();
     setDraft({
       companyIds: [nl.companyId],
@@ -1140,8 +1152,8 @@ function NewslettersContent() {
       totalRounds,
       roundDistribution,
       rounds,
-      // 이어서 만들기는 콘텐츠 구성(5단계)으로 바로 진입, 수정은 1단계부터
-      wizardStep: mode === 'continue' ? 5 : 1,
+      // 이어서 만들기는 콘텐츠 구성(5단계)으로 진입, 수정은 지정 단계(없으면 1단계)
+      wizardStep: opts?.targetStep ?? (mode === 'continue' ? 5 : 1),
       editingNewsletterId: mode === 'edit' ? nl.id : null,
       // 완료 회차 본문을 항상 전달해 미리보기에서 보이도록 (continue/edit 공통)
       seededGeneratedContent: nl.generatedContent ?? null,
@@ -1155,7 +1167,8 @@ function NewslettersContent() {
     }
     router.push('/admin/newsletters/new/configure');
   }
-  const [activeTab, setActiveTab] = useState<TabType>('최근');
+  // 탭 제거 — 목록은 '제작완료' 기준으로 통일
+  const activeTab: TabType = '제작완료';
   const [showRecovery, setShowRecovery] = useState(false);
   const hasDraft = draftCompanyIds.length > 0 || draftWizardStep > 1;
   const draftCompanyNames = draftCompanyIds.map(id => companies.find(c => c.id === id)?.name ?? '').filter(Boolean);
@@ -1167,6 +1180,17 @@ function NewslettersContent() {
   const [sendConfirmTarget, setSendConfirmTarget] = useState<SendConfirmTarget | null>(null);
   const [previewTarget, setPreviewTarget] = useState<PreviewTarget | null>(null);
   const newsletters = useNewsletterStore(s => s.newsletters);
+  // DB에 중복 캠페인 행이 있어도 화면엔 1건만 — (companyId+title) 기준 본문 많은 최신 1건만 사용
+  const newslettersDeduped = useMemo(() => {
+    const score = (n: Newsletter) => (n.generatedContent?.rounds ?? []).filter(r => r?.generated?.headline).length;
+    const byKey = new Map<string, Newsletter>();
+    for (const n of newsletters) {
+      const k = `${n.companyId}::${n.title}`;
+      const prev = byKey.get(k);
+      if (!prev || score(n) > score(prev) || (score(n) === score(prev) && n.updatedAt > prev.updatedAt)) byKey.set(k, n);
+    }
+    return [...byKey.values()];
+  }, [newsletters]);
   const participants = useParticipantStore(s => s.participants);
   const [savedPreview, setSavedPreview] = useState<{ title: string; content: SavedNewsletterContent } | null>(null);
 
@@ -1177,7 +1201,7 @@ function NewslettersContent() {
     for (const company of companies) {
       const companyPs = participants.filter(p => p.companyId === company.id);
       // 해당 기업의 뉴스레터 목록 (유형 매칭 또는 기업 전체 대상)
-      const companyNLs = newsletters.filter(n => n.companyId === company.id);
+      const companyNLs = newslettersDeduped.filter(n => n.companyId === company.id);
       // 직책자도 없고 뉴스레터도 없으면 스킵 (뉴스레터가 있으면 표시)
       if (companyPs.length === 0 && companyNLs.length === 0) continue;
 
@@ -1246,7 +1270,7 @@ function NewslettersContent() {
     }
 
     return result;
-  }, [companies, participants, newsletters]);
+  }, [companies, participants, newslettersDeduped]);
 
   // 미리보기: 제작완료 + 생성 본문이 저장된 뉴스레터면 콘텐츠 구성 단계와 동일한 미리보기 모달, 아니면 기존 요약 카드
   function handlePreview(target: PreviewTarget) {
@@ -1257,11 +1281,6 @@ function NewslettersContent() {
     if (nl?.generatedContent) setSavedPreview({ title: nl.title, content: nl.generatedContent });
     else setPreviewTarget(target);
   }
-
-  useEffect(() => {
-    const tab = searchParams.get('tab');
-    if (tab === '제작 중' || tab === '제작완료') setActiveTab(tab as TabType);
-  }, [searchParams]);
 
   function handleNewDraft() {
     localStorage.removeItem('newsletter_draft_saved');
@@ -1282,11 +1301,6 @@ function NewslettersContent() {
   }, [activeTab]);
 
   const isCompleteTab = activeTab === '제작완료';
-
-  const countByStatus = useMemo(() => {
-    const all = allCompanies.flatMap(c => c.groups.flatMap(g => g.types.flatMap(t => t.rounds)));
-    return { '제작 중': all.filter(r => r.status === 'inProgress').length, '제작완료': all.filter(r => r.status === 'completed').length };
-  }, [allCompanies]);
 
   const filteredCompanies = useMemo(() => {
     let list = [...allCompanies].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -1529,17 +1543,6 @@ function NewslettersContent() {
           </div>
         </button>
 
-        {/* 탭 */}
-        <div className="flex gap-6 border-b border-gray-200 mb-4 pl-2">
-          {(['최근', '제작 중', '제작완료'] as TabType[]).map(tab => (
-            <button key={tab} onClick={() => setActiveTab(tab)}
-              className={`pb-3 text-sm font-medium transition-colors border-b-2 -mb-px ${activeTab === tab ? 'border-[#55A4DA] text-[#55A4DA]' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
-              {tab}
-              {tab !== '최근' && <span className="ml-1.5 text-xs text-gray-400">{countByStatus[tab]}</span>}
-            </button>
-          ))}
-        </div>
-
         {/* 검색 + 기업 필터 */}
         <div className="flex items-center gap-2 mb-4">
           <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 w-52">
@@ -1616,11 +1619,12 @@ function NewslettersContent() {
                 onSend={setSendModalCompany}
                 selectedNewsletterIds={selectedNewsletterIds}
                 onToggleNewsletters={toggleNewsletterSelect}
-                newsletters={newsletters}
+                newsletters={newslettersDeduped}
                 onToggleSaved={toggleRoundSaved}
                 onContinue={nl => seedFromNewsletter(nl, 'continue')}
-                onResumeRound={(nl, roundIdx) => seedFromNewsletter(nl, 'continue', roundIdx)}
-                onEdit={nl => seedFromNewsletter(nl, 'edit')}
+                onResumeRound={(nl, roundIdx) => seedFromNewsletter(nl, 'continue', { targetRoundIdx: roundIdx })}
+                onEdit={nl => seedFromNewsletter(nl, 'edit', { targetStep: 5 })}
+                onEditTypes={nl => seedFromNewsletter(nl, 'edit', { targetStep: 4 })}
               />
             ))
           )}

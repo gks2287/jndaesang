@@ -84,7 +84,8 @@ export const useNewsletterStore = create<NewsletterStore>((set, get) => ({
       });
       if (!res.ok) throw new Error('생성 실패');
       const created = (await res.json()) as Newsletter;
-      set({ newsletters: [created, ...get().newsletters] });
+      // 서버가 기존 캠페인을 갱신(upsert)해 반환한 경우, 목록에 이미 있는 같은 id를 제거해 중복 방지
+      set({ newsletters: [created, ...get().newsletters.filter(n => n.id !== created.id)] });
       return created;
     } catch (e) {
       console.error('뉴스레터 생성 오류:', e);
