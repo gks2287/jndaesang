@@ -38,9 +38,9 @@ const DELIVERY_INTERVAL_OPTIONS: Array<{ value: DeliveryInterval; label: string;
 const WIZARD_STEPS: Array<{ n: WizardStep; label: string }> = [
   { n: 1, label: '스토리라인' },
   { n: 2, label: '회차 설계' },
-  { n: 3, label: '유형 배분' },
-  { n: 4, label: '콘텐츠 구성' },
-  { n: 5, label: '발송 주기' },
+  { n: 3, label: '발송 주기' },
+  { n: 4, label: '유형 배분' },
+  { n: 5, label: '콘텐츠 구성' },
 ];
 
 // zustand selector가 매 렌더마다 새 배열을 만들지 않도록 하는 안정적인 빈 배열 참조
@@ -186,15 +186,15 @@ function ConfigureContent() {
       : configDraft.customStoryline.map((_, i) => ({ stepIndex: i, count: 1 }))
   );
 
-  // ── 3단계: 리더십 유형 배분 ──
+  // ── 4단계: 리더십 유형 배분 ──
   const [distributionRoundIdx, setDistributionRoundIdx] = useState(0);
   const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
-  // Step 3: '이전 회차와 동일하게' 배분 복사 메뉴 열림 상태
+  // Step 4: '이전 회차와 동일하게' 배분 복사 메뉴 열림 상태
   const [copyDistMenuOpen, setCopyDistMenuOpen] = useState(false);
-  // Step 4 추가 자료: 드래그오버 중인 타깃 id (시각 피드백)
+  // Step 5 추가 자료: 드래그오버 중인 타깃 id (시각 피드백)
   const [attachDragTarget, setAttachDragTarget] = useState<string | null>(null);
 
-  // ── 4단계: 콘텐츠 구성 (회차별 통합) ──
+  // ── 5단계: 콘텐츠 구성 (회차별 통합) ──
   const [rounds, setRounds] = useState<Round[]>(configDraft.rounds);
   const [activeRoundIdx, setActiveRoundIdx] = useState(0);
   // 좌측 실시간 미리보기 대상 탭 ('general' 또는 그룹 id)
@@ -219,7 +219,7 @@ function ConfigureContent() {
   const livePreviewTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   // 대상별 마지막 생성 시그니처 (key → sig). 현재 구성과 다르면 재생성 (A→B→A 되돌림도 정상 반영)
   const livePreviewSigRef = useRef<Record<string, string>>({});
-  // Step 3 → 4 진입 시 전 회차 자동 구성 로딩 오버레이
+  // Step 4 → 5 진입 시 전 회차 자동 구성 로딩 오버레이
 
   // 주제 선정
   const [suggestions, setSuggestions] = useState<TopicSuggestion[]>(configDraft.suggestions);
@@ -231,7 +231,7 @@ function ConfigureContent() {
   // 아코디언 접힘 상태 (key가 들어있으면 접힘 / 없으면 펼침) — 그룹/일반형 공용
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
 
-  // 유형 칩 펼침 (Step 3) — 키 absent = 접힘(기본)
+  // 유형 칩 펼침 (Step 4) — 키 absent = 접힘(기본)
   const [expandedTypeChips, setExpandedTypeChips] = useState<Set<string>>(new Set());
 
   // 콘텐츠 풀
@@ -245,7 +245,7 @@ function ConfigureContent() {
   const [contentPreviewItem, setContentPreviewItem] = useState<ContentPoolItem | null>(null);
   const [contentSuggestLoading, setContentSuggestLoading] = useState<boolean[]>([]);
 
-  // ── 4단계: 발송 주기 ──
+  // ── 3단계: 발송 주기 ──
   const [deliveryInterval, setDeliveryInterval] = useState<DeliveryInterval | null>(null);
   const [startDate, setStartDate] = useState<string>(getDefaultStartDate());
 
@@ -309,10 +309,10 @@ function ConfigureContent() {
     contentsCacheRef.current.clear();
   }, [configDraft.companyIds]);
 
-  // 유형 배분(Step 3): 저장된 리더십 유형 정보가 로드되면, 카탈로그 유형 중
+  // 유형 배분(Step 4): 저장된 리더십 유형 정보가 로드되면, 카탈로그 유형 중
   // 아직 어느 그룹에도 없는 유형을 그룹으로 추가 (비동기 로드/진행 중 draft 보정)
   useEffect(() => {
-    if (wizardStep !== 3) return;
+    if (wizardStep !== 4) return;
     if (companyLeadershipInfo.length === 0) return;
     const catalogTypes = companyLeadershipInfo.map(i => i.type);
     setRounds(prev => {
@@ -333,9 +333,9 @@ function ConfigureContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wizardStep, companyLeadershipInfo]);
 
-  // Step 4 진입/회차 전환 시 활성 그룹 + 일반형 각각 주제·콘텐츠 AI 자동 채움
+  // Step 5 진입/회차 전환 시 활성 그룹 + 일반형 각각 주제·콘텐츠 AI 자동 채움
   useEffect(() => {
-    if (wizardStep !== 4) return;
+    if (wizardStep !== 5) return;
     const r = rounds[activeRoundIdx];
     if (!r) return;
     const targets = [...r.customGroups.filter(g => g.types.length > 0).map(g => g.id), 'general'];
@@ -354,19 +354,19 @@ function ConfigureContent() {
   // 생성 결과 미러 동기화
   useEffect(() => { generatedContentRef.current = generatedContent; }, [generatedContent]);
 
-  // 미리보기 모달 열림: Step 4 실시간 미리보기 결과 재활용 + 미생성 회차 백그라운드 순차 생성(1회차 우선)
+  // 미리보기 모달 열림: Step 5 실시간 미리보기 결과 재활용 + 미생성 회차 백그라운드 순차 생성(1회차 우선)
   useEffect(() => {
     if (!previewOpen) return;
     void runPreviewPregen();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewOpen]);
 
-  // Step 4: 활성 회차의 일반형 + 그룹 본문을 주제/콘텐츠 기준으로 백그라운드 자동 생성 (debounce 1초)
+  // Step 5: 활성 회차의 일반형 + 그룹 본문을 주제/콘텐츠 기준으로 백그라운드 자동 생성 (debounce 1초)
   // - 진입/회차전환 시 활성 회차의 전 대상 생성([수정1·4]), 탭 전환과 무관하게 미리 준비됨([수정5])
   // - 인터랙션/만족도가 바뀌면 본문(실제 내용 기반 인터랙션)을 다시 생성해야 하므로 시그니처에 포함
   // - 주제/콘텐츠가 바뀌면 편집 보호와 무관하게 항상 재생성([수정1·3]) · 현재 구성과 sig 다르면 재생성([수정2])
   useEffect(() => {
-    if (wizardStep !== 4) return;
+    if (wizardStep !== 5) return;
     const r = rounds[activeRoundIdx];
     if (!r) return;
     const activeGroups = r.customGroups.filter(g => g.types.length > 0);
@@ -584,7 +584,7 @@ function ConfigureContent() {
     };
   }
 
-  // ── Step 4 좌측 실시간 미리보기: 그룹/일반형 단위로 generate API 호출 ──
+  // ── Step 5 좌측 실시간 미리보기: 그룹/일반형 단위로 generate API 호출 ──
   async function generateLivePreview(roundIdx: number, targetId: string) {
     const r = rounds[roundIdx];
     if (!r) return;
@@ -1015,7 +1015,7 @@ function ConfigureContent() {
   function canGoNext(): boolean {
     if (wizardStep === 1) return configDraft.companyIds.length > 0;
     if (wizardStep === 2) return distSum === totalRounds && totalRounds >= customStoryline.length;
-    if (wizardStep === 3) return true;
+    if (wizardStep === 3) return !!startDate && !!deliveryInterval; // 발송 주기: 주기·시작일 선택 필수
     if (wizardStep === 4) return true;
     return true;
   }
@@ -1038,7 +1038,7 @@ function ConfigureContent() {
       setSuggestions([]);
       setDistributionRoundIdx(0);
     }
-    if (wizardStep === 3) {
+    if (wizardStep === 4) {
       // customGroups 기반으로 각 round의 leaderIds / newsletterType 자동 세팅
       const nextRounds = rounds.map(r => {
         // 그룹별 leaderIds 재계산 + 빈 그룹 제거
@@ -1063,8 +1063,8 @@ function ConfigureContent() {
       setRounds(nextRounds);
       setActiveRoundIdx(0);
       setSuggestions([]);
-      // 현재 활성 회차(0)만 자동 구성 — Step 4 진입 effect가 활성 회차의 그룹/일반형을 채움
-      setWizardStep(4);
+      // 현재 활성 회차(0)만 자동 구성 — Step 5 진입 effect가 활성 회차의 그룹/일반형을 채움
+      setWizardStep(5);
       return;
     }
     setWizardStep(prev => (prev + 1) as WizardStep);
@@ -1244,7 +1244,7 @@ function ConfigureContent() {
     setTopicError(null);
   }
 
-  // ── Step 3: 선택한 이전 회차의 유형 배분(맞춤형 그룹 구성)을 현재 회차에 동일하게 적용 ──
+  // ── Step 4: 선택한 이전 회차의 유형 배분(맞춤형 그룹 구성)을 현재 회차에 동일하게 적용 ──
   // 그룹의 유형 묶음만 복사하고 인원(leaderIds)은 현재 대상자 기준으로 재계산. 콘텐츠는 복사하지 않음.
   function applyDistributionFrom(sourceIdx: number) {
     setRounds(prev => {
@@ -1265,7 +1265,7 @@ function ConfigureContent() {
     setCopyDistMenuOpen(false);
   }
 
-  // ── Step 3: 현재 회차의 유형 배분을 다른 모든 회차에 동일하게 적용 ──
+  // ── Step 4: 현재 회차의 유형 배분을 다른 모든 회차에 동일하게 적용 ──
   function applyDistributionToAll() {
     setRounds(prev => {
       const src = prev[distributionRoundIdx];
@@ -1284,7 +1284,7 @@ function ConfigureContent() {
     });
   }
 
-  // ── Step 4: 타깃(일반형/그룹)별 추가 자료(파일) 업로드/파싱/삭제 ──
+  // ── Step 5: 타깃(일반형/그룹)별 추가 자료(파일) 업로드/파싱/삭제 ──
   // targetId === 'general' → Round.attachments, 그 외 → 해당 CustomGroup.attachments
   function patchTargetAttachments(
     roundIdx: number,
@@ -1364,7 +1364,7 @@ function ConfigureContent() {
       .join('\n\n');
   }
 
-  // ── Step 4: 주제/콘텐츠/인터랙션/만족도 4섹션 렌더 (일반형·맞춤형 그룹 공용) ──
+  // ── Step 5: 주제/콘텐츠/인터랙션/만족도 4섹션 렌더 (일반형·맞춤형 그룹 공용) ──
   function renderContentSections(opts: {
     keyPrefix: string;
     targetId: string;
@@ -1622,7 +1622,7 @@ function ConfigureContent() {
     );
   }
 
-  // ── Step 4: 좌측 실시간 미리보기 (우측 편집 내용을 그대로 반영) ──
+  // ── Step 5: 좌측 실시간 미리보기 (우측 편집 내용을 그대로 반영) ──
   function renderLivePreview(targetId: string) {
     const r = rounds[activeRoundIdx];
     if (!r) return null;
@@ -2142,9 +2142,9 @@ function ConfigureContent() {
       )}
 
       {/* ════════════════════════════════
-          3단계: 리더십 유형 배분
+          4단계: 리더십 유형 배분
       ════════════════════════════════ */}
-      {wizardStep === 3 && (
+      {wizardStep === 4 && (
         <div className="flex-1 overflow-y-auto bg-[#F8FAFC]">
           <div className="w-full px-8 py-6 space-y-5">
             <div>
@@ -2368,9 +2368,9 @@ function ConfigureContent() {
       )}
 
       {/* ════════════════════════════════
-          4단계: 콘텐츠 구성 (회차별 통합)
+          5단계: 콘텐츠 구성 (회차별 통합)
       ════════════════════════════════ */}
-      {wizardStep === 4 && (
+      {wizardStep === 5 && (
         <div className="flex-1 overflow-hidden bg-[#F8FAFC] flex flex-col">
           {rounds.length === 0 ? (
             <div className="flex items-center justify-center h-full text-gray-400 text-sm">
@@ -2712,9 +2712,9 @@ function ConfigureContent() {
       )}
 
       {/* ════════════════════════════════
-          5단계: 발송 주기
+          3단계: 발송 주기
       ════════════════════════════════ */}
-      {wizardStep === 5 && (
+      {wizardStep === 3 && (
         <div className="flex-1 overflow-y-auto bg-[#F8FAFC]">
           <div className="w-full px-8 py-6 space-y-5">
 
