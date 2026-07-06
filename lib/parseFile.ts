@@ -23,11 +23,16 @@ export async function extractFileText(file: File): Promise<string> {
   }
 
   if (ext === 'pdf') {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>;
+    // pdf-parse v2: default export가 함수가 아니라 PDFParse 클래스 등 named export 객체.
+    const { PDFParse } = await import('pdf-parse');
     const buffer = Buffer.from(await file.arrayBuffer());
-    const result = await pdfParse(buffer);
-    return result.text;
+    const parser = new PDFParse({ data: buffer });
+    try {
+      const { text } = await parser.getText();
+      return text;
+    } finally {
+      await parser.destroy();
+    }
   }
 
   if (ext === 'xlsx') {

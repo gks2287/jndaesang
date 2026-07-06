@@ -239,9 +239,9 @@ const leadershipColor: Record<string, string> = {
   '혁신형': 'bg-violet-100 text-violet-700',
 };
 
-function filterRounds(rounds: RoundData[], tab: TabType): RoundData[] {
-  if (tab === '제작 중') return rounds.filter(r => r.status === 'inProgress');
-  if (tab === '제작완료') return rounds.filter(r => r.status === 'completed');
+// 탭 제거 — 상태 필터링 없이 전체 회차를 표시한다.
+// (제작완료/제작 중 여부는 각 회차·카드의 isDone 분기로 버튼·동작이 그대로 결정됨)
+function filterRounds(rounds: RoundData[], _tab: TabType): RoundData[] {
   return rounds;
 }
 
@@ -805,7 +805,7 @@ function PolarityRow({ group, companyId, companyName, openKeys, onToggle, isComp
 }
 
 // ── 회차 우선 뷰: 회차 → 발송 그룹 ──────────────────────────────────
-function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTab, selectedIds, onSelectRoundBulk, onPreview, activeTab, onToggleSaved, onResumeRound }: {
+function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTab, selectedIds, onSelectRoundBulk, onPreview, activeTab, onToggleSaved, onResumeRound, onEditRound }: {
   company: CompanyData; newsletters: Newsletter[];
   openKeys: Set<string>; onToggle: (k: string) => void; isCompleteTab: boolean;
   selectedIds: Set<string>;
@@ -813,6 +813,7 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
   onPreview: (t: PreviewTarget) => void; activeTab: TabType;
   onToggleSaved: (nlId: number, roundNum: number) => void;
   onResumeRound: (nl: Newsletter, roundIdx: number) => void;
+  onEditRound: (nl: Newsletter, roundIdx: number) => void;
 }) {
   const types = useMemo(() => {
     const all = company.groups.flatMap(g => g.types)
@@ -902,7 +903,7 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
                       <svg className="w-3.5 h-3.5" fill={nl.savedRounds?.includes(rn) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
                     </button>
                   )}
-                  <div className="flex-shrink-0 w-[72px] text-right">
+                  <div className="flex-shrink-0 flex items-center gap-1.5">
                     {isDone ? (
                       <button onClick={() => onPreview({ companyName: company.companyName, polarity: 'negative', typeName: grp.label, count, round: rep })}
                         className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors whitespace-nowrap">미리보기</button>
@@ -911,8 +912,14 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
                         onClick={() => { if (nl) onResumeRound(nl, rn - 1); }}
                         disabled={!nl}
                         className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-[#55A4DA]/10 text-[#55A4DA] hover:bg-[#55A4DA]/20 transition-colors whitespace-nowrap disabled:opacity-50"
-                      >이어하기</button>
+                      >이어만들기</button>
                     )}
+                    <button
+                      onClick={() => { if (nl) onEditRound(nl, rn - 1); }}
+                      disabled={!nl}
+                      className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 transition-colors whitespace-nowrap disabled:opacity-50"
+                      title="수정하기 · 콘텐츠 구성(5단계)"
+                    >수정하기</button>
                   </div>
                 </div>
               );
@@ -925,7 +932,7 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
 }
 
 // ── 1단계: 기업 행 ───────────────────────────────────────────────────
-function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, activeTab, selectedIds, onSelectRound, onSelectRoundBulk, onDelete, onSend, selectedNewsletterIds, onToggleNewsletters, newsletters, onToggleSaved, onContinue, onEdit, onResumeRound, onEditTypes }: {
+function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, activeTab, selectedIds, onSelectRound, onSelectRoundBulk, onDelete, onSend, selectedNewsletterIds, onToggleNewsletters, newsletters, onToggleSaved, onContinue, onEdit, onResumeRound, onEditTypes, onEditRound }: {
   company: CompanyData; openKeys: Set<string>; onToggle: (k: string) => void;
   isCompleteTab: boolean; onPreview: (t: PreviewTarget) => void; activeTab: TabType;
   selectedIds: Set<string>; onSelectRound: (selectionId: string, checked: boolean) => void;
@@ -937,6 +944,7 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
   onContinue: (nl: Newsletter) => void; onEdit: (nl: Newsletter) => void;
   onResumeRound: (nl: Newsletter, roundIdx: number) => void;
   onEditTypes: (nl: Newsletter) => void;
+  onEditRound: (nl: Newsletter, roundIdx: number) => void;
 }) {
   // 이 기업의 캠페인(뉴스레터) — 이어서/수정 대상
   const companyNewsletters = newsletters.filter(n => n.companyId === company.companyId);
@@ -1030,7 +1038,7 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
           <button
             onClick={e => { e.stopPropagation(); onEditTypes(companyNewsletters[0]); }}
             className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 text-xs font-semibold transition-colors"
-            title="수정하기 (리더십 유형 분류부터)"
+            title="수정하기 · 리더십 유형 분류(4단계)부터"
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -1060,33 +1068,7 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
             openKeys={openKeys} onToggle={onToggle} isCompleteTab={isCompleteTab}
             selectedIds={selectedIds} onSelectRoundBulk={onSelectRoundBulk}
             onPreview={onPreview} activeTab={activeTab} onToggleSaved={onToggleSaved}
-            onResumeRound={onResumeRound} />
-
-          {/* 캠페인별 이어서 만들기 / 수정하기 */}
-          {companyNewsletters.length > 0 && (
-            <div className="border-t border-gray-100 px-5 py-3 bg-gray-50/40 space-y-2">
-              {companyNewsletters.map(nl => (
-                <div key={nl.id} className="flex items-center gap-3">
-                  <span className="text-xs font-semibold text-gray-600 flex-1 truncate">{nl.title}</span>
-                  <span className="text-[11px] text-gray-400 flex-shrink-0">{nl.completedRounds}/{nl.totalRounds}회차</span>
-                  <button
-                    onClick={e => { e.stopPropagation(); onContinue(nl); }}
-                    className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#2E7DB5] bg-[#EAF4FC] hover:bg-[#d9ecfa] transition-colors"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                    이어서 만들기
-                  </button>
-                  <button
-                    onClick={e => { e.stopPropagation(); onEdit(nl); }}
-                    className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-gray-500 border border-gray-200 hover:bg-gray-100 transition-colors"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                    수정하기
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+            onResumeRound={onResumeRound} onEditRound={onEditRound} />
 
           {/* 회차별 전체선택 */}
           {isCompleteTab && availableRoundNums.length > 0 && (
@@ -1625,6 +1607,7 @@ function NewslettersContent() {
                 onResumeRound={(nl, roundIdx) => seedFromNewsletter(nl, 'continue', { targetRoundIdx: roundIdx })}
                 onEdit={nl => seedFromNewsletter(nl, 'edit', { targetStep: 5 })}
                 onEditTypes={nl => seedFromNewsletter(nl, 'edit', { targetStep: 4 })}
+                onEditRound={(nl, roundIdx) => seedFromNewsletter(nl, 'edit', { targetStep: 5, targetRoundIdx: roundIdx })}
               />
             ))
           )}
