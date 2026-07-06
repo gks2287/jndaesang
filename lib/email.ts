@@ -61,18 +61,6 @@ export function buildEmailHtml(generated: GeneratedNewsletter, opts: { vol: numb
     <p style="margin:12px 0 0;font-size:14px;color:#6B7280;line-height:1.7">${escapeHtml(generated.intro)}</p>
   </td></tr>
 
-  <!-- CTA 버튼 -->
-  <tr><td style="padding:20px 24px 0">
-    <table width="100%" cellpadding="0" cellspacing="0">
-      <tr><td>
-        <a href="${fullUrl}" style="display:block;padding:14px;background:#2B9EE8;color:#FFFFFF;text-align:center;font-size:14px;font-weight:600;text-decoration:none;border-radius:12px">전체 뉴스레터 읽기 →</a>
-      </td></tr>
-      <tr><td style="padding-top:10px">
-        <a href="${mypageUrl}" style="display:block;padding:14px;background:#FFFFFF;border:1px solid #2B9EE8;color:#2B9EE8;text-align:center;font-size:14px;font-weight:600;text-decoration:none;border-radius:12px">마이페이지 바로가기</a>
-      </td></tr>
-    </table>
-  </td></tr>
-
   <!-- 콘텐츠 미리보기 -->
   <tr><td style="padding:32px 24px 0">
     <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #F3F4F6;padding-top:24px">
@@ -85,6 +73,18 @@ export function buildEmailHtml(generated: GeneratedNewsletter, opts: { vol: numb
         </tr></table>
       </td></tr>
       ${sectionCards}
+    </table>
+  </td></tr>
+
+  <!-- CTA 버튼 -->
+  <tr><td style="padding:20px 24px 0">
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr><td>
+        <a href="${fullUrl}" style="display:block;padding:14px;background:#2B9EE8;color:#FFFFFF;text-align:center;font-size:14px;font-weight:600;text-decoration:none;border-radius:12px">전체 뉴스레터 읽기 →</a>
+      </td></tr>
+      <tr><td style="padding-top:10px">
+        <a href="${mypageUrl}" style="display:block;padding:14px;background:#FFFFFF;border:1px solid #2B9EE8;color:#2B9EE8;text-align:center;font-size:14px;font-weight:600;text-decoration:none;border-radius:12px">마이페이지 바로가기</a>
+      </td></tr>
     </table>
   </td></tr>
 
