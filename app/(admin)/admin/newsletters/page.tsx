@@ -805,13 +805,14 @@ function PolarityRow({ group, companyId, companyName, openKeys, onToggle, isComp
 }
 
 // ── 회차 우선 뷰: 회차 → 발송 그룹 ──────────────────────────────────
-function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTab, selectedIds, onSelectRoundBulk, onPreview, activeTab, onToggleSaved }: {
+function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTab, selectedIds, onSelectRoundBulk, onPreview, activeTab, onToggleSaved, onResumeRound }: {
   company: CompanyData; newsletters: Newsletter[];
   openKeys: Set<string>; onToggle: (k: string) => void; isCompleteTab: boolean;
   selectedIds: Set<string>;
   onSelectRoundBulk: (selectionIds: string[], checked: boolean) => void;
   onPreview: (t: PreviewTarget) => void; activeTab: TabType;
   onToggleSaved: (nlId: number, roundNum: number) => void;
+  onResumeRound: (nl: Newsletter, roundIdx: number) => void;
 }) {
   const types = useMemo(() => {
     const all = company.groups.flatMap(g => g.types)
@@ -906,7 +907,11 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
                       <button onClick={() => onPreview({ companyName: company.companyName, polarity: 'negative', typeName: grp.label, count, round: rep })}
                         className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors whitespace-nowrap">미리보기</button>
                     ) : (
-                      <Link href="/admin/newsletters/new/configure" className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-[#55A4DA]/10 text-[#55A4DA] hover:bg-[#55A4DA]/20 transition-colors whitespace-nowrap">이어하기</Link>
+                      <button
+                        onClick={() => { if (nl) onResumeRound(nl, rn - 1); }}
+                        disabled={!nl}
+                        className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-[#55A4DA]/10 text-[#55A4DA] hover:bg-[#55A4DA]/20 transition-colors whitespace-nowrap disabled:opacity-50"
+                      >이어하기</button>
                     )}
                   </div>
                 </div>
@@ -920,7 +925,7 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
 }
 
 // ── 1단계: 기업 행 ───────────────────────────────────────────────────
-function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, activeTab, selectedIds, onSelectRound, onSelectRoundBulk, onDelete, onSend, selectedNewsletterIds, onToggleNewsletters, newsletters, onToggleSaved, onContinue, onEdit }: {
+function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, activeTab, selectedIds, onSelectRound, onSelectRoundBulk, onDelete, onSend, selectedNewsletterIds, onToggleNewsletters, newsletters, onToggleSaved, onContinue, onEdit, onResumeRound }: {
   company: CompanyData; openKeys: Set<string>; onToggle: (k: string) => void;
   isCompleteTab: boolean; onPreview: (t: PreviewTarget) => void; activeTab: TabType;
   selectedIds: Set<string>; onSelectRound: (selectionId: string, checked: boolean) => void;
@@ -930,6 +935,7 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
   selectedNewsletterIds: Set<number>; onToggleNewsletters: (ids: number[]) => void;
   newsletters: Newsletter[]; onToggleSaved: (id: number, roundNum: number) => void;
   onContinue: (nl: Newsletter) => void; onEdit: (nl: Newsletter) => void;
+  onResumeRound: (nl: Newsletter, roundIdx: number) => void;
 }) {
   // 이 기업의 캠페인(뉴스레터) — 이어서/수정 대상
   const companyNewsletters = newsletters.filter(n => n.companyId === company.companyId);
@@ -1040,7 +1046,8 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
           <RoundFirstView company={company} newsletters={newsletters}
             openKeys={openKeys} onToggle={onToggle} isCompleteTab={isCompleteTab}
             selectedIds={selectedIds} onSelectRoundBulk={onSelectRoundBulk}
-            onPreview={onPreview} activeTab={activeTab} onToggleSaved={onToggleSaved} />
+            onPreview={onPreview} activeTab={activeTab} onToggleSaved={onToggleSaved}
+            onResumeRound={onResumeRound} />
 
           {/* 캠페인별 이어서 만들기 / 수정하기 */}
           {companyNewsletters.length > 0 && (
@@ -1107,16 +1114,25 @@ function NewslettersContent() {
   const companies = useCompanyStore(s => s.companies);
 
   // 이어서/수정: 기존 캠페인의 제작 스냅샷으로 위저드를 미리 채워 진입
-  function seedFromNewsletter(nl: Newsletter, mode: 'continue' | 'edit') {
+  function seedFromNewsletter(nl: Newsletter, mode: 'continue' | 'edit', targetRoundIdx?: number) {
     const a = nl.authoring ?? null;
     const storyline = a?.storyline?.length ? a.storyline : DEFAULT_STORYLINE;
     const totalRounds = a?.totalRounds && a.totalRounds > 0 ? a.totalRounds : (nl.totalRounds || storyline.length);
     const roundDistribution = a?.roundDistribution ?? [];
     const baseRounds = a?.rounds ?? [];
-    // 이어서: 유형 배분(customGroups)은 유지하고 주제·콘텐츠는 비워 새로 작성
+    // 완료(본문 생성)된 회차 인덱스 집합 — vol은 1-based
+    const madeIdx = new Set(
+      (nl.generatedContent?.rounds ?? [])
+        .filter(r => r.generated?.headline)
+        .map(r => r.vol - 1)
+    );
+    // 이어서: 완료 회차는 구성 유지, 미완성 회차만 주제·콘텐츠를 비워 새로 작성
     const rounds = mode === 'continue'
-      ? baseRounds.map(r => ({ ...r, topic: '', contents: [] }))
+      ? baseRounds.map((r, i) => (madeIdx.has(i) ? r : { ...r, topic: '', contents: [] }))
       : baseRounds;
+    // 이어서 진입 회차: 지정 회차 우선, 없으면 첫 미완성 회차(모두 완료면 0)
+    const firstIncomplete = baseRounds.findIndex((_, i) => !madeIdx.has(i));
+    const activeRoundIdx = targetRoundIdx ?? (firstIncomplete >= 0 ? firstIncomplete : 0);
     resetDraft();
     setDraft({
       companyIds: [nl.companyId],
@@ -1124,9 +1140,14 @@ function NewslettersContent() {
       totalRounds,
       roundDistribution,
       rounds,
-      wizardStep: 1,
+      // 이어서 만들기는 콘텐츠 구성(5단계)으로 바로 진입, 수정은 1단계부터
+      wizardStep: mode === 'continue' ? 5 : 1,
       editingNewsletterId: mode === 'edit' ? nl.id : null,
-      seededGeneratedContent: mode === 'edit' ? (nl.generatedContent ?? null) : null,
+      // 완료 회차 본문을 항상 전달해 미리보기에서 보이도록 (continue/edit 공통)
+      seededGeneratedContent: nl.generatedContent ?? null,
+      seededActiveRoundIdx: activeRoundIdx,
+      seededStartDate: a?.startDate ?? null,
+      seededDeliveryInterval: a?.deliveryInterval ?? null,
     });
     // 초안 복구 팝업 억제
     if (typeof window !== 'undefined') {
@@ -1598,6 +1619,7 @@ function NewslettersContent() {
                 newsletters={newsletters}
                 onToggleSaved={toggleRoundSaved}
                 onContinue={nl => seedFromNewsletter(nl, 'continue')}
+                onResumeRound={(nl, roundIdx) => seedFromNewsletter(nl, 'continue', roundIdx)}
                 onEdit={nl => seedFromNewsletter(nl, 'edit')}
               />
             ))

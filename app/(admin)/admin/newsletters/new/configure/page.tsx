@@ -38,7 +38,7 @@ const DELIVERY_INTERVAL_OPTIONS: Array<{ value: DeliveryInterval; label: string;
 const WIZARD_STEPS: Array<{ n: WizardStep; label: string }> = [
   { n: 1, label: '스토리라인' },
   { n: 2, label: '회차 설계' },
-  { n: 3, label: '발송 주기' },
+  { n: 3, label: '발송일 설정' },
   { n: 4, label: '그룹 설정' },
   { n: 5, label: '콘텐츠 구성' },
 ];
@@ -110,17 +110,13 @@ function formatKoreanDate(date: Date): string {
   return date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
-function calcTotalDuration(startDate: string, interval: DeliveryInterval, count: number): string {
-  if (count <= 1) return '—';
-  const days = DELIVERY_INTERVAL_OPTIONS.find(o => o.value === interval)?.days ?? 30;
-  const totalDays = (count - 1) * days;
-  const start = new Date(startDate + 'T00:00:00');
-  const end = new Date(start);
-  end.setDate(end.getDate() + totalDays);
-  const startStr = start.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' });
-  const endStr = end.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' });
-  const totalMonths = Math.round(totalDays / 30);
-  return `${startStr} ~ ${endStr} (약 ${totalMonths}개월)`;
+// 발송일 <input type="date"> 값용 로컬 기준 YYYY-MM-DD 문자열.
+// toISOString()은 UTC로 변환돼 KST에서 하루 밀릴 수 있으므로 로컬 필드로 직접 구성한다.
+function toISODate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function ConfigureContent() {
@@ -203,7 +199,7 @@ function ConfigureContent() {
 
   // ── 5단계: 콘텐츠 구성 (회차별 통합) ──
   const [rounds, setRounds] = useState<Round[]>(configDraft.rounds);
-  const [activeRoundIdx, setActiveRoundIdx] = useState(0);
+  const [activeRoundIdx, setActiveRoundIdx] = useState(configDraft.seededActiveRoundIdx ?? 0);
   // 좌측 실시간 미리보기 대상 탭 ('general' 또는 그룹 id)
   const [previewTargetId, setPreviewTargetId] = useState<string>('general');
   // 좌측 실시간 미리보기 표시 모드 (전체 본문 / 요약본)
@@ -252,9 +248,11 @@ function ConfigureContent() {
   const [contentPreviewItem, setContentPreviewItem] = useState<ContentPoolItem | null>(null);
   const [contentSuggestLoading, setContentSuggestLoading] = useState<boolean[]>([]);
 
-  // ── 3단계: 발송 주기 ──
-  const [deliveryInterval, setDeliveryInterval] = useState<DeliveryInterval | null>(null);
-  const [startDate, setStartDate] = useState<string>(getDefaultStartDate());
+  // ── 3단계: 발송일 설정 ──
+  const [deliveryInterval, setDeliveryInterval] = useState<DeliveryInterval | null>((configDraft.seededDeliveryInterval as DeliveryInterval | null) ?? null);
+  const [startDate, setStartDate] = useState<string>(configDraft.seededStartDate ?? getDefaultStartDate());
+  // 회차별 발송일 수동 변경분 (회차 index → 'YYYY-MM-DD'). 휴일 등으로 특정 회차만 옮길 때 사용.
+  const [scheduleDateOverrides, setScheduleDateOverrides] = useState<Record<number, string>>({});
 
   // ── 저장소 패널 ──
   const newsletters = useNewsletterStore(s => s.newsletters);
@@ -287,6 +285,10 @@ function ConfigureContent() {
   const [isConfirming, setIsConfirming] = useState(false);
   const confirmingRef = useRef(false);
   const [previewTab, setPreviewTab] = useState(0);
+  // 미리보기 모달: 수신 리더 확인 오버레이 열림 여부
+  const [showRecipients, setShowRecipients] = useState(false);
+  // 실시간 미리보기 생성에 실패한 대상 키(`${roundIdx}:${targetId}`) — 무음 실패 대신 안내 표시용
+  const [livePreviewErrors, setLivePreviewErrors] = useState<Set<string>>(new Set());
   // 미리보기 모달: 회차 내 그룹 탭 ('general' 또는 그룹 id)
   const [previewGroupId, setPreviewGroupId] = useState<string>('general');
   const [previewOpenGroups, setPreviewOpenGroups] = useState<Set<number>>(new Set([0]));
@@ -361,12 +363,45 @@ function ConfigureContent() {
   // 생성 결과 미러 동기화
   useEffect(() => { generatedContentRef.current = generatedContent; }, [generatedContent]);
 
+  // 이어서/수정 진입: 완료 회차 본문을 미리보기 표시 상태로 하이드레이션(최초 1회).
+  // 완료 회차는 현재 구성과 동일 서명으로 표시해 불필요한 재생성(API 호출)을 막는다.
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (hydratedRef.current) return;
+    hydratedRef.current = true;
+    const seeded = configDraft.seededGeneratedContent;
+    if (!seeded?.rounds?.length) return;
+    const gen: Record<number, GeneratedNewsletter> = {};
+    const live: Record<string, GeneratedNewsletter> = {};
+    seeded.rounds.forEach(sr => {
+      const idx = (sr.vol ?? 0) - 1;
+      if (idx < 0 || !sr.generated) return;
+      gen[idx] = sr.generated;
+      live[`${idx}:general`] = sr.generated;
+      const r = configDraft.rounds[idx];
+      if (r) {
+        livePreviewSigRef.current[`${idx}:general`] = JSON.stringify({
+          roundIdx: idx, targetId: 'general', topic: r.topic,
+          ids: r.contents.map(c => c.id), interactions: r.interactions, surveys: r.surveys,
+        });
+      }
+    });
+    if (Object.keys(gen).length === 0) return;
+    generatedContentRef.current = { ...generatedContentRef.current, ...gen };
+    setGeneratedContent(prev => ({ ...gen, ...prev }));
+    setLivePreviewContent(prev => ({ ...live, ...prev }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // 미리보기 모달 열림: Step 5 실시간 미리보기 결과 재활용 + 미생성 회차 백그라운드 순차 생성(1회차 우선)
   useEffect(() => {
     if (!previewOpen) return;
     void runPreviewPregen();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewOpen]);
+
+  // 미리보기 모달이 닫히면 수신 리더 오버레이도 함께 닫음
+  useEffect(() => { if (!previewOpen) setShowRecipients(false); }, [previewOpen]);
 
   // Step 5: 활성 회차의 일반형 + 그룹 본문을 주제/콘텐츠 기준으로 백그라운드 자동 생성 (debounce 1초)
   // - 진입/회차전환 시 활성 회차의 전 대상 생성([수정1·4]), 탭 전환과 무관하게 미리 준비됨([수정5])
@@ -607,6 +642,7 @@ function ConfigureContent() {
     const referenceData = buildReferenceData(roundIdx, targetId);
     const key = `${roundIdx}:${targetId}`;
     setLivePreviewGenerating(prev => new Set([...prev, key]));
+    setLivePreviewErrors(prev => { if (!prev.has(key)) return prev; const s = new Set(prev); s.delete(key); return s; });
     try {
       const res = await fetch('/api/newsletter/generate', {
         method: 'POST',
@@ -634,6 +670,7 @@ function ConfigureContent() {
       setLivePreviewContent(prev => ({ ...prev, [key]: data }));
     } catch (e) {
       console.error('미리보기 생성 오류:', e);
+      setLivePreviewErrors(prev => new Set(prev).add(key));
     } finally {
       setLivePreviewGenerating(prev => { const s = new Set(prev); s.delete(key); return s; });
     }
@@ -1100,9 +1137,36 @@ function ConfigureContent() {
   }
 
   // 제작완료 시 회차별 생성 본문(전체본문 + 요약본) 저장 데이터 구성
+  // 주기·시작일로 계산한 기본 발송일에, 회차별 수동 변경분(scheduleDateOverrides)을 덮어쓴 최종 발송일 배열.
+  function getEffectiveScheduleDates(): Date[] {
+    if (!startDate || !deliveryInterval) return [];
+    const base = calcScheduleDates(startDate, deliveryInterval, rounds.length);
+    return base.map((d, i) => {
+      const ov = scheduleDateOverrides[i];
+      if (ov) {
+        const od = new Date(ov + 'T00:00:00');
+        if (!Number.isNaN(od.getTime())) return od;
+      }
+      return d;
+    });
+  }
+
+  // 최종 발송일(회차별 변경분 반영) 기준 총 발송 기간 라벨.
+  function effectiveDurationLabel(): string {
+    const dates = getEffectiveScheduleDates();
+    if (dates.length <= 1) return '—';
+    const first = dates[0];
+    const last = dates[dates.length - 1];
+    const startStr = first.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' });
+    const endStr = last.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' });
+    const totalDays = Math.round((last.getTime() - first.getTime()) / 86400000);
+    const totalMonths = Math.max(1, Math.round(totalDays / 30));
+    return `${startStr} ~ ${endStr} (약 ${totalMonths}개월)`;
+  }
+
   function buildSavedContent(): SavedNewsletterContent | undefined {
     if (!startDate || !deliveryInterval) return undefined;
-    const schedDates = calcScheduleDates(startDate, deliveryInterval, rounds.length);
+    const schedDates = getEffectiveScheduleDates();
     const leadershipLabel = leadershipTypes.join(', ');
     const savedRounds: SavedNewsletterRound[] = [];
     rounds.forEach((r, idx) => {
@@ -1122,7 +1186,7 @@ function ConfigureContent() {
 
   // 이어서/수정 복원용 위저드 스냅샷
   function buildAuthoring() {
-    return { storyline: customStoryline, totalRounds, roundDistribution, rounds };
+    return { storyline: customStoryline, totalRounds, roundDistribution, rounds, startDate, deliveryInterval: deliveryInterval ?? undefined };
   }
 
   async function handleSave(status: '제작 중' | '제작완료', savedContent?: SavedNewsletterContent) {
@@ -1223,7 +1287,7 @@ function ConfigureContent() {
     if (confirmingRef.current) return; // 중복 저장 방지
     confirmingRef.current = true;
     setIsConfirming(true);
-    const schedDates = calcScheduleDates(startDate, deliveryInterval, rounds.length);
+    const schedDates = getEffectiveScheduleDates();
     console.log('[뉴스레터 생성 완료]', {
       meta: { targetCompanies, leadershipTypes },
       storyline: customStoryline,
@@ -2859,7 +2923,7 @@ function ConfigureContent() {
       )}
 
       {/* ════════════════════════════════
-          3단계: 발송 주기
+          3단계: 발송일 설정
       ════════════════════════════════ */}
       {wizardStep === 3 && (
         <div className="flex-1 overflow-y-auto bg-[#F8FAFC]">
@@ -2867,7 +2931,7 @@ function ConfigureContent() {
 
             {/* 헤더 */}
             <div>
-              <h2 className="text-base font-bold text-gray-800 mb-1">발송 주기 설정</h2>
+              <h2 className="text-base font-bold text-gray-800 mb-1">발송일 설정</h2>
               <p className="text-xs text-gray-400">주기와 시작일을 선택하면 전체 발송 일정이 자동으로 계산됩니다.</p>
             </div>
 
@@ -2880,7 +2944,7 @@ function ConfigureContent() {
                   return (
                     <button
                       key={opt.value}
-                      onClick={() => setDeliveryInterval(opt.value)}
+                      onClick={() => { setDeliveryInterval(opt.value); setScheduleDateOverrides({}); }}
                       className={`relative flex flex-col items-center gap-1.5 px-4 py-4 rounded-xl border-2 transition-all ${
                         isSelected
                           ? 'border-[#55A4DA] bg-[#55A4DA]/5'
@@ -2908,19 +2972,19 @@ function ConfigureContent() {
               <input
                 type="date"
                 value={startDate}
-                onChange={e => setStartDate(e.target.value)}
+                onChange={e => { setStartDate(e.target.value); setScheduleDateOverrides({}); }}
                 className="px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition"
               />
             </div>
 
-            {/* ③ 발송 일정 미리보기 */}
+            {/* ③ 발송 일정 미리보기 — 회차별 발송일 직접 변경 가능(휴일 등) */}
             {deliveryInterval && startDate && rounds.length > 0 && (() => {
-              const schedDates = calcScheduleDates(startDate, deliveryInterval, rounds.length);
+              const schedDates = getEffectiveScheduleDates();
               return (
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
                   <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                     <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">발송 일정 미리보기</p>
-                    <span className="text-[11px] text-gray-400">총 {rounds.length}회차</span>
+                    <span className="text-[11px] text-gray-400">발송일을 눌러 회차별로 변경할 수 있어요 · 총 {rounds.length}회차</span>
                   </div>
                   <table className="w-full">
                     <thead>
@@ -2935,11 +2999,52 @@ function ConfigureContent() {
                         const s = customStoryline[r.stepIndex];
                         const color = UNIFIED_STEP_COLOR;
                         const date = schedDates[idx];
+                        const isOverridden = scheduleDateOverrides[idx] !== undefined;
+                        const dow = date ? date.getDay() : -1;
+                        const isWeekend = dow === 0 || dow === 6;
+                        const prevDate = idx > 0 ? schedDates[idx - 1] : null;
+                        const outOfOrder = !!(prevDate && date && date.getTime() <= prevDate.getTime());
                         return (
                           <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
-                            <td className="px-6 py-2.5 text-xs font-semibold text-gray-500">{idx + 1}회차</td>
-                            <td className="px-6 py-2.5 text-xs text-gray-800">{date ? formatKoreanDate(date) : '—'}</td>
+                            <td className="px-6 py-2.5 text-xs font-semibold text-gray-500 align-top">{idx + 1}회차</td>
                             <td className="px-6 py-2.5">
+                              {date ? (
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <input
+                                    type="date"
+                                    value={toISODate(date)}
+                                    onChange={e => {
+                                      const v = e.target.value;
+                                      if (!v) return;
+                                      setScheduleDateOverrides(prev => ({ ...prev, [idx]: v }));
+                                    }}
+                                    className={`px-2.5 py-1.5 border rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-[#55A4DA]/30 transition ${isWeekend ? 'border-amber-300 text-amber-700 bg-amber-50/60' : 'border-gray-200 text-gray-800'}`}
+                                  />
+                                  <span className={`text-[11px] font-medium ${isWeekend ? 'text-amber-600' : 'text-gray-400'}`}>
+                                    {date.toLocaleDateString('ko-KR', { weekday: 'short' })}{isWeekend ? ' · 주말' : ''}
+                                  </span>
+                                  {outOfOrder && (
+                                    <span className="text-[11px] text-red-500">이전 회차보다 빠름</span>
+                                  )}
+                                  {isOverridden && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setScheduleDateOverrides(prev => {
+                                        const next = { ...prev };
+                                        delete next[idx];
+                                        return next;
+                                      })}
+                                      className="text-[11px] text-[#55A4DA] hover:underline"
+                                    >
+                                      기본값
+                                    </button>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-gray-400">—</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-2.5 align-top">
                               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${color.badge} text-white`}>
                                 {s?.title}
                               </span>
@@ -2951,7 +3056,7 @@ function ConfigureContent() {
                   </table>
                   <div className="px-6 py-3 border-t border-gray-100 bg-gray-50/50">
                     <p className="text-xs text-gray-500">
-                      총 발송 기간: <span className="font-semibold text-gray-700">{calcTotalDuration(startDate, deliveryInterval, rounds.length)}</span>
+                      총 발송 기간: <span className="font-semibold text-gray-700">{effectiveDurationLabel()}</span>
                     </p>
                   </div>
                 </div>
@@ -3330,20 +3435,22 @@ function ConfigureContent() {
                       <div className="flex items-center gap-1.5">
                         <span className="text-[11px] text-gray-400">총 발송 기간</span>
                         <span className="text-xs font-semibold text-gray-700">
-                          {deliveryInterval && startDate ? calcTotalDuration(startDate, deliveryInterval, rounds.length) : '—'}
+                          {deliveryInterval && startDate ? effectiveDurationLabel() : '—'}
                         </span>
                       </div>
                     </div>
                     {selectedParticipants.length > 0 && (
                       <div className="flex items-center gap-2 pt-2 border-t border-gray-200">
                         <span className="text-[11px] text-gray-400 flex-shrink-0">수신 리더</span>
-                        <div className="flex flex-wrap gap-2">
-                          {selectedParticipants.map(p => (
-                            <span key={p.id} className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
-                              {p.name} {p.position}
-                            </span>
-                          ))}
-                        </div>
+                        <span className="text-xs font-semibold text-gray-700">{selectedParticipants.length}명</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowRecipients(true)}
+                          className="ml-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-[#2E7DB5] bg-[#EAF4FC] hover:bg-[#d9ecfa] px-2.5 py-1 rounded-full transition-colors"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                          확인하기
+                        </button>
                       </div>
                     )}
                   </div>
@@ -3489,15 +3596,38 @@ function ConfigureContent() {
 
                     // 저장된 데이터만 표시 — 없으면 안내 (API 호출/스피너 없음)
                     if (!displayGenerated) {
+                      const genKey = `${previewTab}:${curGroup}`;
+                      const failed = livePreviewErrors.has(genKey);
+                      const busy = livePreviewGenerating.has(genKey);
                       return (
                         <>
                           {groupTabsUI}
                           <div className="flex flex-col items-center justify-center py-20 px-6 gap-3 text-center">
-                            <svg className="w-9 h-9 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                            <div>
-                              <p className="text-sm font-semibold text-gray-600">{curGroup === 'general' ? '아직 생성된 본문이 없어요' : '이 그룹의 본문이 아직 생성되지 않았어요'}</p>
-                              <p className="text-xs text-gray-400 mt-1">콘텐츠 구성 단계에서 {curGroup === 'general' ? '이 회차를' : '이 그룹을'} 먼저 생성해주세요</p>
-                            </div>
+                            {failed ? (
+                              <>
+                                <svg className="w-9 h-9 text-red-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-600">본문 생성에 실패했어요</p>
+                                  <p className="text-xs text-gray-400 mt-1">AI 생성 중 오류가 발생했어요. AI 크레딧 잔액을 확인해 주세요.</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => { void generateLivePreview(previewTab, curGroup); }}
+                                  disabled={busy}
+                                  className="mt-1 inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-[#55A4DA] hover:bg-[#3A8BC4] px-3.5 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+                                >
+                                  {busy ? '생성 중…' : '다시 생성'}
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-9 h-9 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-600">{curGroup === 'general' ? '아직 생성된 본문이 없어요' : '이 그룹의 본문이 아직 생성되지 않았어요'}</p>
+                                  <p className="text-xs text-gray-400 mt-1">콘텐츠 구성 단계에서 {curGroup === 'general' ? '이 회차를' : '이 그룹을'} 먼저 생성해주세요</p>
+                                </div>
+                              </>
+                            )}
                           </div>
                         </>
                       );
@@ -3626,6 +3756,48 @@ function ConfigureContent() {
               </div>
 
             </div>
+
+            {/* 수신 리더 확인 오버레이 (유형 그룹별) */}
+            {showRecipients && (
+              <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4" onClick={() => setShowRecipients(false)}>
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                  <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+                    <div>
+                      <h3 className="text-base font-bold text-gray-800">수신 리더</h3>
+                      <p className="text-xs text-gray-400 mt-0.5">유형 그룹별 · 총 {selectedParticipants.length}명</p>
+                    </div>
+                    <button onClick={() => setShowRecipients(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+                    {(() => {
+                      const groups = new Map<string, typeof selectedParticipants>();
+                      selectedParticipants.forEach(p => {
+                        const k = p.leadershipType || '미분류';
+                        if (!groups.has(k)) groups.set(k, []);
+                        groups.get(k)!.push(p);
+                      });
+                      return [...groups.entries()].map(([type, members]) => (
+                        <div key={type}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${LEADERSHIP_COLOR[type] ?? 'bg-gray-100 text-gray-600'}`}>{type}</span>
+                            <span className="text-[11px] text-gray-400">{members.length}명</span>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {members.map(p => (
+                              <span key={p.id} className="text-xs font-medium px-2.5 py-1 rounded-lg bg-gray-50 border border-gray-100 text-gray-700">
+                                {p.name} <span className="text-gray-400">{p.position}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         );
       })()}

@@ -34,6 +34,10 @@ interface NewNewsletterDraft {
   // 이어서/수정 진입용 — 편집 대상 뉴스레터 id(수정 모드)와 미리 불러온 본문
   editingNewsletterId: number | null;
   seededGeneratedContent: SavedNewsletterContent | null;
+  // 이어서 진입 시작 회차 인덱스 · 발송일 복원값
+  seededActiveRoundIdx: number;
+  seededStartDate: string | null;
+  seededDeliveryInterval: string | null;
 }
 
 const DEFAULT_DRAFT: NewNewsletterDraft = {
@@ -52,6 +56,9 @@ const DEFAULT_DRAFT: NewNewsletterDraft = {
   deliverySchedule: '주 1회',
   editingNewsletterId: null,
   seededGeneratedContent: null,
+  seededActiveRoundIdx: 0,
+  seededStartDate: null,
+  seededDeliveryInterval: null,
 };
 
 interface NewNewsletterDraftStore extends NewNewsletterDraft {

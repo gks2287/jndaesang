@@ -11,6 +11,9 @@ export interface NewsletterAuthoring {
   totalRounds: number;
   roundDistribution: { stepIndex: number; count: number }[];
   rounds: Round[];
+  // 이어서/수정 진입 시 발송일 복원용 (구버전 레코드는 없을 수 있음)
+  startDate?: string;
+  deliveryInterval?: string;
 }
 
 export interface Newsletter {
