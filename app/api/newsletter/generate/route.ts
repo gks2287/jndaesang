@@ -142,13 +142,24 @@ function buildInteractionPrompt(types: string[]): string {
 // ── POST 핸들러 ───────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
-    const { round, leadershipType, companyName, referenceData, leadershipInfo } = await req.json() as {
+    const { round, leadershipType, companyName, referenceData, leadershipInfo, groupDescription } = await req.json() as {
       round: RoundPayload;
       leadershipType: string;
       companyName: string;
       referenceData?: string;
       leadershipInfo?: { type: string; characteristics?: string; developmentPoints?: string }[];
+      groupDescription?: { summary?: string; characteristics?: string; developmentPoints?: string };
     };
+
+    // 그룹 설정 단계에서 도출·편집한 그룹 정의 (있으면 맞춤형 본문 방향의 상위 기준)
+    const gd = groupDescription;
+    const groupBlock = (gd && (gd.summary?.trim() || gd.characteristics?.trim() || gd.developmentPoints?.trim()))
+      ? `\n\n[이 그룹의 리더십 정의 — 본문 방향의 기준]\n`
+        + (gd.summary?.trim() ? `· 요약: ${gd.summary.trim()}\n` : '')
+        + (gd.characteristics?.trim() ? `· 특성: ${gd.characteristics.trim()}\n` : '')
+        + (gd.developmentPoints?.trim() ? `· 개발 포인트: ${gd.developmentPoints.trim()}\n` : '')
+        + `(이 그룹 정의를 본문 톤·문제 인식·실천 처방의 상위 기준으로 삼되, 없는 내용은 지어내지 마세요.)`
+      : '';
 
     // 이 기업 다면진단 기반 유형 정보 (특징=공감/문제인식, 개발포인트=실천 처방)
     const infoBlock = (leadershipInfo && leadershipInfo.length > 0)
@@ -189,6 +200,7 @@ ${referenceData.trim()}`
 - 리더십 유형: ${leadershipType}
 - 스토리라인 단계: ${round.stepLabel}
 - 이번 호 주제: ${round.topic.trim() || '(미선정)'}
+${groupBlock}
 ${infoBlock}
 
 [이번 호 콘텐츠]

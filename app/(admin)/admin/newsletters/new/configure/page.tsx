@@ -8,7 +8,7 @@ import { useCompanyStore } from '@/store/companyStore';
 import CompanyLogo from '@/components/CompanyLogo';
 import { DEFAULT_STORYLINE, type StorylineStep } from '@/lib/storyline';
 import { LEADERSHIP_COLOR } from '@/lib/constants/leadershipColors';
-import { type Round, type CustomGroup, type RoundAttachment, makeCustomGroup } from '@/lib/content';
+import { type Round, type CustomGroup, type RoundAttachment, type GroupDescription, makeCustomGroup, groupCompositionKey } from '@/lib/content';
 import { getContentList, type ContentPoolItem, type ContentCategory } from '@/lib/api/contentPool';
 import { useNewNewsletterDraftStore, type TopicSuggestion as DraftTopicSuggestion } from '@/store/newNewsletterDraftStore';
 import { useParticipantStore } from '@/store/participantStore';
@@ -194,6 +194,13 @@ function ConfigureContent() {
   // Step 5 추가 자료: 드래그오버 중인 타깃 id (시각 피드백)
   const [attachDragTarget, setAttachDragTarget] = useState<string | null>(null);
 
+  // 그룹 설명(유형 구성 키 → 설명). 회차 무관 공유 — 드래프트에 동기화.
+  const [groupDescriptions, setGroupDescriptions] = useState<Record<string, GroupDescription>>(configDraft.groupDescriptions ?? {});
+  // 그룹 카드 설명 패널 펼침 상태 (그룹 id 기준)
+  const [expandedGroupDesc, setExpandedGroupDesc] = useState<Set<string>>(new Set());
+  // AI 그룹 설명 일괄 생성 로딩
+  const [generatingGroupDesc, setGeneratingGroupDesc] = useState(false);
+
   // ── 5단계: 콘텐츠 구성 (회차별 통합) ──
   const [rounds, setRounds] = useState<Round[]>(configDraft.rounds);
   const [activeRoundIdx, setActiveRoundIdx] = useState(0);
@@ -298,10 +305,10 @@ function ConfigureContent() {
   useEffect(() => {
     configDraft.setDraft({
       wizardStep, customStoryline, suggestions, rounds,
-      totalRounds, roundDistribution,
+      totalRounds, roundDistribution, groupDescriptions,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wizardStep, customStoryline, suggestions, rounds, totalRounds, roundDistribution]);
+  }, [wizardStep, customStoryline, suggestions, rounds, totalRounds, roundDistribution, groupDescriptions]);
 
   // 새 뉴스레터 제작 시작(기업 선택/변경) 또는 나가기(초기화) 시 세션 캐시 초기화
   useEffect(() => {
@@ -617,6 +624,9 @@ function ConfigureContent() {
           companyName: targetCompanies.map(c => c.name).join(', ') || '대상 기업',
           referenceData,
           leadershipInfo: matchLeadershipInfo(isCustom && group && group.types.length > 0 ? group.types : []),
+          groupDescription: isCustom && group && group.types.length > 0
+            ? groupDescriptions[groupCompositionKey(group.types)]
+            : undefined,
         }),
       });
       if (!res.ok) throw new Error('생성 실패');
@@ -1281,6 +1291,70 @@ function ConfigureContent() {
         );
         return { ...round, customGroups: newGroups };
       });
+    });
+  }
+
+  // ── Step 4: AI 그룹 설명 일괄 생성 ──
+  // 전 회차의 모든 그룹(유형 있는) 구성을 유형 구성 키로 중복 제거하고, 기업 학습 유형 정보를 종합해 도출.
+  async function generateAllGroupDescriptions() {
+    const seen = new Map<string, string[]>(); // key → types
+    rounds.forEach(r => r.customGroups.forEach(g => {
+      if (g.types.length === 0) return;
+      const key = groupCompositionKey(g.types);
+      if (!seen.has(key)) seen.set(key, g.types);
+    }));
+    if (seen.size === 0) return;
+    const groups = Array.from(seen.entries()).map(([key, types]) => ({
+      key,
+      types,
+      typeInfos: matchLeadershipInfo(types),
+    }));
+    setGeneratingGroupDesc(true);
+    try {
+      const res = await fetch('/api/admin/leadership-info/group-describe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyName: targetCompanies.map(c => c.name).join(', ') || '대상 기업', groups }),
+      });
+      if (!res.ok) throw new Error('생성 실패');
+      const data = (await res.json()) as { descriptions: Record<string, GroupDescription> };
+      setGroupDescriptions(prev => ({ ...prev, ...data.descriptions }));
+      // 생성된 그룹 설명 패널을 펼쳐 결과를 바로 보여줌
+      setExpandedGroupDesc(() => {
+        const next = new Set<string>();
+        rounds.forEach(r => r.customGroups.forEach(g => {
+          if (g.types.length > 0 && data.descriptions[groupCompositionKey(g.types)]) next.add(g.id);
+        }));
+        return next;
+      });
+    } catch (e) {
+      console.error('그룹 설명 생성 오류:', e);
+      alert('그룹 설명 생성 중 오류가 발생했습니다.');
+    } finally {
+      setGeneratingGroupDesc(false);
+    }
+  }
+
+  // 그룹 설명 편집 — 유형 구성 키 기준으로 갱신(같은 구성의 다른 회차 그룹에도 반영)
+  function updateGroupDescription(types: string[], field: keyof GroupDescription, value: string) {
+    const key = groupCompositionKey(types);
+    if (!key) return;
+    setGroupDescriptions(prev => ({
+      ...prev,
+      [key]: {
+        summary: prev[key]?.summary ?? '',
+        characteristics: prev[key]?.characteristics ?? '',
+        developmentPoints: prev[key]?.developmentPoints ?? '',
+        [field]: value,
+      },
+    }));
+  }
+
+  function toggleGroupDescPanel(groupId: string) {
+    setExpandedGroupDesc(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId); else next.add(groupId);
+      return next;
     });
   }
 
@@ -2173,17 +2247,42 @@ function ConfigureContent() {
                   );
                 })}
                 </div>
-                {rounds.length > 1 && (
-                  <button
-                    onClick={() => { if (confirm('현재 회차의 그룹 설정을 다른 모든 회차에 동일하게 적용할까요?')) applyDistributionToAll(); }}
-                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border border-[#55A4DA] bg-[#55A4DA] text-white hover:bg-[#3A8BC4] transition-colors"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                    </svg>
-                    전 회차 동일하게
-                  </button>
-                )}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {rounds.some(r => r.customGroups.some(g => g.types.length > 0)) && (
+                    <button
+                      onClick={() => { void generateAllGroupDescriptions(); }}
+                      disabled={generatingGroupDesc}
+                      className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border transition-colors ${
+                        generatingGroupDesc
+                          ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                          : 'border-[#55A4DA] text-[#55A4DA] hover:bg-[#55A4DA]/5'
+                      }`}
+                    >
+                      {generatingGroupDesc ? (
+                        <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z" />
+                        </svg>
+                      ) : (
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                      )}
+                      {generatingGroupDesc ? 'AI 설명 생성 중…' : 'AI로 그룹 설명 생성'}
+                    </button>
+                  )}
+                  {rounds.length > 1 && (
+                    <button
+                      onClick={() => { if (confirm('현재 회차의 그룹 설정을 다른 모든 회차에 동일하게 적용할까요?')) applyDistributionToAll(); }}
+                      className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border border-[#55A4DA] bg-[#55A4DA] text-white hover:bg-[#3A8BC4] transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                      </svg>
+                      전 회차 동일하게
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -2346,6 +2445,54 @@ function ConfigureContent() {
                                 </div>
                               )}
                             </div>
+                            {/* 그룹 설명 접이식 패널 (유형이 있는 그룹만) */}
+                            {g.types.length > 0 && (() => {
+                              const descKey = groupCompositionKey(g.types);
+                              const desc = groupDescriptions[descKey];
+                              const open = expandedGroupDesc.has(g.id);
+                              return (
+                                <div className="border-t border-gray-100">
+                                  <button
+                                    onClick={() => toggleGroupDescPanel(g.id)}
+                                    className="w-full px-4 py-2.5 flex items-center gap-2 text-left hover:bg-gray-50/60 transition-colors"
+                                  >
+                                    <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform ${open ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                    </svg>
+                                    <span className="text-xs font-semibold text-gray-600">그룹 설명</span>
+                                    {desc?.summary?.trim() && !open && (
+                                      <span className="text-[11px] text-gray-400 truncate flex-1">{desc.summary}</span>
+                                    )}
+                                    {!desc && (
+                                      <span className="text-[10px] text-gray-300 flex-1">미생성</span>
+                                    )}
+                                  </button>
+                                  {open && (
+                                    <div className="px-4 pb-3 space-y-2.5">
+                                      {!desc && (
+                                        <p className="text-[11px] text-gray-400">상단 <span className="font-semibold text-[#55A4DA]">AI로 그룹 설명 생성</span>을 눌러 초안을 만드세요. 직접 입력도 가능합니다.</p>
+                                      )}
+                                      {([
+                                        { field: 'summary' as const, label: '요약', rows: 2 },
+                                        { field: 'characteristics' as const, label: '특성', rows: 3 },
+                                        { field: 'developmentPoints' as const, label: '개발 포인트', rows: 3 },
+                                      ]).map(({ field, label, rows }) => (
+                                        <div key={field}>
+                                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">{label}</label>
+                                          <textarea
+                                            value={desc?.[field] ?? ''}
+                                            onChange={e => updateGroupDescription(g.types, field, e.target.value)}
+                                            rows={rows}
+                                            placeholder={`${label}을(를) 입력하세요`}
+                                            className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition resize-none bg-white"
+                                          />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </div>
                         );
                       })}

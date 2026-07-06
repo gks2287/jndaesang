@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { DEFAULT_STORYLINE, type StorylineStep } from '@/lib/storyline';
-import { makeStepContents, type StepContent, type Round } from '@/lib/content';
+import { makeStepContents, type StepContent, type Round, type GroupDescription } from '@/lib/content';
 import type { SavedNewsletterContent } from '@/components/newsletter/NewsletterRender';
 
 export type WizardStep = 1 | 2 | 3 | 4 | 5;
@@ -27,6 +27,8 @@ interface NewNewsletterDraft {
   totalRounds: number;
   roundDistribution: { stepIndex: number; count: number }[];
   rounds: Round[];
+  // 그룹 설명(유형 구성 키 → 설명). 유형 구성이 같으면 회차 무관하게 공유.
+  groupDescriptions: Record<string, GroupDescription>;
   deliverySchedule: DeliverySchedule;
 
   // 이어서/수정 진입용 — 편집 대상 뉴스레터 id(수정 모드)와 미리 불러온 본문
@@ -46,6 +48,7 @@ const DEFAULT_DRAFT: NewNewsletterDraft = {
   totalRounds: DEFAULT_STORYLINE.length,
   roundDistribution: [],
   rounds: [],
+  groupDescriptions: {},
   deliverySchedule: '주 1회',
   editingNewsletterId: null,
   seededGeneratedContent: null,

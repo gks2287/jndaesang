@@ -55,6 +55,19 @@ export function makeCustomGroup(id: string, types: string[] = [], leaderIds: num
   return { id, types, leaderIds, topic: '', contents: [], interactions: [], surveys: [], attachments: [] };
 }
 
+// 그룹 설명: 기업 학습 리더십 정보를 종합해 AI가 도출하고 관리자가 편집하는 그룹 단위 정의.
+// 뉴스레터 콘텐츠 생성 시 맞춤형 본문의 방향 기준으로 사용된다.
+export interface GroupDescription {
+  summary: string;           // 그룹 한줄 요약/정의
+  characteristics: string;   // 그룹 특성
+  developmentPoints: string; // 개발 포인트(코칭 방향)
+}
+
+// 유형 구성 → 설명 매핑 키. 유형 배열을 정렬·조인하여 회차와 무관하게 같은 구성이 설명을 공유한다.
+export function groupCompositionKey(types: string[]): string {
+  return [...types].filter(Boolean).sort().join('|');
+}
+
 export interface ContentItem {
   id: string;
   title: string;
