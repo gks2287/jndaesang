@@ -1187,7 +1187,13 @@ function ConfigureContent() {
 
   // 이어서/수정 복원용 위저드 스냅샷
   function buildAuthoring() {
-    return { storyline: customStoryline, totalRounds, roundDistribution, rounds, startDate, deliveryInterval: deliveryInterval ?? undefined };
+    // 이어만들기 복원용 마지막 위치: 그룹 설정(4단계)이면 그 단계 회차 탭, 그 외엔 콘텐츠 구성 회차
+    const lastActiveRoundIdx = wizardStep === 4 ? distributionRoundIdx : activeRoundIdx;
+    return {
+      storyline: customStoryline, totalRounds, roundDistribution, rounds,
+      startDate, deliveryInterval: deliveryInterval ?? undefined,
+      lastWizardStep: wizardStep, lastActiveRoundIdx,
+    };
   }
 
   async function handleSave(status: '제작 중' | '제작완료', savedContent?: SavedNewsletterContent) {

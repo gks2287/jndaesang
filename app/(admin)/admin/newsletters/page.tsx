@@ -1016,6 +1016,18 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
             수정하기
           </button>
         )}
+        {companyNewsletters.length > 0 && completedCount < totalCount && (
+          <button
+            onClick={e => { e.stopPropagation(); onContinue(companyNewsletters[0]); }}
+            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#55A4DA]/10 text-[#55A4DA] hover:bg-[#55A4DA]/20 text-xs font-semibold transition-colors"
+            title="이어만들기 · 가장 최근 진행 회차로"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+            </svg>
+            이어만들기
+          </button>
+        )}
         {completedCount > 0 && (
           <button
             onClick={e => { e.stopPropagation(); onSend(company); }}
@@ -1086,9 +1098,12 @@ function NewslettersContent() {
     const rounds = mode === 'continue'
       ? baseRounds.map((r, i) => (madeIdx.has(i) ? r : { ...r, topic: '', contents: [] }))
       : baseRounds;
-    // 이어서 진입 회차: 지정 회차 우선, 없으면 첫 미완성 회차(모두 완료면 0)
+    // 이어서 진입 회차: 지정 회차 우선 → 저장된 마지막 회차 → 첫 미완성 회차(모두 완료면 0)
     const firstIncomplete = baseRounds.findIndex((_, i) => !madeIdx.has(i));
-    const activeRoundIdx = opts?.targetRoundIdx ?? (firstIncomplete >= 0 ? firstIncomplete : 0);
+    const activeRoundIdx = opts?.targetRoundIdx
+      ?? (mode === 'continue' && a?.lastActiveRoundIdx != null
+        ? a.lastActiveRoundIdx
+        : (firstIncomplete >= 0 ? firstIncomplete : 0));
     resetDraft();
     setDraft({
       companyIds: [nl.companyId],
@@ -1096,8 +1111,8 @@ function NewslettersContent() {
       totalRounds,
       roundDistribution,
       rounds,
-      // 이어서 만들기는 콘텐츠 구성(5단계)으로 진입, 수정은 지정 단계(없으면 1단계)
-      wizardStep: opts?.targetStep ?? (mode === 'continue' ? 5 : 1),
+      // 이어서 만들기는 저장된 마지막 단계로 복원(없으면 5단계), 수정은 지정 단계(없으면 1단계)
+      wizardStep: opts?.targetStep ?? (mode === 'continue' ? ((a?.lastWizardStep as WizardStep | undefined) ?? 5) : 1),
       editingNewsletterId: mode === 'edit' ? nl.id : null,
       // 완료 회차 본문을 항상 전달해 미리보기에서 보이도록 (continue/edit 공통)
       seededGeneratedContent: nl.generatedContent ?? null,
@@ -1566,7 +1581,7 @@ function NewslettersContent() {
                 newsletters={newslettersDeduped}
                 onToggleSaved={toggleRoundSaved}
                 onContinue={nl => seedFromNewsletter(nl, 'continue')}
-                onResumeRound={(nl, roundIdx) => seedFromNewsletter(nl, 'continue', { targetRoundIdx: roundIdx })}
+                onResumeRound={(nl, roundIdx) => seedFromNewsletter(nl, 'continue', { targetRoundIdx: roundIdx, targetStep: 5 })}
                 onEdit={nl => seedFromNewsletter(nl, 'edit', { targetStep: 5 })}
                 onEditTypes={nl => seedFromNewsletter(nl, 'edit', { targetStep: 1 })}
                 onEditRoundGroups={(nl, roundIdx) => seedFromNewsletter(nl, 'edit', { targetStep: 4, targetRoundIdx: roundIdx })}

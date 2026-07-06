@@ -14,6 +14,9 @@ export interface NewsletterAuthoring {
   // 이어서/수정 진입 시 발송일 복원용 (구버전 레코드는 없을 수 있음)
   startDate?: string;
   deliveryInterval?: string;
+  // 이어만들기 시 마지막 작업 위치 복원용 (구버전 레코드는 없을 수 있음)
+  lastWizardStep?: number;      // 마지막으로 있던 위저드 단계(1~5)
+  lastActiveRoundIdx?: number;  // 마지막 단계의 활성 회차 인덱스(0-based)
 }
 
 export interface Newsletter {
