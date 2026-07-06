@@ -20,7 +20,7 @@ const APP_URL = RAW_APP.startsWith('http') && !RAW_APP.includes('vercel.app')
 export function buildEmailHtml(generated: GeneratedNewsletter, opts: { vol: number; dateLabel: string; participantName: string; token?: string }): string {
   const { vol, dateLabel, participantName, token } = opts;
   const fullUrl = token ? `${APP_URL}/newsletter/${token}` : APP_URL;
-  const mypageUrl = token ? `${APP_URL}/newsletter/${token}/mypage` : APP_URL;
+  const mypageUrl = token ? `${APP_URL}/newsletter/${token}?tab=mypage` : APP_URL;
 
   const sectionCards = generated.sections.map(sec => `
     <tr><td style="padding:0 0 12px">

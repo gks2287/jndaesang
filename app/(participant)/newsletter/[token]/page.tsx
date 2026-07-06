@@ -119,6 +119,14 @@ export default function ParticipantNewsletterPage() {
   const [expandedLog, setExpandedLog] = useState<number | null>(null);
   const [activeLogRound, setActiveLogRound] = useState<number | null>(null);
 
+  // 이메일의 '마이페이지 바로가기'(?tab=mypage) 진입 시 마이페이지 탭으로 시작
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (new URLSearchParams(window.location.search).get('tab') === 'mypage') {
+      setActiveTab('mypage');
+    }
+  }, []);
+
   if (participant === undefined) {
     return (
       <div className="min-h-screen flex items-center justify-center">
