@@ -677,20 +677,22 @@ function SendRoundModal({ company, newsletters, participants, onClose }: {
               </div>
             </div>
           ))}
-          {result && (
-            <p className={`text-sm whitespace-pre-line ${result.ok ? 'text-emerald-600' : 'text-amber-600'}`}>{result.msg}</p>
-          )}
         </div>
 
-        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-2 flex-shrink-0">
-          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-500 hover:bg-gray-50 rounded-lg transition-colors">닫기</button>
-          <button
-            onClick={handleSend}
-            disabled={selected.size === 0 || sending}
-            className="px-5 py-2 text-sm font-semibold text-white bg-[#55A4DA] hover:bg-[#3A8BC4] rounded-lg transition-colors disabled:bg-gray-200 disabled:text-gray-400"
-          >
-            {sending ? '발송 중...' : `발송 (${selected.size})`}
-          </button>
+        <div className="px-6 py-4 border-t border-gray-100 flex items-center gap-3 flex-shrink-0">
+          {result && (
+            <p className={`text-sm whitespace-pre-line flex-1 min-w-0 ${result.ok ? 'text-emerald-600' : 'text-amber-600'}`}>{result.msg}</p>
+          )}
+          <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+            <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-500 hover:bg-gray-50 rounded-lg transition-colors">닫기</button>
+            <button
+              onClick={handleSend}
+              disabled={selected.size === 0 || sending}
+              className="px-5 py-2 text-sm font-semibold text-white bg-[#55A4DA] hover:bg-[#3A8BC4] rounded-lg transition-colors disabled:bg-gray-200 disabled:text-gray-400"
+            >
+              {sending ? '발송 중...' : `발송 (${selected.size})`}
+            </button>
+          </div>
         </div>
       </div>
     </div>
