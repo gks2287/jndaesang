@@ -198,7 +198,7 @@ export default function AnalyticsPage() {
                 </div>
 
                 {/* 도넛 차트 + 범례 */}
-                <div className="flex items-center gap-5 py-1">
+                <div className="flex items-center justify-center gap-12 py-1">
                   <div className="flex-shrink-0">
                     <DonutChart
                       segments={leadershipDist.filter(s => s.count > 0).map(s => ({
