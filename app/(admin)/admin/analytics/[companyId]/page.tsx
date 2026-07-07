@@ -74,37 +74,43 @@ function DonutChart({ segments, total }: {
   );
 }
 
-const MONTH_LABELS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
-
-function MonthlyChart({ members, year }: { members: Participant[]; year: number }) {
+function RoundChart({ members }: { members: Participant[] }) {
   const data = useMemo(() => {
-    return MONTH_LABELS.map((label, i) => {
-      const month = String(i + 1).padStart(2, '0');
-      const prefix = `${year}-${month}`;
-      const count = members.filter(p => p.lastOpenedAt?.startsWith(prefix)).length;
-      return { label, count };
+    const maxStep = Math.max(...members.map(p => p.stepTotal), 0);
+    if (maxStep === 0) return [];
+    return Array.from({ length: maxStep }, (_, i) => {
+      const round = i + 1;
+      const count = members.filter(p => p.stepCurrent >= round).length;
+      return { label: `${round}회차`, count };
     });
-  }, [members, year]);
+  }, [members]);
 
+  const total = members.length;
   const max = Math.max(...data.map(d => d.count), 1);
   const chartH = 120;
+  const colW = data.length > 0 ? Math.max(36, Math.min(60, 432 / data.length)) : 36;
+  const barW = Math.round(colW * 0.5);
+  const svgW = colW * data.length;
+
+  if (data.length === 0) {
+    return <p className="text-center text-xs text-gray-300 py-10">회차 데이터가 없습니다.</p>;
+  }
 
   return (
     <div className="w-full">
-      <svg viewBox={`0 0 ${12 * 36} ${chartH + 28}`} className="w-full">
-        {/* 가이드 라인 */}
+      <svg viewBox={`0 0 ${svgW} ${chartH + 28}`} className="w-full">
         {[0, 0.5, 1].map((ratio) => {
           const y = chartH - ratio * chartH;
           return (
-            <line key={ratio} x1="0" y1={y} x2={12 * 36} y2={y}
+            <line key={ratio} x1="0" y1={y} x2={svgW} y2={y}
               stroke="#f3f4f6" strokeWidth="1" />
           );
         })}
         {data.map((d, i) => {
           const barH = max > 0 ? (d.count / max) * chartH : 0;
-          const x = i * 36 + 8;
-          const barW = 20;
+          const x = i * colW + (colW - barW) / 2;
           const y = chartH - barH;
+          const rate = total > 0 ? Math.round((d.count / total) * 100) : 0;
           return (
             <g key={i}>
               <rect x={x} y={y} width={barW} height={barH}
@@ -112,7 +118,7 @@ function MonthlyChart({ members, year }: { members: Participant[]; year: number 
               {d.count > 0 && (
                 <text x={x + barW / 2} y={y - 4} textAnchor="middle"
                   fontSize="9" fill="#6b7280" fontWeight="600">
-                  {d.count}
+                  {d.count}명 ({rate}%)
                 </text>
               )}
               <text x={x + barW / 2} y={chartH + 16} textAnchor="middle"
@@ -123,9 +129,6 @@ function MonthlyChart({ members, year }: { members: Participant[]; year: number 
           );
         })}
       </svg>
-      {data.every(d => d.count === 0) && (
-        <p className="text-center text-xs text-gray-300 -mt-6">열람 데이터가 없습니다.</p>
-      )}
     </div>
   );
 }
@@ -592,10 +595,10 @@ export default function CompanyDetailPage() {
             ))}
           </div>
 
-          {/* 월간 열람 추이 */}
+          {/* 회차별 열람 추이 */}
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 flex-1">
-            <p className="text-sm font-bold text-gray-800 mb-5">월간 열람 추이</p>
-            <MonthlyChart members={yearMembers} year={activeYear} />
+            <p className="text-sm font-bold text-gray-800 mb-5">회차별 열람 추이</p>
+            <RoundChart members={yearMembers} />
           </div>
         </div>
 
