@@ -357,9 +357,11 @@ export default function CompanyDetailPage() {
         직급: p.position,
         리더십유형: p.leadershipType,
         발송상태: p.deliveryStatus,
+        발송회차: p.deliveryStatus !== '미발송' ? `${p.assessmentRound}회차` : '-',
+        최근발송일자: p.lastOpenedAt ?? '-',
+        뱃지개수: p.stepCurrent,
         진행단계: `${p.stepCurrent}/${p.stepTotal}`,
         열람률: opened ? '100%' : '0%',
-        최근열람: p.lastOpenedAt ?? '-',
         참여율: `${participationRate}%`,
       };
     });
