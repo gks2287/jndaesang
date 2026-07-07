@@ -422,6 +422,25 @@ export default function CompanyDetailPage() {
       {/* 본문 */}
       <div ref={pageRef} className="flex-1 overflow-y-auto px-8 py-6 space-y-6">
 
+        {/* 연도 탭 */}
+        {years.length > 0 && (
+          <div className="flex gap-2">
+            {years.map(y => (
+              <button
+                key={y}
+                onClick={() => setActiveYear(y)}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                  activeYear === y
+                    ? 'bg-[#55A4DA] text-white'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+              >
+                {y}년
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* 기업 정보 카드 */}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 flex items-start gap-6">
           <CompanyLogo name={company.name} logoUrl={company.logoUrl} size={56} />
@@ -464,23 +483,8 @@ export default function CompanyDetailPage() {
           </div>
         </div>
 
-        {/* 연도 탭 + 리더십 유형 필터 */}
-        <div className="flex items-center justify-between">
-          <div className="flex gap-2">
-            {years.map(y => (
-              <button
-                key={y}
-                onClick={() => setActiveYear(y)}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                  activeYear === y
-                    ? 'bg-[#55A4DA] text-white'
-                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                }`}
-              >
-                {y}년
-              </button>
-            ))}
-          </div>
+        {/* 리더십 유형 필터 */}
+        <div className="flex items-center justify-end">
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-400">리더십 유형</span>
             <select
