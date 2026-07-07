@@ -1,7 +1,11 @@
 import { Resend } from 'resend';
 import type { GeneratedNewsletter } from '@/components/newsletter/NewsletterRender';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+let _resend: Resend | null = null;
+function getResend() {
+  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY);
+  return _resend;
+}
 
 // 발신 주소 — 인증된 도메인. 표시이름에 '&'가 있어 RFC 형식대로 따옴표로 감싼다.
 // env가 유효한 이메일 형식이면 우선 사용, 아니면 기본값.
@@ -117,7 +121,7 @@ export interface SendNewsletterParams {
 
 /** 단건 이메일 발송 */
 export async function sendNewsletterEmail(params: SendNewsletterParams) {
-  const { data, error } = await resend.emails.send({
+  const { data, error } = await getResend().emails.send({
     from: `J&Company <${FROM_EMAIL}>`,
     to: params.to,
     subject: params.subject,
@@ -141,7 +145,7 @@ export async function sendNewsletterBatch(items: SendNewsletterParams[]): Promis
     return { data: results };
   }
 
-  const { data, error } = await resend.batch.send(
+  const { data, error } = await getResend().batch.send(
     items.map(item => ({
       from: `J&Company <${FROM_EMAIL}>`,
       to: item.to,
