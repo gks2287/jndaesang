@@ -495,6 +495,9 @@ function SendConfirmModal({ target, onConfirm, onClose, isSending }: {
   );
 }
 
+// 발송완료 표시용 키 — 회차·유형 단위 (`${회차번호}|${리더십유형}`)
+const sentKey = (roundNum: number, typeName: string) => `${roundNum}|${typeName}`;
+
 // ── 회차 선택 발송 모달 (유형 매칭 직책자에게 실제 이메일 발송) ──────────
 function SendRoundModal({ company, newsletters, participants, onClose }: {
   company: CompanyData;
@@ -502,6 +505,7 @@ function SendRoundModal({ company, newsletters, participants, onClose }: {
   participants: Participant[];
   onClose: () => void;
 }) {
+  const markGroupsSent = useNewsletterStore(s => s.markGroupsSent);
   const companyNLs = useMemo(
     () => newsletters.filter(n =>
       n.companyId === company.companyId && n.status === '제작완료' &&
@@ -549,6 +553,7 @@ function SendRoundModal({ company, newsletters, participants, onClose }: {
     if (selected.size === 0 || sending) return;
     setSending(true);
     let sent = 0; const errs: string[] = [];
+    const sentKeysByNl = new Map<number, string[]>(); // 성공한 (회차·유형) 키
     try {
       for (const nl of companyNLs) {
         const rounds = nl.generatedContent!.rounds;
@@ -564,12 +569,20 @@ function SendRoundModal({ company, newsletters, participants, onClose }: {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ recipients, round: { vol: round.vol, dateLabel: round.dateLabel, generated: round.generated }, companyName: company.companyName }),
               });
-              if (res.ok) { const d = await res.json(); sent += d.sent ?? recipients.length; }
+              if (res.ok) {
+                const d = await res.json(); sent += d.sent ?? recipients.length;
+                // 발송 성공 → 이 그룹 수신인의 리더십 유형을 회차 단위로 발송완료 기록
+                const arr = sentKeysByNl.get(nl.id) ?? [];
+                for (const t of new Set(g.recipients.map(p => p.leadershipType))) arr.push(sentKey(i + 1, t));
+                sentKeysByNl.set(nl.id, arr);
+              }
               else { const e = await res.json().catch(() => ({})); errs.push(`${i + 1}회차 ${g.label}: ${e.error ?? '발송 실패'}`); }
             } catch { errs.push(`${i + 1}회차 ${g.label}: 네트워크 오류`); }
           }
         }
       }
+      // 발송완료 상태 영속화
+      await Promise.all([...sentKeysByNl].map(([nlId, keys]) => markGroupsSent(nlId, keys)));
       setResult({ ok: errs.length === 0, msg: errs.length ? `${sent}건 발송 · 일부 실패\n${errs.join('\n')}` : `${sent}건의 이메일을 발송했습니다.` });
     } finally {
       setSending(false);
@@ -611,6 +624,9 @@ function SendRoundModal({ company, newsletters, participants, onClose }: {
                           const k = `${nl.id}-${i + 1}-${g.key}`;
                           const disabled = g.recipients.length === 0;
                           const isOpen = expanded.has(k);
+                          const nlSent = new Set(nl.sentGroups ?? []);
+                          const groupTypes = [...new Set(g.recipients.map(p => p.leadershipType))];
+                          const isSent = groupTypes.length > 0 && groupTypes.every(t => nlSent.has(sentKey(i + 1, t)));
                           return (
                             <div key={k} className={`rounded-lg border ${disabled ? 'opacity-50 border-gray-100' : 'border-gray-200'}`}>
                               <div className={`flex items-center gap-2.5 px-3 py-2 ${isOpen ? 'border-b border-gray-100' : ''}`}>
@@ -619,6 +635,9 @@ function SendRoundModal({ company, newsletters, participants, onClose }: {
                                   <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#EAF4FC] text-[#2E7DB5] flex-shrink-0">{g.label}</span>
                                   <span className={`text-xs flex-1 min-w-0 truncate ${g.topic ? 'text-gray-600' : 'text-gray-300 italic'}`}>{g.topic || '주제 미선정'}</span>
                                 </label>
+                                {isSent && (
+                                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 flex-shrink-0">발송완료</span>
+                                )}
                                 <span className={`text-[11px] flex-shrink-0 ${disabled ? 'text-red-400' : 'text-gray-400'}`}>수신 {g.recipients.length}명</span>
                                 <button
                                   type="button"
@@ -952,6 +971,8 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
               const allSel = ids.length > 0 && ids.every(id => selectedIds.has(id));
               const nl = newsletters.find(n => n.id === grp.members[0]?.newsletterId);
               const count = grp.members.reduce((s, t) => s + t.count, 0);
+              const nlSent = new Set(nl?.sentGroups ?? []);
+              const isSent = !!nl && grp.members.length > 0 && grp.members.every(m => nlSent.has(sentKey(rn, m.typeName)));
               return (
                 <div key={grp.label} className={`flex items-center gap-3 ${isCompleteTab ? 'pl-14' : 'pl-16'} pr-5 py-2.5 bg-white border-b border-gray-100 last:border-b-0 hover:bg-gray-50/50 transition-colors`}>
                   {isCompleteTab && isDone && (
@@ -960,6 +981,9 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
                   )}
                   <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#EAF4FC] text-[#2E7DB5] flex-shrink-0">{grp.label}</span>
                   <span className={`flex-1 text-sm min-w-0 truncate ${grp.topic ? 'text-gray-600' : 'text-gray-300 italic'}`}>{grp.topic ?? '주제 미선정'}</span>
+                  {isSent && (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 flex-shrink-0">발송완료</span>
+                  )}
                   <span className="text-xs text-gray-400 flex-shrink-0">{count}명</span>
                   {isDone && nl && (
                     <button onClick={() => onToggleSaved(nl.id, rn)}

@@ -25,6 +25,7 @@ type UpdateBody = Partial<{
   leaderType: string;
   totalLeaders: number;
   savedRounds: number[];
+  sentGroups: string[];
   generatedContent: unknown;
   authoring: unknown;
 }>;
@@ -51,6 +52,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (b.leaderType !== undefined) data.leaderType = b.leaderType;
     if (b.totalLeaders !== undefined) data.totalLeaders = b.totalLeaders;
     if (b.savedRounds !== undefined) data.savedRounds = b.savedRounds;
+    if (b.sentGroups !== undefined) data.sentGroups = b.sentGroups;
     if (b.generatedContent !== undefined) {
       data.generatedContent = (b.generatedContent ?? Prisma.JsonNull) as Prisma.InputJsonValue;
     }

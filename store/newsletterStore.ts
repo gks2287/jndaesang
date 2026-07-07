@@ -37,6 +37,8 @@ export interface Newsletter {
   createdAt: string;
   updatedAt: string;
   savedRounds?: number[];
+  // 발송완료 표시용 키 목록: `${회차번호}|${리더십유형}` (회차·유형 단위로 발송 여부 기록)
+  sentGroups?: string[];
   // 제작완료 시 저장되는 회차별 생성 본문 (전체본문 + 요약본 미리보기용)
   generatedContent?: SavedNewsletterContent;
   // 제작 위저드 스냅샷 — 이어서/수정 복원용 (구버전 레코드는 없을 수 있음)
@@ -54,6 +56,8 @@ interface NewsletterStore {
   updateNewsletter: (id: number, data: Partial<Omit<Newsletter, 'id'>>) => Promise<void>;
   removeNewsletter: (id: number) => Promise<void>;
   toggleRoundSaved: (id: number, roundNum: number) => Promise<void>;
+  // 발송완료 키(`${회차}|${유형}`) 추가 기록 — 기존 값과 병합 후 PATCH
+  markGroupsSent: (id: number, keys: string[]) => Promise<void>;
 }
 
 export const useNewsletterStore = create<NewsletterStore>((set, get) => ({
@@ -139,6 +143,27 @@ export const useNewsletterStore = create<NewsletterStore>((set, get) => ({
       if (!res.ok) throw new Error('저장 회차 수정 실패');
     } catch (e) {
       console.error('저장 회차 토글 오류:', e);
+    }
+  },
+
+  // 발송완료 키 병합 기록
+  markGroupsSent: async (id, keys) => {
+    if (keys.length === 0) return;
+    const target = get().newsletters.find(n => n.id === id);
+    if (!target) return;
+    const merged = [...new Set([...(target.sentGroups ?? []), ...keys])];
+    if (merged.length === (target.sentGroups?.length ?? 0)) return; // 변경 없음
+    // 낙관적 업데이트
+    set({ newsletters: get().newsletters.map(n => (n.id === id ? { ...n, sentGroups: merged } : n)) });
+    try {
+      const res = await fetch(`/api/admin/newsletters/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sentGroups: merged }),
+      });
+      if (!res.ok) throw new Error('발송완료 기록 실패');
+    } catch (e) {
+      console.error('발송완료 기록 오류:', e);
     }
   },
 }));
