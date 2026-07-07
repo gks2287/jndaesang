@@ -515,7 +515,7 @@ function SendRoundModal({ company, newsletters, participants, onClose }: {
     if (cgs && cgs.length > 0) {
       return cgs.map(cg => ({
         key: cg.types.join(','),
-        label: cg.types.join(' · '),
+        label: cg.types.join(' / '),
         topic: cg.topic?.trim() ?? '',
         recipients: participants.filter(p => p.companyId === company.companyId && cg.types.includes(p.leadershipType)),
       }));
@@ -911,13 +911,13 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
           const mem = members.filter(t => cg.types.includes(t.typeName));
           if (mem.length === 0) continue;
           mem.forEach(m => used.add(m.typeName));
-          result.push({ label: mem.map(m => m.typeName).join(' · '), members: mem, topic: cg.topic?.trim() || fallbackTopic });
+          result.push({ label: mem.map(m => m.typeName).join(' / '), members: mem, topic: cg.topic?.trim() || fallbackTopic });
         }
         const rest = members.filter(t => !used.has(t.typeName));
-        if (rest.length) result.push({ label: rest.map(m => m.typeName).join(' · '), members: rest, topic: fallbackTopic });
+        if (rest.length) result.push({ label: rest.map(m => m.typeName).join(' / '), members: rest, topic: fallbackTopic });
       } else {
         // authoring 없음 → 같은 뉴스레터를 받는 유형은 한 그룹으로 (회차 공통 주제)
-        result.push({ label: members.map(m => m.typeName).join(' · '), members, topic: fallbackTopic });
+        result.push({ label: members.map(m => m.typeName).join(' / '), members, topic: fallbackTopic });
       }
     }
     return result;
