@@ -19,7 +19,7 @@ const leadershipColor: Record<string, string> = {
   '혁신형': 'bg-violet-100 text-violet-700',
 };
 
-interface SavedRoundItem {
+interface StorageRoundItem {
   newsletterId: number;
   roundNum: number;
   companyId: number;
@@ -28,14 +28,12 @@ interface SavedRoundItem {
   stage: string;
   topic: string | null;
   updatedAt: string;
-  saved: boolean; // 북마크로 저장됨
-  sent: boolean;  // 발송완료됨
+  sent: boolean;
 }
 
 export default function NewsletterStoragePage() {
   const router = useRouter();
   const newsletters = useNewsletterStore(s => s.newsletters);
-  const toggleRoundSaved = useNewsletterStore(s => s.toggleRoundSaved);
   const companies = useCompanyStore(s => s.companies);
   const resetDraft = useNewNewsletterDraftStore(s => s.resetDraft);
 
@@ -43,47 +41,39 @@ export default function NewsletterStoragePage() {
   const [companyFilter, setCompanyFilter] = useState('');
   const [preview, setPreview] = useState<{ title: string; content: SavedNewsletterContent } | null>(null);
   const [reuseToast, setReuseToast] = useState<string | null>(null);
-  const [removeTarget, setRemoveTarget] = useState<{ nlId: number; roundNum: number } | null>(null);
 
-  // 저장(북마크) + 발송완료 회차 목록 펼치기 — (뉴스레터·회차) 단위로 병합
-  const allSavedRounds = useMemo<SavedRoundItem[]>(() => {
-    const map = new Map<string, SavedRoundItem>();
-    const ensure = (nl: typeof newsletters[number], roundNum: number) => {
-      const key = `${nl.id}-${roundNum}`;
-      let it = map.get(key);
-      if (!it) {
-        const topic = nl.generatedContent?.rounds[roundNum - 1]?.generated?.headline ?? null;
-        it = {
+  // 제작완료 뉴스레터의 모든 회차 자동 표시
+  const allRounds = useMemo<StorageRoundItem[]>(() => {
+    const items: StorageRoundItem[] = [];
+    for (const nl of newsletters) {
+      if (nl.status !== '제작완료' || !nl.generatedContent) continue;
+      const sentRounds = new Set(
+        (nl.sentGroups ?? []).map(k => Number(k.split('|')[0])).filter(n => Number.isInteger(n) && n > 0)
+      );
+      for (let i = 0; i < nl.generatedContent.rounds.length; i++) {
+        const round = nl.generatedContent.rounds[i];
+        if (!round?.generated?.headline) continue;
+        const roundNum = i + 1;
+        items.push({
           newsletterId: nl.id,
           roundNum,
           companyId: nl.companyId,
           companyName: nl.companyName ?? '',
           leadershipType: nl.leadershipType,
           stage: STAGES[(roundNum - 1) % STAGES.length],
-          topic,
+          topic: round.generated?.headline ?? null,
           updatedAt: nl.updatedAt,
-          saved: false,
-          sent: false,
-        };
-        map.set(key, it);
+          sent: sentRounds.has(roundNum),
+        });
       }
-      return it;
-    };
-    for (const nl of newsletters) {
-      for (const roundNum of nl.savedRounds ?? []) ensure(nl, roundNum).saved = true;
-      // 발송완료 키(`${회차}|${유형}`)에서 회차 추출
-      const sentRounds = new Set(
-        (nl.sentGroups ?? []).map(k => Number(k.split('|')[0])).filter(n => Number.isInteger(n) && n > 0)
-      );
-      for (const roundNum of sentRounds) ensure(nl, roundNum).sent = true;
     }
-    return [...map.values()].sort((a, b) =>
+    return items.sort((a, b) =>
       b.updatedAt.localeCompare(a.updatedAt) || a.roundNum - b.roundNum
     );
   }, [newsletters]);
 
   const filtered = useMemo(() => {
-    let list = allSavedRounds;
+    let list = allRounds;
     if (companyFilter) list = list.filter(r => r.companyId === Number(companyFilter));
     if (search.trim()) {
       const q = search.trim();
@@ -92,22 +82,22 @@ export default function NewsletterStoragePage() {
       );
     }
     return list;
-  }, [allSavedRounds, companyFilter, search]);
+  }, [allRounds, companyFilter, search]);
 
-  const savedCompanyIds = useMemo(() =>
-    [...new Set(allSavedRounds.map(r => r.companyId))],
-    [allSavedRounds]
+  const storageCompanyIds = useMemo(() =>
+    [...new Set(allRounds.map(r => r.companyId))],
+    [allRounds]
   );
-  const savedCompanies = companies.filter(c => savedCompanyIds.includes(c.id));
+  const storageCompanies = companies.filter(c => storageCompanyIds.includes(c.id));
 
-  function handleReuse(item: SavedRoundItem) {
+  function handleReuse(item: StorageRoundItem) {
     resetDraft();
     router.push('/admin/newsletters/new');
     setReuseToast(`"${item.companyName} ${item.leadershipType} ${item.roundNum}회차" 구성을 참고해 새 뉴스레터를 만듭니다.`);
     setTimeout(() => setReuseToast(null), 4000);
   }
 
-  function handlePreview(item: SavedRoundItem) {
+  function handlePreview(item: StorageRoundItem) {
     const nl = newsletters.find(n => n.id === item.newsletterId);
     if (nl?.generatedContent && nl.generatedContent.rounds.length > 0) {
       setPreview({ title: `${item.companyName} ${item.leadershipType} ${item.roundNum}회차`, content: nl.generatedContent });
@@ -120,26 +110,12 @@ export default function NewsletterStoragePage() {
       <div className="bg-white border-b border-gray-200 px-8 h-[65px] flex items-center justify-between flex-shrink-0">
         <div>
           <span className="text-[17px] font-bold text-gray-900">뉴스레터 저장소</span>
-          <span className="ml-2 text-xs text-gray-400 font-normal">마음에 드는 회차를 저장하고 재활용하세요</span>
+          <span className="ml-2 text-xs text-gray-400 font-normal">제작완료된 뉴스레터 회차가 자동으로 저장됩니다</span>
         </div>
       </div>
 
       {/* 본문 */}
       <div className="flex-1 px-8 py-6 overflow-y-auto bg-white">
-        {/* 안내 배너 */}
-        <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 mb-5">
-          <svg className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <p className="text-xs text-blue-600 leading-relaxed">
-            <span className="font-semibold">뉴스레터 제작</span> 탭에서 완료된 각 회차 옆 북마크(
-            <svg className="inline w-3 h-3 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-            </svg>
-            ) 버튼으로 회차별로 개별 저장할 수 있습니다. <span className="font-semibold text-emerald-600">발송완료</span>된 회차는 자동으로 이 목록에 표시됩니다.
-          </p>
-        </div>
-
         {/* 검색 + 필터 */}
         <div className="flex items-center gap-3 mb-5 flex-wrap">
           <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 w-56">
@@ -160,7 +136,7 @@ export default function NewsletterStoragePage() {
             className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 bg-gray-50 outline-none focus:border-[#55A4DA] transition-colors cursor-pointer"
           >
             <option value="">전체 기업</option>
-            {savedCompanies.map(c => (
+            {storageCompanies.map(c => (
               <option key={c.id} value={String(c.id)}>{c.name}</option>
             ))}
           </select>
@@ -170,12 +146,12 @@ export default function NewsletterStoragePage() {
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-gray-400">
             <svg className="w-14 h-14 mb-4 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
             <p className="text-sm font-medium">
-              {allSavedRounds.length === 0 ? '아직 저장되거나 발송완료된 회차가 없습니다.' : '검색 결과가 없습니다.'}
+              {allRounds.length === 0 ? '아직 제작완료된 뉴스레터가 없습니다.' : '검색 결과가 없습니다.'}
             </p>
-            <p className="text-xs text-gray-300 mt-1">회차 옆 북마크로 저장하거나, 뉴스레터를 발송하면 이 목록에 표시됩니다.</p>
+            <p className="text-xs text-gray-300 mt-1">뉴스레터 제작을 완료하면 이 목록에 자동으로 표시됩니다.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-2.5">
@@ -214,17 +190,6 @@ export default function NewsletterStoragePage() {
                     >
                       확인
                     </button>
-                    {item.saved && (
-                      <button
-                        onClick={() => setRemoveTarget({ nlId: item.newsletterId, roundNum: item.roundNum })}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center text-[#55A4DA] hover:text-red-400 hover:bg-red-50 transition-colors"
-                        title="저장 해제"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="currentColor" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-                        </svg>
-                      </button>
-                    )}
                   </div>
                 </div>
               );
@@ -232,37 +197,6 @@ export default function NewsletterStoragePage() {
           </div>
         )}
       </div>
-
-      {/* 저장 해제 확인 모달 */}
-      {removeTarget !== null && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-5">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                <svg className="w-5 h-5 text-gray-400" fill="currentColor" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-gray-800">저장소에서 제거하시겠습니까?</h3>
-                <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
-                  뉴스레터 자체는 삭제되지 않으며, 저장소 목록에서만 제거됩니다.
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setRemoveTarget(null)}
-                className="px-4 py-2 text-sm font-medium text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                취소
-              </button>
-              <button onClick={() => { toggleRoundSaved(removeTarget.nlId, removeTarget.roundNum); setRemoveTarget(null); }}
-                className="px-4 py-2 text-sm font-bold bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-colors">
-                제거
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <SavedNewsletterPreviewModal
         open={!!preview}

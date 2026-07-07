@@ -699,13 +699,11 @@ function SendRoundModal({ company, newsletters, participants, onClose }: {
 }
 
 // ── 4단계: 회차 행 ───────────────────────────────────────────────────
-function RoundRow({ round, companyName, polarity, typeName, count, isCompleteTab, isSelected, onSelect, onPreview, isSavedRound, onToggleSaveRound }: {
+function RoundRow({ round, companyName, polarity, typeName, count, isCompleteTab, isSelected, onSelect, onPreview }: {
   round: RoundData; companyName: string; polarity: Polarity; typeName: string; count: number;
   isCompleteTab: boolean; isSelected: boolean;
   onSelect: (selectionId: string, checked: boolean) => void;
   onPreview: (t: PreviewTarget) => void;
-  isSavedRound?: boolean;
-  onToggleSaveRound?: (roundNum: number) => void;
 }) {
   const isDone = round.status === 'completed';
   return (
@@ -729,19 +727,6 @@ function RoundRow({ round, companyName, polarity, typeName, count, isCompleteTab
         </div>
         <span className="text-[11px] text-gray-400 w-8 text-right">{round.progressPct}%</span>
       </div>
-      {isDone && onToggleSaveRound && (
-        <button
-          onClick={() => onToggleSaveRound(round.round)}
-          className={`flex-shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors ${
-            isSavedRound ? 'text-[#55A4DA]' : 'text-gray-300 hover:text-[#55A4DA]'
-          }`}
-          title={isSavedRound ? '저장소에서 제거' : '저장소에 저장'}
-        >
-          <svg className="w-3.5 h-3.5" fill={isSavedRound ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-          </svg>
-        </button>
-      )}
       <div className="flex-shrink-0 w-[72px] text-right">
         {isDone ? (
           <button onClick={() => onPreview({ companyName, polarity, typeName, count, round })}
@@ -760,13 +745,12 @@ function RoundRow({ round, companyName, polarity, typeName, count, isCompleteTab
 }
 
 // ── 3단계: 리더십 유형 행 ────────────────────────────────────────────
-function TypeRow({ typeData, visibleRounds, companyId, companyName, polarity, openKeys, onToggle, isCompleteTab, selectedIds, onSelectRound, onPreview, selectedNewsletterIds, onToggleNewsletters, savedRounds, onToggleRoundSaved }: {
+function TypeRow({ typeData, visibleRounds, companyId, companyName, polarity, openKeys, onToggle, isCompleteTab, selectedIds, onSelectRound, onPreview, selectedNewsletterIds, onToggleNewsletters }: {
   typeData: TypeData; visibleRounds: RoundData[]; companyId: number; companyName: string; polarity: Polarity;
   openKeys: Set<string>; onToggle: (k: string) => void; isCompleteTab: boolean;
   selectedIds: Set<string>; onSelectRound: (selectionId: string, checked: boolean) => void;
   onPreview: (t: PreviewTarget) => void;
   selectedNewsletterIds: Set<number>; onToggleNewsletters: (ids: number[]) => void;
-  savedRounds?: number[]; onToggleRoundSaved?: (roundNum: number) => void;
 }) {
   const key = `c${companyId}-${polarity}-${typeData.typeName}`;
   const isOpen = openKeys.has(key);
@@ -798,22 +782,20 @@ function TypeRow({ typeData, visibleRounds, companyId, companyName, polarity, op
         <RoundRow key={round.id} round={round} companyName={companyName} polarity={polarity}
           typeName={typeData.typeName} count={typeData.count} isCompleteTab={isCompleteTab}
           isSelected={selectedIds.has(`${typeData.typeName}-${round.round}`)} onSelect={onSelectRound}
-          onPreview={onPreview}
-          isSavedRound={savedRounds?.includes(round.round)}
-          onToggleSaveRound={onToggleRoundSaved} />
+          onPreview={onPreview} />
       ))}
     </div>
   );
 }
 
 // ── 2단계: 긍정/부정 행 ──────────────────────────────────────────────
-function PolarityRow({ group, companyId, companyName, openKeys, onToggle, isCompleteTab, selectedIds, onSelectRound, onPreview, activeTab, selectedNewsletterIds, onToggleNewsletters, newsletters, onToggleRoundSaved }: {
+function PolarityRow({ group, companyId, companyName, openKeys, onToggle, isCompleteTab, selectedIds, onSelectRound, onPreview, activeTab, selectedNewsletterIds, onToggleNewsletters, newsletters }: {
   group: PolarityGroup; companyId: number; companyName: string;
   openKeys: Set<string>; onToggle: (k: string) => void; isCompleteTab: boolean;
   selectedIds: Set<string>; onSelectRound: (selectionId: string, checked: boolean) => void;
   onPreview: (t: PreviewTarget) => void; activeTab: TabType;
   selectedNewsletterIds: Set<number>; onToggleNewsletters: (ids: number[]) => void;
-  newsletters: Newsletter[]; onToggleRoundSaved: (nlId: number, roundNum: number) => void;
+  newsletters: Newsletter[];
 }) {
   const key = `c${companyId}-${group.polarity}`;
   const isOpen = openKeys.has(key);
@@ -867,35 +849,27 @@ function PolarityRow({ group, companyId, companyName, openKeys, onToggle, isComp
           <RoundRow key={round.id} round={round} companyName={companyName} polarity={group.polarity}
             typeName="긍정 리더" count={group.totalCount} isCompleteTab={isCompleteTab}
             isSelected={selectedIds.has(`긍정 리더-${round.round}`)} onSelect={onSelectRound}
-            onPreview={onPreview}
-            isSavedRound={positiveNL?.savedRounds?.includes(round.round)}
-            onToggleSaveRound={positiveNL ? (rn) => onToggleRoundSaved(positiveNL.id, rn) : undefined} />
+            onPreview={onPreview} />
         ));
-      })() : visibleTypes.map(t => {
-        const nl = newsletters.find(n => n.companyId === companyId && n.leadershipType === t.typeName);
-        return (
+      })() : visibleTypes.map(t => (
           <TypeRow key={t.typeName} typeData={t} visibleRounds={t.visibleRounds}
             companyId={companyId} companyName={companyName} polarity={group.polarity}
             openKeys={openKeys} onToggle={onToggle} isCompleteTab={isCompleteTab}
             selectedIds={selectedIds} onSelectRound={onSelectRound}
             onPreview={onPreview}
-            selectedNewsletterIds={selectedNewsletterIds} onToggleNewsletters={onToggleNewsletters}
-            savedRounds={nl?.savedRounds}
-            onToggleRoundSaved={nl ? (rn) => onToggleRoundSaved(nl.id, rn) : undefined} />
-        );
-      }))}
+            selectedNewsletterIds={selectedNewsletterIds} onToggleNewsletters={onToggleNewsletters} />
+      )))}
     </div>
   );
 }
 
 // ── 회차 우선 뷰: 회차 → 발송 그룹 ──────────────────────────────────
-function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTab, selectedIds, onSelectRoundBulk, onPreview, activeTab, onToggleSaved, onResumeRound, onEditRound, onEditRoundGroups }: {
+function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTab, selectedIds, onSelectRoundBulk, onPreview, activeTab, onResumeRound, onEditRound, onEditRoundGroups }: {
   company: CompanyData; newsletters: Newsletter[];
   openKeys: Set<string>; onToggle: (k: string) => void; isCompleteTab: boolean;
   selectedIds: Set<string>;
   onSelectRoundBulk: (selectionIds: string[], checked: boolean) => void;
   onPreview: (t: PreviewTarget) => void; activeTab: TabType;
-  onToggleSaved: (nlId: number, roundNum: number) => void;
   onResumeRound: (nl: Newsletter, roundIdx: number) => void;
   onEditRound: (nl: Newsletter, roundIdx: number) => void;
   onEditRoundGroups: (nl: Newsletter, roundIdx: number) => void;
@@ -985,13 +959,6 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 flex-shrink-0">발송완료</span>
                   )}
                   <span className="text-xs text-gray-400 flex-shrink-0">{count}명</span>
-                  {isDone && nl && (
-                    <button onClick={() => onToggleSaved(nl.id, rn)}
-                      className={`flex-shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors ${nl.savedRounds?.includes(rn) ? 'text-[#55A4DA]' : 'text-gray-300 hover:text-[#55A4DA]'}`}
-                      title={nl.savedRounds?.includes(rn) ? '저장소에서 제거' : '저장소에 저장'}>
-                      <svg className="w-3.5 h-3.5" fill={nl.savedRounds?.includes(rn) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
-                    </button>
-                  )}
                   <div className="flex-shrink-0 flex items-center gap-1.5">
                     {isDone ? (
                       <>
@@ -1028,7 +995,7 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
 }
 
 // ── 1단계: 기업 행 ───────────────────────────────────────────────────
-function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, activeTab, selectedIds, onSelectRound, onSelectRoundBulk, onDelete, onSend, selectedNewsletterIds, onToggleNewsletters, newsletters, onToggleSaved, onContinue, onEdit, onResumeRound, onEditTypes, onEditRoundGroups, onEditRound }: {
+function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, activeTab, selectedIds, onSelectRound, onSelectRoundBulk, onDelete, onSend, selectedNewsletterIds, onToggleNewsletters, newsletters, onContinue, onEdit, onResumeRound, onEditTypes, onEditRoundGroups, onEditRound }: {
   company: CompanyData; openKeys: Set<string>; onToggle: (k: string) => void;
   isCompleteTab: boolean; onPreview: (t: PreviewTarget) => void; activeTab: TabType;
   selectedIds: Set<string>; onSelectRound: (selectionId: string, checked: boolean) => void;
@@ -1036,7 +1003,7 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
   onDelete: (company: CompanyData) => void;
   onSend: (company: CompanyData) => void;
   selectedNewsletterIds: Set<number>; onToggleNewsletters: (ids: number[]) => void;
-  newsletters: Newsletter[]; onToggleSaved: (id: number, roundNum: number) => void;
+  newsletters: Newsletter[];
   onContinue: (nl: Newsletter) => void; onEdit: (nl: Newsletter) => void;
   onResumeRound: (nl: Newsletter, roundIdx: number) => void;
   onEditTypes: (nl: Newsletter) => void;
@@ -1132,7 +1099,7 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
           <RoundFirstView company={company} newsletters={newsletters}
             openKeys={openKeys} onToggle={onToggle} isCompleteTab={isCompleteTab}
             selectedIds={selectedIds} onSelectRoundBulk={onSelectRoundBulk}
-            onPreview={onPreview} activeTab={activeTab} onToggleSaved={onToggleSaved}
+            onPreview={onPreview} activeTab={activeTab}
             onResumeRound={onResumeRound} onEditRound={onEditRound} onEditRoundGroups={onEditRoundGroups} />
 
         </>
@@ -1147,7 +1114,6 @@ function NewslettersContent() {
   const resetDraft = useNewNewsletterDraftStore(s => s.resetDraft);
   const setDraft = useNewNewsletterDraftStore(s => s.setDraft);
   const removeNewsletter = useNewsletterStore(s => s.removeNewsletter);
-  const toggleRoundSaved = useNewsletterStore(s => s.toggleRoundSaved);
   const draftCompanyIds = useNewNewsletterDraftStore(s => s.companyIds);
   const draftWizardStep = useNewNewsletterDraftStore(s => s.wizardStep);
   const companies = useCompanyStore(s => s.companies);
@@ -1656,7 +1622,6 @@ function NewslettersContent() {
                 selectedNewsletterIds={selectedNewsletterIds}
                 onToggleNewsletters={toggleNewsletterSelect}
                 newsletters={newslettersDeduped}
-                onToggleSaved={toggleRoundSaved}
                 onContinue={nl => seedFromNewsletter(nl, 'continue')}
                 onResumeRound={(nl, roundIdx) => seedFromNewsletter(nl, 'continue', { targetRoundIdx: roundIdx, targetStep: 5 })}
                 onEdit={nl => seedFromNewsletter(nl, 'edit', { targetStep: 5 })}
