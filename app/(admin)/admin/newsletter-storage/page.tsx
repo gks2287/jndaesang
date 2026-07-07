@@ -28,6 +28,8 @@ interface SavedRoundItem {
   stage: string;
   topic: string | null;
   updatedAt: string;
+  saved: boolean; // 북마크로 저장됨
+  sent: boolean;  // 발송완료됨
 }
 
 export default function NewsletterStoragePage() {
@@ -43,14 +45,15 @@ export default function NewsletterStoragePage() {
   const [reuseToast, setReuseToast] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<{ nlId: number; roundNum: number } | null>(null);
 
-  // 저장된 회차 목록 펼치기
+  // 저장(북마크) + 발송완료 회차 목록 펼치기 — (뉴스레터·회차) 단위로 병합
   const allSavedRounds = useMemo<SavedRoundItem[]>(() => {
-    const items: SavedRoundItem[] = [];
-    for (const nl of newsletters) {
-      if (!nl.savedRounds || nl.savedRounds.length === 0) continue;
-      for (const roundNum of nl.savedRounds) {
+    const map = new Map<string, SavedRoundItem>();
+    const ensure = (nl: typeof newsletters[number], roundNum: number) => {
+      const key = `${nl.id}-${roundNum}`;
+      let it = map.get(key);
+      if (!it) {
         const topic = nl.generatedContent?.rounds[roundNum - 1]?.generated?.headline ?? null;
-        items.push({
+        it = {
           newsletterId: nl.id,
           roundNum,
           companyId: nl.companyId,
@@ -59,10 +62,22 @@ export default function NewsletterStoragePage() {
           stage: STAGES[(roundNum - 1) % STAGES.length],
           topic,
           updatedAt: nl.updatedAt,
-        });
+          saved: false,
+          sent: false,
+        };
+        map.set(key, it);
       }
+      return it;
+    };
+    for (const nl of newsletters) {
+      for (const roundNum of nl.savedRounds ?? []) ensure(nl, roundNum).saved = true;
+      // 발송완료 키(`${회차}|${유형}`)에서 회차 추출
+      const sentRounds = new Set(
+        (nl.sentGroups ?? []).map(k => Number(k.split('|')[0])).filter(n => Number.isInteger(n) && n > 0)
+      );
+      for (const roundNum of sentRounds) ensure(nl, roundNum).sent = true;
     }
-    return items.sort((a, b) =>
+    return [...map.values()].sort((a, b) =>
       b.updatedAt.localeCompare(a.updatedAt) || a.roundNum - b.roundNum
     );
   }, [newsletters]);
@@ -121,7 +136,7 @@ export default function NewsletterStoragePage() {
             <svg className="inline w-3 h-3 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
             </svg>
-            ) 버튼으로 회차별로 개별 저장할 수 있습니다.
+            ) 버튼으로 회차별로 개별 저장할 수 있습니다. <span className="font-semibold text-emerald-600">발송완료</span>된 회차는 자동으로 이 목록에 표시됩니다.
           </p>
         </div>
 
@@ -158,9 +173,9 @@ export default function NewsletterStoragePage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
             </svg>
             <p className="text-sm font-medium">
-              {allSavedRounds.length === 0 ? '아직 저장된 회차가 없습니다.' : '검색 결과가 없습니다.'}
+              {allSavedRounds.length === 0 ? '아직 저장되거나 발송완료된 회차가 없습니다.' : '검색 결과가 없습니다.'}
             </p>
-            <p className="text-xs text-gray-300 mt-1">뉴스레터 제작 탭에서 완료된 회차 옆 북마크를 눌러보세요.</p>
+            <p className="text-xs text-gray-300 mt-1">회차 옆 북마크로 저장하거나, 뉴스레터를 발송하면 이 목록에 표시됩니다.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-2.5">
@@ -181,6 +196,9 @@ export default function NewsletterStoragePage() {
                       <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${leadershipColor[item.leadershipType] ?? 'bg-gray-100 text-gray-500'}`}>
                         {item.leadershipType}
                       </span>
+                      {item.sent && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-emerald-50 text-emerald-600">발송완료</span>
+                      )}
                     </div>
                     <p className={`text-sm mt-0.5 truncate ${item.topic ? 'text-gray-700 font-medium' : 'text-gray-300 italic'}`}>
                       {item.topic ?? '주제 미선정'}
@@ -196,15 +214,17 @@ export default function NewsletterStoragePage() {
                     >
                       확인
                     </button>
-                    <button
-                      onClick={() => setRemoveTarget({ nlId: item.newsletterId, roundNum: item.roundNum })}
-                      className="w-7 h-7 rounded-lg flex items-center justify-center text-[#55A4DA] hover:text-red-400 hover:bg-red-50 transition-colors"
-                      title="저장 해제"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="currentColor" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-                      </svg>
-                    </button>
+                    {item.saved && (
+                      <button
+                        onClick={() => setRemoveTarget({ nlId: item.newsletterId, roundNum: item.roundNum })}
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-[#55A4DA] hover:text-red-400 hover:bg-red-50 transition-colors"
+                        title="저장 해제"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="currentColor" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                        </svg>
+                      </button>
+                    )}
                   </div>
                 </div>
               );
