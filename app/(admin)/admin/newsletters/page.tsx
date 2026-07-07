@@ -534,11 +534,15 @@ function SendRoundModal({ company, newsletters, participants, onClose }: {
   };
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const toggle = (k: string) => {
     setSelected(prev => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  };
+  const toggleExpand = (k: string) => {
+    setExpanded(prev => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   };
 
   async function handleSend() {
@@ -574,7 +578,7 @@ function SendRoundModal({ company, newsletters, participants, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="bg-white w-full max-w-3xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div className="bg-white w-full max-w-5xl max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
           <div>
             <h3 className="text-sm font-bold text-gray-800">{company.companyName} 뉴스레터 발송</h3>
@@ -606,13 +610,45 @@ function SendRoundModal({ company, newsletters, participants, onClose }: {
                         {groups.map(g => {
                           const k = `${nl.id}-${i + 1}-${g.key}`;
                           const disabled = g.recipients.length === 0;
+                          const isOpen = expanded.has(k);
                           return (
-                            <label key={k} className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border ${disabled ? 'opacity-50 cursor-not-allowed border-gray-100' : 'cursor-pointer border-gray-200 hover:bg-gray-50/60'}`}>
-                              <input type="checkbox" disabled={disabled} checked={selected.has(k)} onChange={() => toggle(k)} className="w-4 h-4 rounded border-gray-300 text-[#55A4DA] focus:ring-[#55A4DA]/30" />
-                              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#EAF4FC] text-[#2E7DB5] flex-shrink-0">{g.label}</span>
-                              <span className={`text-xs flex-1 min-w-0 truncate ${g.topic ? 'text-gray-600' : 'text-gray-300 italic'}`}>{g.topic || '주제 미선정'}</span>
-                              <span className={`text-[11px] flex-shrink-0 ${disabled ? 'text-red-400' : 'text-gray-400'}`}>수신 {g.recipients.length}명</span>
-                            </label>
+                            <div key={k} className={`rounded-lg border ${disabled ? 'opacity-50 border-gray-100' : 'border-gray-200'}`}>
+                              <div className={`flex items-center gap-2.5 px-3 py-2 ${isOpen ? 'border-b border-gray-100' : ''}`}>
+                                <label className={`flex items-center gap-2.5 flex-1 min-w-0 ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                                  <input type="checkbox" disabled={disabled} checked={selected.has(k)} onChange={() => toggle(k)} className="w-4 h-4 rounded border-gray-300 text-[#55A4DA] focus:ring-[#55A4DA]/30" />
+                                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#EAF4FC] text-[#2E7DB5] flex-shrink-0">{g.label}</span>
+                                  <span className={`text-xs flex-1 min-w-0 truncate ${g.topic ? 'text-gray-600' : 'text-gray-300 italic'}`}>{g.topic || '주제 미선정'}</span>
+                                </label>
+                                <span className={`text-[11px] flex-shrink-0 ${disabled ? 'text-red-400' : 'text-gray-400'}`}>수신 {g.recipients.length}명</span>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleExpand(k)}
+                                  disabled={disabled}
+                                  className="flex items-center gap-0.5 text-[11px] font-medium text-[#2E7DB5] hover:text-[#1E5A85] disabled:text-gray-300 flex-shrink-0"
+                                >
+                                  명단
+                                  <svg className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                                </button>
+                              </div>
+                              {isOpen && (
+                                <div className="px-3 py-2 bg-gray-50/50">
+                                  {g.recipients.length === 0 ? (
+                                    <p className="text-[11px] text-gray-400 py-1">매칭된 수신인이 없습니다.</p>
+                                  ) : (
+                                    <ul className="divide-y divide-gray-100">
+                                      {g.recipients.map(p => (
+                                        <li key={p.id} className="flex items-center gap-2 py-1.5 text-[11px]">
+                                          <span className="font-semibold text-gray-700 flex-shrink-0">{p.name}</span>
+                                          <span className="text-gray-400 flex-shrink-0">{[p.department, p.position].filter(Boolean).join(' · ')}</span>
+                                          <span className="text-gray-400 flex-1 min-w-0 truncate">{p.email}</span>
+                                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#EAF4FC] text-[#2E7DB5] flex-shrink-0">{p.leadershipType}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           );
                         })}
                       </div>
