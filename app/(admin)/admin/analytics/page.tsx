@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useCompanyStore } from '@/store/companyStore';
 import { useParticipantStore, type LeadershipType } from '@/store/participantStore';
+import { useNewsletterStore } from '@/store/newsletterStore';
 import { DonutChart } from '@/components/ui/donut-chart';
 import CompanyLogo from '@/components/CompanyLogo';
 
@@ -46,6 +47,7 @@ export default function AnalyticsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusToggle | null>(null);
   const companies = useCompanyStore(s => s.companies);
   const participants = useParticipantStore(s => s.participants);
+  const newsletters = useNewsletterStore(s => s.newsletters);
 
   const filteredCompanies = useMemo(() =>
     companies.filter(c =>
@@ -68,9 +70,13 @@ export default function AnalyticsPage() {
         count: members.filter(p => p.leadershipType === type).length,
       }));
 
-      return { company, total: members.length, openRate, completionRate, leadershipDist };
+      const companyNewsletters = newsletters.filter(n => n.companyId === company.id);
+      const totalRounds = companyNewsletters.reduce((sum, n) => sum + (n.totalRounds ?? 0), 0);
+      const completedRounds = companyNewsletters.reduce((sum, n) => sum + (n.completedRounds ?? 0), 0);
+
+      return { company, total: members.length, openRate, completionRate, leadershipDist, totalRounds, completedRounds };
     }),
-    [filteredCompanies, participants],
+    [filteredCompanies, participants, newsletters],
   );
 
   return (
@@ -170,7 +176,7 @@ export default function AnalyticsPage() {
 
           return (
           <div className="grid grid-cols-3 gap-6">
-            {filtered.map(({ company, total, openRate, completionRate, leadershipDist }) => (
+            {filtered.map(({ company, total, openRate, completionRate, leadershipDist, totalRounds, completedRounds }) => (
               <Link
                 key={company.id}
                 href={`/admin/analytics/${company.id}`}
@@ -192,7 +198,7 @@ export default function AnalyticsPage() {
                 </div>
 
                 {/* 도넛 차트 + 범례 */}
-                <div className="flex items-center justify-center gap-12 py-1">
+                <div className="flex items-center gap-5 py-1">
                   <div className="flex-shrink-0">
                     <DonutChart
                       segments={leadershipDist.filter(s => s.count > 0).map(s => ({
@@ -218,18 +224,28 @@ export default function AnalyticsPage() {
                 </div>
 
                 {/* 하단 지표 */}
-                <div className="grid grid-cols-3 gap-2 border-t border-border-light mt-2 pt-3">
+                <div className="grid grid-cols-4 gap-2 border-t border-border-light mt-2 pt-3">
                   <div className="text-center">
                     <p className="text-base font-bold text-text-primary">{total}<span className="text-xs font-medium text-text-secondary ml-0.5">명</span></p>
                     <p className="text-[10px] text-text-secondary mt-0.5">대상 리더</p>
                   </div>
-                  <div className="text-center border-x border-border-light">
+                  <div className="text-center border-l border-border-light">
                     <p className="text-base font-bold text-brand">{openRate}<span className="text-xs font-medium text-text-secondary ml-0.5">%</span></p>
                     <p className="text-[10px] text-text-secondary mt-0.5">열람률</p>
                   </div>
-                  <div className="text-center">
+                  <div className="text-center border-l border-border-light">
                     <p className="text-base font-bold text-emerald-500">{completionRate}<span className="text-xs font-medium text-text-secondary ml-0.5">%</span></p>
                     <p className="text-[10px] text-text-secondary mt-0.5">참여율</p>
+                  </div>
+                  <div className="text-center border-l border-border-light">
+                    {totalRounds > 0 ? (
+                      <p className="text-base font-bold text-text-primary">
+                        {completedRounds}<span className="text-xs font-medium text-text-secondary">/{totalRounds}회차</span>
+                      </p>
+                    ) : (
+                      <p className="text-base font-bold text-text-secondary">-</p>
+                    )}
+                    <p className="text-[10px] text-text-secondary mt-0.5">진행 회차</p>
                   </div>
                 </div>
 
