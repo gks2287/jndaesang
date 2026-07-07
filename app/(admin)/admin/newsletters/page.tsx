@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useNewNewsletterDraftStore, type WizardStep } from '@/store/newNewsletterDraftStore';
 import { DEFAULT_STORYLINE } from '@/lib/storyline';
 import type { Round } from '@/lib/content';
+import { sentKey, isSendGroupSent } from '@/lib/newsletterSend';
 import { useCompanyStore } from '@/store/companyStore';
 import { useNewsletterStore, type Newsletter } from '@/store/newsletterStore';
 import CompanyLogo from '@/components/CompanyLogo';
@@ -495,8 +496,7 @@ function SendConfirmModal({ target, onConfirm, onClose, isSending }: {
   );
 }
 
-// 발송완료 표시용 키 — 회차·유형 단위 (`${회차번호}|${리더십유형}`)
-const sentKey = (roundNum: number, typeName: string) => `${roundNum}|${typeName}`;
+// 발송완료 판정은 '@/lib/newsletterSend'의 sentKey · isSendGroupSent 사용
 
 // ── 회차 선택 발송 모달 (유형 매칭 직책자에게 실제 이메일 발송) ──────────
 function SendRoundModal({ company, newsletters, participants, onClose }: {
@@ -624,9 +624,8 @@ function SendRoundModal({ company, newsletters, participants, onClose }: {
                           const k = `${nl.id}-${i + 1}-${g.key}`;
                           const disabled = g.recipients.length === 0;
                           const isOpen = expanded.has(k);
-                          const nlSent = new Set(nl.sentGroups ?? []);
                           const groupTypes = [...new Set(g.recipients.map(p => p.leadershipType))];
-                          const isSent = groupTypes.length > 0 && groupTypes.every(t => nlSent.has(sentKey(i + 1, t)));
+                          const isSent = isSendGroupSent(nl.sentGroups, i + 1, groupTypes);
                           return (
                             <div key={k} className={`rounded-lg border ${disabled ? 'opacity-50 border-gray-100' : 'border-gray-200'}`}>
                               <div className={`flex items-center gap-2.5 px-3 py-2 ${isOpen ? 'border-b border-gray-100' : ''}`}>
@@ -973,8 +972,7 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
               const allSel = ids.length > 0 && ids.every(id => selectedIds.has(id));
               const nl = newsletters.find(n => n.id === grp.members[0]?.newsletterId);
               const count = grp.members.reduce((s, t) => s + t.count, 0);
-              const nlSent = new Set(nl?.sentGroups ?? []);
-              const isSent = !!nl && grp.members.length > 0 && grp.members.every(m => nlSent.has(sentKey(rn, m.typeName)));
+              const isSent = !!nl && isSendGroupSent(nl.sentGroups, rn, grp.members.map(m => m.typeName));
               return (
                 <div key={grp.label} className={`flex items-center gap-3 ${isCompleteTab ? 'pl-14' : 'pl-16'} pr-5 py-2.5 bg-white border-b border-gray-100 last:border-b-0 hover:bg-gray-50/50 transition-colors`}>
                   {isCompleteTab && isDone && (
@@ -998,11 +996,16 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
                     {isDone ? (
                       <>
                         <button
-                          onClick={() => { if (nl) onEditRound(nl, rn - 1); }}
-                          disabled={!nl}
-                          className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 transition-colors whitespace-nowrap disabled:opacity-50"
-                          title="수정하기 · 콘텐츠 구성(5단계)"
-                        >수정하기</button>
+                          onClick={() => { if (nl && !isSent) onEditRound(nl, rn - 1); }}
+                          disabled={!nl || isSent}
+                          className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
+                          title={isSent ? '발송 완료된 그룹은 수정할 수 없습니다.' : '수정하기 · 콘텐츠 구성(5단계)'}
+                        >
+                          {isSent && (
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                          )}
+                          수정하기
+                        </button>
                         <button onClick={() => onPreview({ companyName: company.companyName, polarity: 'negative', typeName: grp.label, count, round: rep })}
                           className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-[#55A4DA] bg-[#55A4DA] text-white hover:bg-[#3A8BC4] transition-colors whitespace-nowrap">미리보기</button>
                       </>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useNewsletterStore } from '@/store/newsletterStore';
@@ -10,6 +10,7 @@ import { DEFAULT_STORYLINE, type StorylineStep } from '@/lib/storyline';
 import { LEADERSHIP_COLOR } from '@/lib/constants/leadershipColors';
 import { type Round, type CustomGroup, type RoundAttachment, type GroupDescription, makeCustomGroup, groupCompositionKey } from '@/lib/content';
 import { getContentList, type ContentPoolItem, type ContentCategory } from '@/lib/api/contentPool';
+import { isSendGroupSent } from '@/lib/newsletterSend';
 import { useNewNewsletterDraftStore, type TopicSuggestion as DraftTopicSuggestion } from '@/store/newNewsletterDraftStore';
 import { useParticipantStore } from '@/store/participantStore';
 import { useLeadershipInfoStore } from '@/store/leadershipInfoStore';
@@ -129,6 +130,13 @@ function ConfigureContent() {
   // 수정 모드: 편집 대상 뉴스레터 id (이어서/신규는 null)
   const editingNewsletterId = configDraft.editingNewsletterId;
   const allParticipants = useParticipantStore(s => s.participants);
+
+  // 발송완료로 잠긴 그룹 판정용 — 편집 대상 뉴스레터의 sentGroups (`${회차}|${유형}`)
+  const allNewsletters = useNewsletterStore(s => s.newsletters);
+  const editingSentGroups = useMemo(
+    () => (editingNewsletterId != null ? (allNewsletters.find(n => n.id === editingNewsletterId)?.sentGroups ?? []) : []),
+    [allNewsletters, editingNewsletterId],
+  );
 
   const targetCompanies = companies.filter(c => configDraft.companyIds.includes(c.id));
   const leadershipTypes: string[] = [];
@@ -670,6 +678,7 @@ function ConfigureContent() {
 
   // 하단 프롬프트 바: 현재 미리보기 대상의 본문을 프롬프트로 수정 (refine API)
   async function refinePreview(targetId: string) {
+    if (isTargetLocked(activeRoundIdx, targetId)) { showToast('발송 완료된 그룹은 수정할 수 없습니다.'); return; }
     const key = `${activeRoundIdx}:${targetId}`;
     const current = livePreviewContent[key];
     const text = promptInput.trim();
@@ -854,10 +863,12 @@ function ConfigureContent() {
   }
 
   function setRoundTopic(roundIdx: number, topic: string) {
+    if (isTargetLocked(roundIdx, 'general')) { showToast('발송 완료된 그룹은 수정할 수 없습니다.'); return; }
     setRounds(prev => prev.map((r, i) => i === roundIdx ? { ...r, topic } : r));
   }
 
   function toggleInteraction(roundIdx: number, val: 'quiz' | 'scenario' | 'selfcheck' | 'reflection' | 'dodont') {
+    if (isTargetLocked(roundIdx, 'general')) { showToast('발송 완료된 그룹은 수정할 수 없습니다.'); return; }
     setRounds(prev =>
       prev.map((r, i) => {
         if (i !== roundIdx) return r;
@@ -871,6 +882,7 @@ function ConfigureContent() {
   }
 
   function toggleSurvey(roundIdx: number, val: 'always' | 'periodic') {
+    if (isTargetLocked(roundIdx, 'general')) { showToast('발송 완료된 그룹은 수정할 수 없습니다.'); return; }
     setRounds(prev =>
       prev.map((r, i) => {
         if (i !== roundIdx) return r;
@@ -904,14 +916,30 @@ function ConfigureContent() {
     setContentPoolOpen(true);
   }
 
-  // 그룹 단위 업데이트 헬퍼
+  // ── 발송완료 그룹 수정 잠금 ──
+  // 타깃('general' 또는 그룹 id)이 커버하는 리더십 유형 목록
+  function targetTypeNames(roundIdx: number, targetId: string): string[] {
+    const r = rounds[roundIdx];
+    if (!r) return [];
+    if (targetId === 'general') return r.generalTypes ?? [];
+    return r.customGroups.find(g => g.id === targetId)?.types ?? [];
+  }
+  // 편집 대상 회차·타깃이 이미 발송 완료되어 수정 불가인지
+  function isTargetLocked(roundIdx: number, targetId: string): boolean {
+    if (editingNewsletterId == null) return false;
+    return isSendGroupSent(editingSentGroups, roundIdx + 1, targetTypeNames(roundIdx, targetId));
+  }
+
+  // 그룹 단위 업데이트 헬퍼 (발송완료 그룹은 변경 차단)
   function updateGroup(roundIdx: number, groupId: string, patch: (g: CustomGroup) => CustomGroup) {
+    if (isTargetLocked(roundIdx, groupId)) { showToast('발송 완료된 그룹은 수정할 수 없습니다.'); return; }
     setRounds(prev => prev.map((r, i) =>
       i !== roundIdx ? r : { ...r, customGroups: r.customGroups.map(g => g.id === groupId ? patch(g) : g) }
     ));
   }
 
   function addContentToRound(item: ContentPoolItem) {
+    if (isTargetLocked(activeRoundIdx, 'general')) { showToast('발송 완료된 그룹은 수정할 수 없습니다.'); return; }
     setRounds(prev =>
       prev.map((r, i) =>
         i !== activeRoundIdx ? r : {
@@ -923,6 +951,7 @@ function ConfigureContent() {
   }
 
   function removeContentFromRound(roundIdx: number, itemId: string) {
+    if (isTargetLocked(roundIdx, 'general')) { showToast('발송 완료된 그룹은 수정할 수 없습니다.'); return; }
     setRounds(prev =>
       prev.map((r, i) =>
         i !== roundIdx ? r : { ...r, contents: r.contents.filter(c => c.id !== itemId) }
@@ -960,6 +989,7 @@ function ConfigureContent() {
   }
 
   async function suggestContentsForRound(roundIdx: number, topic: string) {
+    if (isTargetLocked(roundIdx, 'general')) { showToast('발송 완료된 그룹은 수정할 수 없습니다.'); return; }
     if (!topic.trim()) return;
     setContentSuggestLoading(prev => { const n = [...prev]; n[roundIdx] = true; return n; });
     try {
@@ -1002,6 +1032,7 @@ function ConfigureContent() {
   }
 
   async function suggestGroupContents(roundIdx: number, groupId: string, topic: string) {
+    if (isTargetLocked(roundIdx, groupId)) { showToast('발송 완료된 그룹은 수정할 수 없습니다.'); return; }
     if (!topic.trim()) return;
     setContentSuggestLoading(prev => { const n = [...prev]; n[roundIdx] = true; return n; });
     try {
@@ -1418,6 +1449,7 @@ function ConfigureContent() {
     targetId: string,
     updater: (list: RoundAttachment[]) => RoundAttachment[],
   ) {
+    if (isTargetLocked(roundIdx, targetId)) { showToast('발송 완료된 그룹은 수정할 수 없습니다.'); return; }
     setRounds(prev => prev.map((r, i) => {
       if (i !== roundIdx) return r;
       if (targetId === 'general') return { ...r, attachments: updater(r.attachments ?? []) };
@@ -1442,6 +1474,7 @@ function ConfigureContent() {
   }
 
   async function uploadAttachments(roundIdx: number, targetId: string, files: FileList | File[]) {
+    if (isTargetLocked(roundIdx, targetId)) { showToast('발송 완료된 그룹은 수정할 수 없습니다.'); return; }
     const list = Array.from(files);
     const current = getTargetAttachments(roundIdx, targetId);
     let slots = ATTACH_MAX_PER_TARGET - current.length;
@@ -1511,8 +1544,9 @@ function ConfigureContent() {
     removeAttachmentFn: (id: string) => void;
     toggleAttachmentUseFn: (id: string) => void;
     setAttachmentNoteFn: (id: string, note: string) => void;
+    locked?: boolean;
   }) {
-    const { keyPrefix, targetId, topic, contents, interactions, surveys, placeholder, attachments } = opts;
+    const { keyPrefix, targetId, topic, contents, interactions, surveys, placeholder, attachments, locked } = opts;
     const kTopic = `${keyPrefix}:2`, kContent = `${keyPrefix}:3`, kAttach = `${keyPrefix}:3b`, kInter = `${keyPrefix}:4`, kSurvey = `${keyPrefix}:5`;
     const attachDropId = `${keyPrefix}:attach`;
     const usedAttachCount = attachments.filter(a => a.useForGeneration && a.parseStatus === 'done').length;
@@ -1523,6 +1557,13 @@ function ConfigureContent() {
     const topicLoading = (isLoadingTopics && isTarget) || (preparingTargets.has(targetKey) && !topic.trim());
     return (
       <>
+        {locked && (
+          <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
+            <svg className="w-4 h-4 text-emerald-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+            <p className="text-sm font-semibold text-emerald-700">이 그룹은 이미 발송되어 수정할 수 없습니다.</p>
+          </div>
+        )}
+        <div className={locked ? 'pointer-events-none select-none opacity-60' : ''} aria-disabled={locked}>
         {/* 주제 선정 */}
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
           <button onClick={() => toggleSectionKey(kTopic)} className="w-full px-5 py-3 flex items-center gap-2 hover:bg-gray-50 transition-colors">
@@ -1744,6 +1785,7 @@ function ConfigureContent() {
               </div>
             </div>
           </div>
+        </div>
         </div>
       </>
     );
@@ -2618,7 +2660,12 @@ function ConfigureContent() {
                 return (
                   <div className="flex gap-1.5 flex-wrap">
                     {tabs.map(t => (
-                      <button key={t.id} onClick={() => setPreviewTargetId(t.id)} className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${currentTarget === t.id ? 'bg-[#55A4DA] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>{t.label}</button>
+                      <button key={t.id} onClick={() => setPreviewTargetId(t.id)} className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors inline-flex items-center gap-1 ${currentTarget === t.id ? 'bg-[#55A4DA] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`} title={isTargetLocked(activeRoundIdx, t.id) ? '발송 완료 · 수정 불가' : undefined}>
+                        {isTargetLocked(activeRoundIdx, t.id) && (
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                        )}
+                        {t.label}
+                      </button>
                     ))}
                   </div>
                 );
@@ -2651,7 +2698,8 @@ function ConfigureContent() {
                     return { title: g ? g.types.join(' · ') : '맞춤형', detail: '', count: g?.leaderIds.length ?? 0 };
                   })();
                   const previewKey = `${activeRoundIdx}:${current}`;
-                  const canRefine = revealedPreviews.has(previewKey) && !!livePreviewContent[previewKey];
+                  const targetLocked = isTargetLocked(activeRoundIdx, current);
+                  const canRefine = !targetLocked && revealedPreviews.has(previewKey) && !!livePreviewContent[previewKey];
                   return (
                     <>
                       {/* 스크롤 영역 (헤더 + 본문 미리보기) */}
@@ -2694,7 +2742,7 @@ function ConfigureContent() {
                               value={promptInput}
                               onChange={e => setPromptInput(e.target.value)}
                               disabled={!canRefine || refining}
-                              placeholder={canRefine ? (livePreviewMode === 'email' ? '요약본을 프롬프트로 수정하세요 (예: 요약을 한 줄로, 더 임팩트 있게)' : '본문을 프롬프트로 수정하세요 (예: 더 짧고 간결하게, 전문적인 톤으로)') : '미리보기를 먼저 표시하면 프롬프트로 수정할 수 있어요'}
+                              placeholder={targetLocked ? '발송 완료된 그룹은 수정할 수 없습니다' : canRefine ? (livePreviewMode === 'email' ? '요약본을 프롬프트로 수정하세요 (예: 요약을 한 줄로, 더 임팩트 있게)' : '본문을 프롬프트로 수정하세요 (예: 더 짧고 간결하게, 전문적인 톤으로)') : '미리보기를 먼저 표시하면 프롬프트로 수정할 수 있어요'}
                               className="w-full pl-9 pr-4 py-2.5 text-sm border border-gray-300 rounded-xl focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition-colors disabled:bg-gray-50 disabled:text-gray-400 disabled:placeholder-gray-400"
                             />
                           </div>
@@ -2776,6 +2824,7 @@ function ConfigureContent() {
                           removeAttachmentFn: id => removeAttachment(activeRoundIdx, g.id, id),
                           toggleAttachmentUseFn: id => toggleAttachmentUse(activeRoundIdx, g.id, id),
                           setAttachmentNoteFn: (id, note) => setAttachmentNote(activeRoundIdx, g.id, id, note),
+                          locked: isTargetLocked(activeRoundIdx, g.id),
                         })}
                       </div>
                     );
@@ -2816,6 +2865,7 @@ function ConfigureContent() {
                       removeAttachmentFn: id => removeAttachment(activeRoundIdx, 'general', id),
                       toggleAttachmentUseFn: id => toggleAttachmentUse(activeRoundIdx, 'general', id),
                       setAttachmentNoteFn: (id, note) => setAttachmentNote(activeRoundIdx, 'general', id, note),
+                      locked: isTargetLocked(activeRoundIdx, 'general'),
                     })}
                   </div>
                     );
