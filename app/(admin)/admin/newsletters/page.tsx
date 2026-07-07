@@ -996,8 +996,16 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
                   )}
                   <div className="flex-shrink-0 flex items-center gap-1.5">
                     {isDone ? (
-                      <button onClick={() => onPreview({ companyName: company.companyName, polarity: 'negative', typeName: grp.label, count, round: rep })}
-                        className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 transition-colors whitespace-nowrap">미리보기</button>
+                      <>
+                        <button
+                          onClick={() => { if (nl) onEditRound(nl, rn - 1); }}
+                          disabled={!nl}
+                          className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 transition-colors whitespace-nowrap disabled:opacity-50"
+                          title="수정하기 · 콘텐츠 구성(5단계)"
+                        >수정하기</button>
+                        <button onClick={() => onPreview({ companyName: company.companyName, polarity: 'negative', typeName: grp.label, count, round: rep })}
+                          className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-[#55A4DA] bg-[#55A4DA] text-white hover:bg-[#3A8BC4] transition-colors whitespace-nowrap">미리보기</button>
+                      </>
                     ) : (
                       <button
                         onClick={() => { if (nl) onResumeRound(nl, rn - 1); }}
@@ -1005,12 +1013,6 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
                         className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 transition-colors whitespace-nowrap disabled:opacity-50"
                       >이어만들기</button>
                     )}
-                    <button
-                      onClick={() => { if (nl) onEditRound(nl, rn - 1); }}
-                      disabled={!nl}
-                      className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 transition-colors whitespace-nowrap disabled:opacity-50"
-                      title="수정하기 · 콘텐츠 구성(5단계)"
-                    >수정하기</button>
                   </div>
                 </div>
               );
