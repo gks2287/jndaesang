@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useNewNewsletterDraftStore, type WizardStep } from '@/store/newNewsletterDraftStore';
 import { DEFAULT_STORYLINE } from '@/lib/storyline';
+import type { Round } from '@/lib/content';
 import { useCompanyStore } from '@/store/companyStore';
 import { useNewsletterStore, type Newsletter } from '@/store/newsletterStore';
 import CompanyLogo from '@/components/CompanyLogo';
@@ -243,6 +244,33 @@ const leadershipColor: Record<string, string> = {
 // (제작완료/제작 중 여부는 각 회차·카드의 isDone 분기로 버튼·동작이 그대로 결정됨)
 function filterRounds(rounds: RoundData[], _tab: TabType): RoundData[] {
   return rounds;
+}
+
+// authoring.rounds가 없거나(레거시 캠페인) 개수가 totalRounds와 안 맞는 경우를 대비한 폴백.
+// 콘텐츠 구성 화면은 rounds.length === 0이면 진입을 막으므로, 스토리라인 단계에 고르게 배분한 빈 회차를 만들어
+// "이어서 만들기"가 항상 진입 가능하도록 한다.
+function makeFallbackRounds(totalRounds: number, stepCount: number): Round[] {
+  const steps = Math.max(1, stepCount);
+  const base = Math.floor(totalRounds / steps);
+  const extra = totalRounds % steps;
+  let id = 1;
+  return Array.from({ length: steps }, (_, stepIndex) => (stepIndex < extra ? base + 1 : base))
+    .flatMap((count, stepIndex) =>
+      Array.from({ length: count }, () => ({
+        id: id++,
+        stepIndex,
+        topic: '',
+        contents: [],
+        interactions: [],
+        surveys: [],
+        newsletterType: '일반형' as const,
+        generalTypes: [],
+        customLeaderIds: [],
+        generalLeaderIds: [],
+        customGroups: [],
+        attachments: [],
+      }))
+    );
 }
 
 function DeleteConfirmModal({ title, description, onConfirm, onClose }: {
@@ -870,7 +898,6 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
         const open = openKeys.has(roundKey);
         const isDone = rep.status === 'completed';
         const groups = sendGroupsFor(typesInRound, rn, rep.topic);
-        const roundNl = newsletters.find(n => n.id === typesInRound[0]?.newsletterId);
         return (
           <div key={rn}>
             {/* 회차 헤더 */}
@@ -881,17 +908,6 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
               <span className="flex-1" />
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 ${isDone ? 'bg-emerald-50 text-emerald-600' : 'bg-[#55A4DA]/10 text-[#55A4DA]'}`}>{isDone ? '제작완료' : '제작 중'}</span>
               <span className="text-xs text-gray-400">{totalCount}명</span>
-              <button
-                onClick={e => { e.stopPropagation(); if (roundNl) onEditRoundGroups(roundNl, rn - 1); }}
-                disabled={!roundNl}
-                className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 text-xs font-semibold transition-colors disabled:opacity-50"
-                title="수정하기 · 그룹 설정(4단계)부터"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-                수정하기
-              </button>
               <svg className={`w-3.5 h-3.5 text-gray-400 flex-shrink-0 transition-transform duration-150 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
             </button>
             {/* 발송 그룹 행 */}
@@ -917,22 +933,22 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
                     </button>
                   )}
                   <div className="flex-shrink-0 flex items-center gap-1.5">
+                    {isDone ? (
+                      <button onClick={() => onPreview({ companyName: company.companyName, polarity: 'negative', typeName: grp.label, count, round: rep })}
+                        className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 transition-colors whitespace-nowrap">미리보기</button>
+                    ) : (
+                      <button
+                        onClick={() => { if (nl) onResumeRound(nl, rn - 1); }}
+                        disabled={!nl}
+                        className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 transition-colors whitespace-nowrap disabled:opacity-50"
+                      >이어만들기</button>
+                    )}
                     <button
                       onClick={() => { if (nl) onEditRound(nl, rn - 1); }}
                       disabled={!nl}
                       className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 transition-colors whitespace-nowrap disabled:opacity-50"
                       title="수정하기 · 콘텐츠 구성(5단계)"
                     >수정하기</button>
-                    {isDone ? (
-                      <button onClick={() => onPreview({ companyName: company.companyName, polarity: 'negative', typeName: grp.label, count, round: rep })}
-                        className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors whitespace-nowrap">미리보기</button>
-                    ) : (
-                      <button
-                        onClick={() => { if (nl) onResumeRound(nl, rn - 1); }}
-                        disabled={!nl}
-                        className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-[#55A4DA]/10 text-[#55A4DA] hover:bg-[#55A4DA]/20 transition-colors whitespace-nowrap disabled:opacity-50"
-                      >이어만들기</button>
-                    )}
                   </div>
                 </div>
               );
@@ -1004,30 +1020,6 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
           </div>
         </div>
         <span className="text-xs text-gray-400 flex-shrink-0">{formatRelativeTime(company.updatedAt)}</span>
-        {companyNewsletters.length > 0 && (
-          <button
-            onClick={e => { e.stopPropagation(); onEditTypes(companyNewsletters[0]); }}
-            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 text-xs font-semibold transition-colors"
-            title="수정하기 · 스토리라인 설정(1단계)부터"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-            수정하기
-          </button>
-        )}
-        {companyNewsletters.length > 0 && completedCount < totalCount && (
-          <button
-            onClick={e => { e.stopPropagation(); onContinue(companyNewsletters[0]); }}
-            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#55A4DA]/10 text-[#55A4DA] hover:bg-[#55A4DA]/20 text-xs font-semibold transition-colors"
-            title="이어만들기 · 가장 최근 진행 회차로"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-            </svg>
-            이어만들기
-          </button>
-        )}
         {completedCount > 0 && (
           <button
             onClick={e => { e.stopPropagation(); onSend(company); }}
@@ -1038,6 +1030,18 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
             </svg>
             발송
+          </button>
+        )}
+        {companyNewsletters.length > 0 && (
+          <button
+            onClick={e => { e.stopPropagation(); onEditTypes(companyNewsletters[0]); }}
+            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 text-xs font-semibold transition-colors"
+            title="수정하기 · 스토리라인 설정(1단계)부터"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            수정하기
           </button>
         )}
         <button
@@ -1087,16 +1091,22 @@ function NewslettersContent() {
     const storyline = a?.storyline?.length ? a.storyline : DEFAULT_STORYLINE;
     const totalRounds = a?.totalRounds && a.totalRounds > 0 ? a.totalRounds : (nl.totalRounds || storyline.length);
     const roundDistribution = a?.roundDistribution ?? [];
-    const baseRounds = a?.rounds ?? [];
+    // authoring.rounds가 없거나(레거시) totalRounds와 개수가 안 맞으면 폴백으로 생성 — 콘텐츠 구성 화면 진입 차단 방지
+    const baseRounds = (a?.rounds && a.rounds.length === totalRounds)
+      ? a.rounds
+      : makeFallbackRounds(totalRounds, storyline.length);
+    const generatedRounds = nl.generatedContent?.rounds ?? [];
     // 완료(본문 생성)된 회차 인덱스 집합 — vol은 1-based
     const madeIdx = new Set(
-      (nl.generatedContent?.rounds ?? [])
-        .filter(r => r.generated?.headline)
-        .map(r => r.vol - 1)
+      generatedRounds.filter(r => r.generated?.headline).map(r => r.vol - 1)
     );
-    // 이어서: 완료 회차는 구성 유지, 미완성 회차만 주제·콘텐츠를 비워 새로 작성
+    // 이어서: 완료 회차는 구성 유지(폴백 회차라면 저장된 인터랙션·설문만 복원), 미완성 회차만 주제·콘텐츠를 비워 새로 작성
     const rounds = mode === 'continue'
-      ? baseRounds.map((r, i) => (madeIdx.has(i) ? r : { ...r, topic: '', contents: [] }))
+      ? baseRounds.map((r, i) => {
+          if (!madeIdx.has(i)) return { ...r, topic: '', contents: [] };
+          const savedRound = generatedRounds.find(sr => sr.vol - 1 === i);
+          return savedRound ? { ...r, interactions: savedRound.interactions, surveys: savedRound.surveys } : r;
+        })
       : baseRounds;
     // 이어서 진입 회차: 지정 회차 우선 → 저장된 마지막 회차 → 첫 미완성 회차(모두 완료면 0)
     const firstIncomplete = baseRounds.findIndex((_, i) => !madeIdx.has(i));
