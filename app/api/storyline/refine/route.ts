@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { type StorylineStep } from '@/lib/storyline';
+import { callClaude } from '@/lib/api/claude';
 
 function mockRefine(storyline: StorylineStep[], prompt: string): StorylineStep[] {
   let result = storyline.map(s => ({ ...s }));
@@ -40,9 +41,7 @@ export async function POST(req: NextRequest) {
     prompt: string;
   };
 
-  const apiKey = process.env.OPENAI_API_KEY;
-
-  if (!apiKey) {
+  if (!process.env.ANTHROPIC_API_KEY) {
     return NextResponse.json({ storyline: mockRefine(currentStoryline, prompt), source: 'mock' });
   }
 
@@ -57,30 +56,14 @@ ${JSON.stringify(currentStoryline, null, 2)}
 수정 요청: ${prompt}`;
 
   try {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.7,
-      }),
-    });
-
-    if (!res.ok) throw new Error(`OpenAI API error: ${res.status}`);
-
-    const data = await res.json() as { choices: Array<{ message: { content: string } }> };
-    const parsed = JSON.parse(data.choices[0].message.content) as { storyline: StorylineStep[] };
-    return NextResponse.json({ storyline: parsed.storyline, source: 'openai' });
+    const text = await callClaude(userMessage, systemPrompt);
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start === -1 || end === -1) throw new Error('JSON not found in response');
+    const parsed = JSON.parse(text.slice(start, end + 1)) as { storyline: StorylineStep[] };
+    return NextResponse.json({ storyline: parsed.storyline, source: 'claude' });
   } catch (err) {
-    console.error('OpenAI API failed:', err);
+    console.error('Claude API failed:', err);
     return NextResponse.json({ error: 'AI 수정 실패' }, { status: 500 });
   }
 }
