@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, Suspense, type ChangeEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useNewsletterStore } from '@/store/newsletterStore';
@@ -2730,10 +2730,10 @@ function ConfigureContent() {
                                         ]).map(({ field, label, rows }) => (
                                           <div key={field}>
                                             <label className="block text-[11px] font-semibold text-gray-500 mb-1">{label}</label>
-                                            <textarea
+                                            <AutoGrowTextarea
                                               value={desc[field] ?? ''}
                                               onChange={e => updateGroupDescription(g.types, field, e.target.value)}
-                                              rows={rows}
+                                              minRows={rows}
                                               placeholder={`${label}을(를) 입력하세요`}
                                               className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition resize-none bg-white"
                                             />
@@ -4049,6 +4049,34 @@ function ConfigureContent() {
       </div>}
 
     </div>
+  );
+}
+
+// 내용 길이에 맞춰 높이가 자동으로 늘어나는 textarea (AI 생성 텍스트가 잘리지 않도록)
+function AutoGrowTextarea({ value, onChange, placeholder, className, minRows = 2 }: {
+  value: string;
+  onChange: (e: ChangeEvent<HTMLTextAreaElement>) => void;
+  placeholder?: string;
+  className?: string;
+  minRows?: number;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      onChange={onChange}
+      rows={minRows}
+      placeholder={placeholder}
+      className={className}
+      style={{ overflow: 'hidden' }}
+    />
   );
 }
 
