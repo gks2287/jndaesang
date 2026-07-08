@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useNewsletterStore } from '@/store/newsletterStore';
 import { useCompanyStore } from '@/store/companyStore';
 import { useNewNewsletterDraftStore } from '@/store/newNewsletterDraftStore';
 import CompanyLogo from '@/components/CompanyLogo';
-import { SavedNewsletterPreviewModal, type SavedNewsletterContent } from '@/components/newsletter/NewsletterRender';
+import { SavedNewsletterPreviewModal, renderGeneratedFullBody, type SavedNewsletterContent, type SavedNewsletterRound } from '@/components/newsletter/NewsletterRender';
+import { INTERACTION_SURVEY_LABELS } from '@/lib/periodicSurvey';
+import { downloadElementAsPDF } from '@/lib/generatePDF';
 
 const STAGES = ['수용', '분석', '실행', '적용', '공유', '성찰'];
 
@@ -41,6 +43,11 @@ export default function NewsletterStoragePage() {
   const [companyFilter, setCompanyFilter] = useState('');
   const [preview, setPreview] = useState<{ title: string; content: SavedNewsletterContent } | null>(null);
   const [reuseToast, setReuseToast] = useState<string | null>(null);
+
+  // PDF 다운로드 — 화면 밖에 실제 뉴스레터 본문을 렌더링해 html2canvas로 캡처 후 PDF로 저장
+  const [pdfTarget, setPdfTarget] = useState<{ key: string; fileName: string; round: SavedNewsletterRound } | null>(null);
+  const [pdfBusyKey, setPdfBusyKey] = useState<string | null>(null);
+  const pdfCaptureRef = useRef<HTMLDivElement>(null);
 
   // 제작완료 뉴스레터의 모든 회차 자동 표시
   const allRounds = useMemo<StorageRoundItem[]>(() => {
@@ -103,6 +110,37 @@ export default function NewsletterStoragePage() {
       setPreview({ title: `${item.companyName} ${item.leadershipType} ${item.roundNum}회차`, content: nl.generatedContent });
     }
   }
+
+  function handleDownloadPDF(item: StorageRoundItem) {
+    const key = `${item.newsletterId}-${item.roundNum}`;
+    const nl = newsletters.find(n => n.id === item.newsletterId);
+    const round = nl?.generatedContent?.rounds?.[item.roundNum - 1];
+    if (!round?.generated) return;
+    setPdfBusyKey(key);
+    setPdfTarget({ key, fileName: `JCompany_뉴스레터_${item.companyName}_${item.leadershipType}_Vol${item.roundNum}.pdf`, round });
+  }
+
+  // pdfTarget이 설정되면 화면 밖 컨테이너에 본문이 렌더링되고, 한 틱 뒤 실제 DOM을 캡처해 PDF로 저장
+  useEffect(() => {
+    if (!pdfTarget) return;
+    let cancelled = false;
+    (async () => {
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      const el = pdfCaptureRef.current;
+      if (!el || cancelled) return;
+      try {
+        await downloadElementAsPDF(el, pdfTarget.fileName);
+      } catch (e) {
+        console.error('[뉴스레터 PDF 다운로드 실패]', e);
+      } finally {
+        if (!cancelled) {
+          setPdfTarget(null);
+          setPdfBusyKey(null);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pdfTarget]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -184,6 +222,13 @@ export default function NewsletterStoragePage() {
 
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <button
+                      onClick={() => handleDownloadPDF(item)}
+                      disabled={!hasContent || pdfBusyKey === `${item.newsletterId}-${item.roundNum}`}
+                      className="text-xs font-bold px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {pdfBusyKey === `${item.newsletterId}-${item.roundNum}` ? '생성 중...' : 'PDF'}
+                    </button>
+                    <button
                       onClick={() => handlePreview(item)}
                       disabled={!hasContent}
                       className="text-xs font-bold px-3 py-1.5 rounded-lg bg-[#55A4DA] text-white hover:bg-[#3A8BC4] transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
@@ -204,6 +249,23 @@ export default function NewsletterStoragePage() {
         title={preview?.title ?? ''}
         content={preview?.content ?? null}
       />
+
+      {/* PDF 캡처용 오프스크린 렌더 — 화면엔 안 보이지만 실제 DOM으로 존재해야 html2canvas가 캡처 가능 */}
+      {pdfTarget && (
+        <div className="fixed left-[-9999px] top-0 w-[800px]" aria-hidden="true">
+          <div ref={pdfCaptureRef} className="bg-white">
+            {renderGeneratedFullBody(pdfTarget.round.generated, {
+              vol: pdfTarget.round.vol,
+              dateLabel: pdfTarget.round.dateLabel,
+              leadershipLabel: pdfTarget.round.leadershipLabel,
+              templateInteractions: pdfTarget.round.interactions,
+              templateSurveys: pdfTarget.round.surveys,
+              templateSurveyContentLabels: pdfTarget.round.generated.sections.map(s => s.contentTitle).filter(Boolean),
+              templateSurveyInteractionLabels: pdfTarget.round.interactions.map(k => INTERACTION_SURVEY_LABELS[k] ?? k),
+            })}
+          </div>
+        </div>
+      )}
 
       {reuseToast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4 px-4">
