@@ -1879,7 +1879,6 @@ function ConfigureContent() {
             value={contentBrief}
             onChange={e => opts.setContentBrief(e.target.value)}
             rows={3}
-            placeholder="이번 뉴스레터에 꼭 반영하고 싶은 관점·사례·키워드를 적어주세요"
             className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition resize-y"
           />
         </div>
