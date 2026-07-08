@@ -272,7 +272,7 @@ function ContentFormModal({
 
       {/* 모달 */}
       <div
-        className={`relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh] transition-all duration-200 ease-out ${
+        className={`relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh] transition-all duration-200 ease-out ${
           visible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
         }`}
       >

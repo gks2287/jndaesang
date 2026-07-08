@@ -123,3 +123,23 @@ model AdminUser {
 
   @@map("admin_users")
 }
+
+// 콘텐츠 풀 — 관리자가 등록/큐레이션한 콘텐츠. (기존 파일 기반 저장을 DB로 이전)
+model ContentPoolItem {
+  id           String   @id // 'jsa-001'(original) / 'src-001'(curation)
+  type         String   // 'original' | 'curation'
+  title        String
+  category     String   // '아티클' | '인터뷰' | '책 추천' | '성공 사례' | '카드뉴스' | '웹툰' | '영상'
+  duration     Int
+  author       String
+  tags         String[] @default([])
+  thumbnail    String   @default("")
+  thumbnailUrl String?
+  body         String   @default("") @db.Text
+  summary      String?  @db.Text
+  createdAt    String   // 'YYYY-MM-DD' (프론트 표시용, 기존 포맷 유지)
+  insertedAt   DateTime @default(now()) // 정렬용(최신순)
+
+  @@index([type])
+  @@map("content_pool_items")
+}

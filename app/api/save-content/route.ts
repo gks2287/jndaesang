@@ -1,30 +1,62 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { promises as fs } from 'fs';
-import path from 'path';
+import { prisma } from '@/lib/db';
+import { MOCK_CONTENT_POOL } from '@/lib/mockData/contentPool';
 import type { ContentPoolItem } from '@/lib/api/contentPool';
 
-const DATA_FILE = path.join(process.cwd(), 'lib', 'mockData', 'contentPool.ts');
+// 서버리스 파일 저장(fs.writeFile)은 Vercel 읽기 전용 FS에서 실패하므로 DB(Prisma)로 영속화한다.
+// 기존 파일 기반 목데이터(MOCK_CONTENT_POOL)는 테이블이 비어 있을 때 최초 1회 자동 시드한다.
 
-async function readItems(): Promise<ContentPoolItem[]> {
-  const content = await fs.readFile(DATA_FILE, 'utf-8');
-  // '= [' 패턴으로 데이터 배열 시작점을 찾음 (ContentPoolItem[] 타입 표기의 '[' 와 구분)
-  const markerIdx = content.indexOf('= [');
-  const start = markerIdx === -1 ? -1 : markerIdx + 2;
-  const end = content.lastIndexOf(']');
-  if (start === -1 || end === -1) return [];
-  return JSON.parse(content.slice(start, end + 1)) as ContentPoolItem[];
+type DbRow = {
+  id: string; type: string; title: string; category: string; duration: number;
+  author: string; tags: string[]; thumbnail: string; thumbnailUrl: string | null;
+  body: string; summary: string | null; createdAt: string; insertedAt: Date;
+};
+
+function toItem(row: DbRow): ContentPoolItem {
+  return {
+    id: row.id,
+    type: row.type as ContentPoolItem['type'],
+    title: row.title,
+    category: row.category as ContentPoolItem['category'],
+    duration: row.duration,
+    author: row.author,
+    tags: row.tags,
+    thumbnail: row.thumbnail,
+    thumbnailUrl: row.thumbnailUrl ?? undefined,
+    body: row.body,
+    summary: row.summary ?? undefined,
+    createdAt: row.createdAt,
+  };
 }
 
-async function writeItems(items: ContentPoolItem[]): Promise<void> {
-  const json = JSON.stringify(items, null, 2);
-  const content = `import type { ContentPoolItem } from '@/lib/api/contentPool';\n\nexport const MOCK_CONTENT_POOL: ContentPoolItem[] = ${json};\n`;
-  await fs.writeFile(DATA_FILE, content, 'utf-8');
+// 테이블이 비어 있으면 기존 목데이터를 시드(배열 순서 = 최신순으로 보존)
+async function ensureSeeded(): Promise<void> {
+  const count = await prisma.contentPoolItem.count();
+  if (count > 0) return;
+  const base = Date.now();
+  await prisma.contentPoolItem.createMany({
+    data: MOCK_CONTENT_POOL.map((it, i) => ({
+      id: it.id,
+      type: it.type,
+      title: it.title,
+      category: it.category,
+      duration: it.duration,
+      author: it.author,
+      tags: it.tags ?? [],
+      thumbnail: it.thumbnail ?? '',
+      thumbnailUrl: it.thumbnailUrl ?? null,
+      body: it.body ?? '',
+      summary: it.summary ?? null,
+      createdAt: it.createdAt,
+      insertedAt: new Date(base - i * 1000), // 앞쪽일수록 최신
+    })),
+    skipDuplicates: true,
+  });
 }
 
-function nextId(items: ContentPoolItem[], type: 'original' | 'curation'): string {
+function nextId(existingIds: string[], type: 'original' | 'curation'): string {
   const prefix = type === 'original' ? 'jsa' : 'src';
-  const nums = items
-    .map(i => i.id)
+  const nums = existingIds
     .filter(id => id.startsWith(prefix + '-'))
     .map(id => parseInt(id.split('-')[1], 10))
     .filter(n => !isNaN(n));
@@ -34,8 +66,9 @@ function nextId(items: ContentPoolItem[], type: 'original' | 'curation'): string
 
 export async function GET() {
   try {
-    const items = await readItems();
-    return NextResponse.json(items);
+    await ensureSeeded();
+    const rows = await prisma.contentPoolItem.findMany({ orderBy: { insertedAt: 'desc' } });
+    return NextResponse.json((rows as DbRow[]).map(toItem));
   } catch (e) {
     console.error('[save-content GET]', e);
     return NextResponse.json({ error: '데이터를 읽을 수 없습니다.' }, { status: 500 });
@@ -44,15 +77,28 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    await ensureSeeded();
     const body = await req.json() as Omit<ContentPoolItem, 'id' | 'createdAt'>;
-    const items = await readItems();
-    const newItem: ContentPoolItem = {
-      ...body,
-      id: nextId(items, body.type),
-      createdAt: new Date().toISOString().slice(0, 10),
-    };
-    await writeItems([newItem, ...items]);
-    return NextResponse.json({ success: true, id: newItem.id, item: newItem });
+    const existing = await prisma.contentPoolItem.findMany({ select: { id: true } });
+    const id = nextId(existing.map(r => r.id), body.type);
+    const created = await prisma.contentPoolItem.create({
+      data: {
+        id,
+        type: body.type,
+        title: body.title,
+        category: body.category,
+        duration: body.duration,
+        author: body.author,
+        tags: body.tags ?? [],
+        thumbnail: body.thumbnail ?? '',
+        thumbnailUrl: body.thumbnailUrl ?? null,
+        body: body.body ?? '',
+        summary: body.summary ?? null,
+        createdAt: new Date().toISOString().slice(0, 10),
+      },
+    });
+    const item = toItem(created as DbRow);
+    return NextResponse.json({ success: true, id: item.id, item });
   } catch (e) {
     console.error('[save-content POST]', e);
     return NextResponse.json({ error: '저장에 실패했습니다.' }, { status: 500 });
@@ -62,13 +108,15 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json() as Partial<ContentPoolItem> & { id: string };
-    const items = await readItems();
-    const idx = items.findIndex(i => i.id === body.id);
-    if (idx === -1) {
+    const { id, createdAt: _c, ...patch } = body;
+    const data: Record<string, unknown> = { ...patch };
+    if ('thumbnailUrl' in data) data.thumbnailUrl = patch.thumbnailUrl ?? null;
+    if ('summary' in data) data.summary = patch.summary ?? null;
+    const exists = await prisma.contentPoolItem.findUnique({ where: { id }, select: { id: true } });
+    if (!exists) {
       return NextResponse.json({ error: '항목을 찾을 수 없습니다.' }, { status: 404 });
     }
-    items[idx] = { ...items[idx], ...body };
-    await writeItems(items);
+    await prisma.contentPoolItem.update({ where: { id }, data });
     return NextResponse.json({ success: true });
   } catch (e) {
     console.error('[save-content PUT]', e);
@@ -79,12 +127,11 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     const { id } = await req.json() as { id: string };
-    const items = await readItems();
-    const filtered = items.filter(i => i.id !== id);
-    if (filtered.length === items.length) {
+    const exists = await prisma.contentPoolItem.findUnique({ where: { id }, select: { id: true } });
+    if (!exists) {
       return NextResponse.json({ error: '항목을 찾을 수 없습니다.' }, { status: 404 });
     }
-    await writeItems(filtered);
+    await prisma.contentPoolItem.delete({ where: { id } });
     return NextResponse.json({ success: true });
   } catch (e) {
     console.error('[save-content DELETE]', e);
