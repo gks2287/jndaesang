@@ -1719,7 +1719,7 @@ function ConfigureContent() {
             <p className="text-sm font-semibold text-emerald-700">이 그룹은 이미 발송되어 수정할 수 없습니다.</p>
           </div>
         )}
-        <div className={locked ? 'pointer-events-none select-none opacity-60' : ''} aria-disabled={locked}>
+        <div className={`space-y-4 ${locked ? 'pointer-events-none select-none opacity-60' : ''}`} aria-disabled={locked}>
         {/* 주제 선정 */}
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
           <button onClick={() => toggleSectionKey(kTopic)} className="w-full px-5 py-3 flex items-center gap-2 hover:bg-gray-50 transition-colors">
