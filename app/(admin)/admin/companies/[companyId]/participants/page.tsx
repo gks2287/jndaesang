@@ -242,7 +242,10 @@ const [search, setSearch] = useState('');
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col overflow-hidden flex-1">
           {/* 테이블 헤더 바 */}
           <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-gray-50/60">
-            <p className="text-sm text-gray-500 font-medium">직책자 목록</p>
+            <p className="text-sm text-gray-500 font-medium">
+              직책자 목록
+              <span className="ml-2 text-xs font-semibold text-[#55A4DA]">{selectedYear}년 {participants.length}명</span>
+            </p>
             <div className="flex items-center gap-2">
               {/* Excel 업로드 */}
               <div className="relative" onClick={e => e.stopPropagation()}>
