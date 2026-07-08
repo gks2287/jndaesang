@@ -445,15 +445,18 @@ function ConfigureContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wizardStep, companyLeadershipInfo]);
 
-  // Step 5 진입/회차 전환 시 활성 그룹 + 일반형 각각 주제·콘텐츠 AI 자동 채움
+  // Step 5 진입/회차 전환/탭 전환 시 — '현재 활성 탭'만 주제·콘텐츠 AI 자동 채움
+  // (첫 탭만 바로 추천되고, 다른 그룹은 실제로 그 탭으로 넘어갔을 때 추천)
   useEffect(() => {
     if (wizardStep !== 5) return;
     const r = rounds[activeRoundIdx];
     if (!r) return;
-    const targets = [...r.customGroups.filter(g => g.types.length > 0).map(g => g.id), 'general'];
-    targets.forEach(targetId => { void autoFillTarget(activeRoundIdx, targetId); });
+    const activeGroups = r.customGroups.filter(g => g.types.length > 0);
+    const tabIds = [...(r.generalLeaderIds.length > 0 ? ['general'] : []), ...activeGroups.map(g => g.id)];
+    const current = tabIds.includes(previewTargetId) ? previewTargetId : (tabIds[0] ?? 'general');
+    void autoFillTarget(activeRoundIdx, current);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wizardStep, activeRoundIdx]);
+  }, [wizardStep, activeRoundIdx, previewTargetId]);
 
   // 회차 전환 시 아코디언 초기화 (모두 펼침) + 미리보기 대상 일반형으로 리셋
   // 단, 최초 마운트에서는 seed된 그룹 탭(seededPreviewTargetId)을 유지한다.
@@ -531,18 +534,22 @@ function ConfigureContent() {
   // 미리보기 모달이 닫히면 수신 리더 오버레이도 함께 닫음
   useEffect(() => { if (!previewOpen) setShowRecipients(false); }, [previewOpen]);
 
-  // Step 5: 활성 회차의 일반형 + 그룹 본문을 주제/콘텐츠 기준으로 백그라운드 자동 생성 (debounce 1초)
-  // - 진입/회차전환 시 활성 회차의 전 대상 생성([수정1·4]), 탭 전환과 무관하게 미리 준비됨([수정5])
+  // Step 5: 본문을 주제/콘텐츠 기준으로 백그라운드 자동 생성 (debounce 1초)
+  // - 저장·회차 본문에 쓰이는 general은 항상 준비하되, 그룹 본문은 '현재 활성 탭'만 생성한다.
+  //   → 방문하지 않은 다른 그룹이 미리 생성돼 미리보기에 함께 뜨는 것을 방지.
   // - 인터랙션/만족도가 바뀌면 본문(실제 내용 기반 인터랙션)을 다시 생성해야 하므로 시그니처에 포함
-  // - 주제/콘텐츠가 바뀌면 편집 보호와 무관하게 항상 재생성([수정1·3]) · 현재 구성과 sig 다르면 재생성([수정2])
+  // - 주제/콘텐츠가 바뀌면 편집 보호와 무관하게 항상 재생성 · 현재 구성과 sig 다르면 재생성
   useEffect(() => {
     if (wizardStep !== 5) return;
     const r = rounds[activeRoundIdx];
     if (!r) return;
     const activeGroups = r.customGroups.filter(g => g.types.length > 0);
+    const tabIds = [...(r.generalLeaderIds.length > 0 ? ['general'] : []), ...activeGroups.map(g => g.id)];
+    const current = tabIds.includes(previewTargetId) ? previewTargetId : (tabIds[0] ?? 'general');
+    const activeGroup = activeGroups.find(g => g.id === current);
     const targetList = [
       { targetId: 'general', topic: r.topic, ids: r.contents.map(c => c.id), interactions: r.interactions, surveys: r.surveys },
-      ...activeGroups.map(g => ({ targetId: g.id, topic: g.topic, ids: g.contents.map(c => c.id), interactions: g.interactions, surveys: g.surveys })),
+      ...(activeGroup ? [{ targetId: activeGroup.id, topic: activeGroup.topic, ids: activeGroup.contents.map(c => c.id), interactions: activeGroup.interactions, surveys: activeGroup.surveys }] : []),
     ];
     const timers = livePreviewTimers.current;
     targetList.forEach(({ targetId, topic, ids, interactions, surveys }) => {
@@ -569,7 +576,7 @@ function ConfigureContent() {
       });
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wizardStep, activeRoundIdx, rounds]);
+  }, [wizardStep, activeRoundIdx, rounds, previewTargetId]);
 
   // 아코디언 펼침 여부 (collapsedSections에 없으면 펼침)
   function isSectionOpen(key: string): boolean {
