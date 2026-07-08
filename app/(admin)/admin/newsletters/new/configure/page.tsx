@@ -487,16 +487,31 @@ function ConfigureContent() {
     seeded.rounds.forEach(sr => {
       const idx = (sr.vol ?? 0) - 1;
       if (idx < 0 || !sr.generated) return;
-      gen[idx] = sr.generated;
-      live[`${idx}:general`] = sr.generated;
-      revealed.push(`${idx}:general`);
+      const generated = sr.generated;
+      gen[idx] = generated;
       const r = configDraft.rounds[idx];
-      if (r) {
-        livePreviewSigRef.current[`${idx}:general`] = JSON.stringify({
-          roundIdx: idx, targetId: 'general', topic: r.topic,
-          ids: r.contents.map(c => c.id), interactions: r.interactions, surveys: r.surveys,
-        });
+      if (!r) {
+        live[`${idx}:general`] = generated;
+        revealed.push(`${idx}:general`);
+        return;
       }
+      // 완료 회차의 표시 대상(일반형 + 유형이 있는 그룹) 전부에 저장 본문을 복원·공개한다.
+      // 일반형 리더가 없는 회차는 그룹 탭만 보이므로 general만 복원하면 빈 화면이 뜬다.
+      const targets = [
+        { id: 'general', topic: r.topic, ids: r.contents.map(c => c.id), interactions: r.interactions, surveys: r.surveys },
+        ...r.customGroups.filter(g => g.types.length > 0).map(g => ({
+          id: g.id, topic: g.topic, ids: g.contents.map(c => c.id), interactions: g.interactions, surveys: g.surveys,
+        })),
+      ];
+      targets.forEach(t => {
+        const key = `${idx}:${t.id}`;
+        live[key] = generated;
+        revealed.push(key);
+        // 저장 본문과 동일 서명으로 표시해 불필요한 재생성(API 호출)을 막는다.
+        livePreviewSigRef.current[key] = JSON.stringify({
+          roundIdx: idx, targetId: t.id, topic: t.topic, ids: t.ids, interactions: t.interactions, surveys: t.surveys,
+        });
+      });
     });
     if (Object.keys(gen).length === 0) return;
     generatedContentRef.current = { ...generatedContentRef.current, ...gen };
