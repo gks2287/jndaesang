@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useCompanyStore, CoachingStatus } from '@/store/companyStore';
 import { useParticipantStore, type LeadershipType } from '@/store/participantStore';
 import { useLeadershipInfoStore, type LeadershipInfo } from '@/store/leadershipInfoStore';
+import { LeadershipInfoManualForm, emptyLeadershipInfoRow } from '@/components/admin/LeadershipInfoManualForm';
 
 const INDUSTRIES = [
   { name: '제조업', desc: '자동차, 기계, 화학, 철강, 소재' },
@@ -112,6 +113,11 @@ export default function NewCompanyPage() {
   const [extractError, setExtractError] = useState<string | null>(null);
   const [reportFileName, setReportFileName] = useState('');
 
+  // 리더십 유형 정보 입력 방식: 파일 업로드(AI 추출) / 직접 입력
+  const [infoMode, setInfoMode] = useState<'file' | 'manual'>('file');
+  const [manualRows, setManualRows] = useState<LeadershipInfo[]>([emptyLeadershipInfoRow()]);
+  const [manualError, setManualError] = useState<string | null>(null);
+
   // 기업 로고 업로드 (선택) — 없으면 이니셜 아바타
   const logoInputRef = useRef<HTMLInputElement>(null);
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
@@ -147,6 +153,29 @@ export default function NewCompanyPage() {
       setExtracting(false);
     }
   }
+
+  // 직접 입력한 유형 정보를 적용 — AI 호출 없이 즉시 반영(직책자 추가와 동일하게 로컬에 담아뒀다가
+  // 폼 제출 시 saveLeadershipInfo로 한 번에 저장됨)
+  function applyManualInfo() {
+    const valid = manualRows
+      .map(r => ({ ...r, type: r.type.trim(), definition: r.definition.trim(), characteristics: r.characteristics.trim(), developmentPoints: r.developmentPoints?.trim() || undefined }))
+      .filter(r => r.type && r.definition);
+    if (valid.length === 0) {
+      setManualError('유형명과 정의는 최소 1개 이상 입력해주세요.');
+      return;
+    }
+    setManualError(null);
+    setExtractError(null);
+    setExtractedInfo(valid);
+    setReportFileName('직접 입력');
+  }
+
+  // AI 추출 결과를 직접 입력 폼으로 불러와 수정할 수 있게
+  function loadExtractedIntoManual() {
+    setManualRows(extractedInfo.length > 0 ? extractedInfo : [emptyLeadershipInfoRow()]);
+    setInfoMode('manual');
+  }
+
   // 직책자 유형 드롭다운 옵션: 업로드 파일에서 추출한 유형(워딩 그대로) 우선, 없으면 표준 목록
   const typeOptions = extractedInfo.length > 0
     ? Array.from(new Set(extractedInfo.map(i => i.type).filter(Boolean)))
@@ -376,64 +405,111 @@ export default function NewCompanyPage() {
           {/* 다면진단 보고서 */}
           <section>
             <h2 className="text-sm tracking-[0.15em] text-gray-600 font-semibold mb-4">리더십 유형 정보</h2>
-            <label className="block w-full border-2 border-dashed border-gray-200 rounded-lg px-6 py-8 cursor-pointer hover:border-[#55A4DA] hover:bg-[#55A4DA]/5 transition-colors group">
-              <input
-                type="file"
-                accept=".pdf,.docx,.txt,.xlsx,.csv"
-                multiple
-                className="hidden"
-                onChange={e => {
-                  const picked = Array.from(e.target.files ?? []);
-                  setFiles(prev => [...prev, ...picked]);
-                  if (picked[0]) void handleReportExtract(picked[0]);
-                }}
-              />
-              <div className="flex flex-col items-center gap-2 text-center">
-                <svg className="w-8 h-8 text-gray-300 group-hover:text-[#55A4DA] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-                <p className="text-sm font-medium text-gray-500 group-hover:text-[#55A4DA]">파일을 드래그하거나 클릭해서 업로드</p>
-                <p className="text-xs text-gray-400">PDF, DOCX, TXT, Excel, CSV 지원 · 최대 50MB</p>
-              </div>
-            </label>
-            {files.length > 0 && (
-              <ul className="mt-3 space-y-2">
-                {files.map((file, i) => (
-                  <li key={i} className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <svg className="w-4 h-4 text-[#55A4DA] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      <span className="text-sm text-gray-700 truncate">{file.name}</span>
-                      <span className="text-xs text-gray-400 flex-shrink-0">{fmtFileSize(file.size)}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setFiles(prev => prev.filter((_, idx) => idx !== i))}
-                      className="text-gray-300 hover:text-red-400 transition-colors ml-3 flex-shrink-0"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+
+            {/* 입력 방식 탭 */}
+            <div className="flex items-center gap-1.5 mb-4">
+              {([{ v: 'file' as const, label: '파일 업로드 (AI 추출)' }, { v: 'manual' as const, label: '직접 입력' }]).map(({ v, label }) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setInfoMode(v)}
+                  className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                    infoMode === v ? 'bg-[#55A4DA] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {infoMode === 'file' ? (
+              <>
+                <label className="block w-full border-2 border-dashed border-gray-200 rounded-lg px-6 py-8 cursor-pointer hover:border-[#55A4DA] hover:bg-[#55A4DA]/5 transition-colors group">
+                  <input
+                    type="file"
+                    accept=".pdf,.docx,.txt,.xlsx,.csv"
+                    multiple
+                    className="hidden"
+                    onChange={e => {
+                      const picked = Array.from(e.target.files ?? []);
+                      setFiles(prev => [...prev, ...picked]);
+                      if (picked[0]) void handleReportExtract(picked[0]);
+                    }}
+                  />
+                  <div className="flex flex-col items-center gap-2 text-center">
+                    <svg className="w-8 h-8 text-gray-300 group-hover:text-[#55A4DA] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <p className="text-sm font-medium text-gray-500 group-hover:text-[#55A4DA]">파일을 드래그하거나 클릭해서 업로드</p>
+                    <p className="text-xs text-gray-400">PDF, DOCX, TXT, Excel, CSV 지원 · 최대 50MB</p>
+                  </div>
+                </label>
+                {files.length > 0 && (
+                  <ul className="mt-3 space-y-2">
+                    {files.map((file, i) => (
+                      <li key={i} className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <svg className="w-4 h-4 text-[#55A4DA] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <span className="text-sm text-gray-700 truncate">{file.name}</span>
+                          <span className="text-xs text-gray-400 flex-shrink-0">{fmtFileSize(file.size)}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setFiles(prev => prev.filter((_, idx) => idx !== i))}
+                          className="text-gray-300 hover:text-red-400 transition-colors ml-3 flex-shrink-0"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {extracting && (
+                  <div className="mt-4 flex items-center gap-2 text-sm text-[#2E7DB5]">
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+                    보고서에서 리더십 유형을 분석하고 있어요...
+                  </div>
+                )}
+                {extractError && !extracting && (
+                  <p className="mt-4 text-sm text-amber-600">{extractError}</p>
+                )}
+                {extractedInfo.length > 0 && !extracting && (
+                  <button
+                    type="button"
+                    onClick={loadExtractedIntoManual}
+                    className="mt-3 text-xs font-semibold text-[#55A4DA] hover:underline"
+                  >
+                    직접 입력으로 불러와 수정
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <LeadershipInfoManualForm rows={manualRows} onChange={setManualRows} />
+                {manualError && (
+                  <p className="mt-3 text-sm text-amber-600">{manualError}</p>
+                )}
+                <button
+                  type="button"
+                  onClick={applyManualInfo}
+                  className="mt-3 w-full py-2.5 rounded-lg bg-[#55A4DA] hover:bg-[#3A8BC4] text-white text-sm font-semibold transition-colors"
+                >
+                  이 정보 사용
+                </button>
+              </>
             )}
 
-            {/* AI 추출 결과 — 제출 전 미리보기/수정 */}
-            {extracting && (
-              <div className="mt-4 flex items-center gap-2 text-sm text-[#2E7DB5]">
-                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
-                보고서에서 리더십 유형을 분석하고 있어요...
-              </div>
-            )}
-            {extractError && !extracting && (
-              <p className="mt-4 text-sm text-amber-600">{extractError}</p>
-            )}
+            {/* 최종 적용된 유형 정보 — 파일 추출/직접 입력 어느 쪽이든 공통 표시 */}
             {extractedInfo.length > 0 && (
               <div className="mt-5">
-                <p className="text-sm font-semibold text-gray-800 mb-3">추출된 리더십 유형 <span className="text-[#55A4DA]">{extractedInfo.length}</span>개</p>
+                <p className="text-sm font-semibold text-gray-800 mb-3">
+                  {reportFileName === '직접 입력' ? '입력된' : '추출된'} 리더십 유형 <span className="text-[#55A4DA]">{extractedInfo.length}</span>개
+                </p>
                 <div className="flex flex-wrap gap-2">
                   {extractedInfo.map((it, idx) => (
                     <span key={idx} className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold bg-[#EAF4FC] text-[#2E7DB5]">

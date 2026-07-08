@@ -7,6 +7,7 @@ import { useCompanyStore, type CoachingStatus } from '@/store/companyStore';
 import { useParticipantStore, type LeadershipType, type Participant } from '@/store/participantStore';
 import { useLeadershipInfoStore, DEFAULT_INFO, type LeadershipInfo, type LeadershipInfoVersion } from '@/store/leadershipInfoStore';
 import { useDiagnosisHistoryStore } from '@/store/diagnosisHistoryStore';
+import { LeadershipInfoManualForm, emptyLeadershipInfoRow } from '@/components/admin/LeadershipInfoManualForm';
 
 const LEADERSHIP_TYPES: LeadershipType[] = ['독재형', '방관형', '성과압박형', '불통형', '불명확형', '감정기복형'];
 const EMPTY_HISTORY: LeadershipInfoVersion[] = [];
@@ -121,6 +122,11 @@ export default function CompanyEditPage() {
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // 입력 방식: 파일 업로드(AI 추출) / 직접 입력
+  const [infoMode, setInfoMode] = useState<'file' | 'manual'>('file');
+  const [manualRows, setManualRows] = useState<LeadershipInfo[]>([emptyLeadershipInfoRow()]);
+  const [manualError, setManualError] = useState<string | null>(null);
+  const [manualSaving, setManualSaving] = useState(false);
 
   // ── 기업 삭제 ──
   const DELETE_PHRASE = '삭제하겠습니다';
@@ -233,6 +239,33 @@ export default function CompanyEditPage() {
     } finally {
       setExtracting(false);
     }
+  }
+
+  // ── 핸들러: 리더십 유형 직접 입력 ──
+  // AI 호출 없이 즉시 저장(기존 파일 업로드와 동일한 updateInfo — 히스토리에 '직접 입력'으로 기록됨)
+  async function saveManualInfo() {
+    const valid = manualRows
+      .map(r => ({ ...r, type: r.type.trim(), definition: r.definition.trim(), characteristics: r.characteristics.trim(), developmentPoints: r.developmentPoints?.trim() || undefined }))
+      .filter(r => r.type && r.definition);
+    if (valid.length === 0) {
+      setManualError('유형명과 정의는 최소 1개 이상 입력해주세요.');
+      return;
+    }
+    setManualError(null);
+    setManualSaving(true);
+    try {
+      await updateInfo(companyId, infoYear, valid, '직접 입력');
+      setUploadToast({ name: '직접 입력' });
+      setTimeout(() => setUploadToast(null), 3000);
+    } finally {
+      setManualSaving(false);
+    }
+  }
+
+  // 현재 저장된 유형 정보를 직접 입력 폼으로 불러와 수정
+  function loadCurrentIntoManual() {
+    setManualRows(leadershipCurrent.length > 0 ? leadershipCurrent : [emptyLeadershipInfoRow()]);
+    setInfoMode('manual');
   }
 
   // ── 핸들러: 직책자 편집 ──
@@ -418,24 +451,36 @@ export default function CompanyEditPage() {
                   히스토리 {leadershipHistory.length}건
                 </button>
               )}
-              <input ref={fileInputRef} type="file" accept=".pdf,.docx,.txt,.xlsx,.csv,.json" className="hidden" onChange={handleLeadershipFile} />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={extracting}
-                className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#55A4DA] hover:bg-[#3A8BC4] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
-              >
-                {extracting ? (
-                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={4} />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                ) : (
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                  </svg>
-                )}
-                {extracting ? '분석 중…' : `${infoYear}년 업로드`}
-              </button>
+              {infoMode === 'file' ? (
+                <>
+                  <input ref={fileInputRef} type="file" accept=".pdf,.docx,.txt,.xlsx,.csv,.json" className="hidden" onChange={handleLeadershipFile} />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={extracting}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#55A4DA] hover:bg-[#3A8BC4] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+                  >
+                    {extracting ? (
+                      <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={4} />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                      </svg>
+                    )}
+                    {extracting ? '분석 중…' : `${infoYear}년 업로드`}
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={saveManualInfo}
+                  disabled={manualSaving}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-white bg-[#55A4DA] hover:bg-[#3A8BC4] px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
+                >
+                  {manualSaving ? '저장 중…' : `${infoYear}년 저장`}
+                </button>
+              )}
             </div>
           </div>
 
@@ -454,11 +499,41 @@ export default function CompanyEditPage() {
             ))}
           </div>
 
-          {extractError && !extracting && (
+          {/* 입력 방식 탭 */}
+          <div className="flex items-center gap-1.5 mb-4">
+            {([{ v: 'file' as const, label: '파일 업로드 (AI 추출)' }, { v: 'manual' as const, label: '직접 입력' }]).map(({ v, label }) => (
+              <button
+                key={v}
+                onClick={() => setInfoMode(v)}
+                className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                  infoMode === v ? 'bg-[#2E7DB5] text-white' : 'bg-[#EAF4FC] text-[#2E7DB5] hover:bg-[#d9ecfa]'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {extractError && !extracting && infoMode === 'file' && (
             <p className="mb-4 text-xs text-amber-600">{extractError}</p>
           )}
 
-          {/* 리더십 유형 카드 */}
+          {infoMode === 'manual' && (
+            <div className="mb-5">
+              <button
+                onClick={loadCurrentIntoManual}
+                className="mb-3 text-xs font-semibold text-[#55A4DA] hover:underline"
+              >
+                현재 저장된 정보 불러와 수정
+              </button>
+              <LeadershipInfoManualForm rows={manualRows} onChange={setManualRows} />
+              {manualError && (
+                <p className="mt-3 text-sm text-amber-600">{manualError}</p>
+              )}
+            </div>
+          )}
+
+          {/* 리더십 유형 카드 — 현재 저장된 정보(입력 방식과 무관하게 항상 표시) */}
           <div className="grid grid-cols-2 gap-3">
             {leadershipCurrent.map(info => (
               <div key={info.type} className="rounded-xl border border-gray-100 p-4 bg-gray-50/50">
