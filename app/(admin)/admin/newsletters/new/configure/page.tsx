@@ -4030,6 +4030,32 @@ function ConfigureContent() {
   );
 }
 
+// persist(sessionStorage) 스토어가 hydrate되기 전에 ConfigureContent가 마운트되면
+// useState 초기값이 seed된 값(wizardStep=5, rounds, 스토리라인 등) 대신 기본값을 읽어
+// '스토리라인(1단계)' 초기 화면이 뜨는 문제가 발생한다. hydration 완료 후에만 마운트한다.
+function useDraftHydrated() {
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    const store = useNewNewsletterDraftStore.persist;
+    if (store.hasHydrated()) setHydrated(true);
+    const unsub = store.onFinishHydration(() => setHydrated(true));
+    return unsub;
+  }, []);
+  return hydrated;
+}
+
+function ConfigureGate() {
+  const hydrated = useDraftHydrated();
+  if (!hydrated) {
+    return (
+      <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+        불러오는 중...
+      </div>
+    );
+  }
+  return <ConfigureContent />;
+}
+
 export default function ConfigurePage() {
   return (
     <Suspense fallback={
@@ -4037,7 +4063,7 @@ export default function ConfigurePage() {
         로딩 중...
       </div>
     }>
-      <ConfigureContent />
+      <ConfigureGate />
     </Suspense>
   );
 }
