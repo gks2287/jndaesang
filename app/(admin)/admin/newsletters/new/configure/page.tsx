@@ -324,6 +324,9 @@ function ConfigureContent() {
   const livePreviewTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   // 대상별 마지막 생성 시그니처 (key → sig). 현재 구성과 다르면 재생성 (A→B→A 되돌림도 정상 반영)
   const livePreviewSigRef = useRef<Record<string, string>>({});
+  // 콘텐츠 자동 추천 debounce 타이머·시그니처 (key → `${roundIdx}:${targetId}`) — 주제·세부방향 변경 감시
+  const contentSuggestTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const contentSuggestSigRef = useRef<Record<string, string>>({});
   // Step 4 → 5 진입 시 전 회차 자동 구성 로딩 오버레이
 
   // 주제 선정
@@ -570,6 +573,47 @@ function ConfigureContent() {
         livePreviewSigRef.current[key] = sig;
         await generateLivePreview(activeRoundIdx, targetId);
       }, 1000);
+    });
+    return () => {
+      targetList.forEach(({ targetId }) => {
+        const key = `${activeRoundIdx}:${targetId}`;
+        if (timers[key]) clearTimeout(timers[key]);
+      });
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wizardStep, activeRoundIdx, rounds, previewTargetId]);
+
+  // Step 5: 콘텐츠 세부 방향(contentBrief)이 바뀌면 콘텐츠 자동 재추천 (debounce 900ms)
+  // - 주제만 정해지면 바로 서칭하던 기존 흐름 대신, 주제+세부방향 시그니처를 함께 감시해
+  //   세부방향을 입력할 틈 없이 즉시 실행되던 문제를 없앤다 (autoFillTarget은 더 이상 콘텐츠를 직접 호출하지 않음).
+  // - 이미 콘텐츠가 담겨 있으면(수동이든 이전 자동 추천이든) 자동 재실행하지 않는다 — 덮어쓰기 방지.
+  //   다시 담고 싶으면 '콘텐츠 다시 가져오기'를 직접 누른다.
+  // - general은 항상 대상, 그룹은 본문 생성 debounce와 동일하게 '현재 활성 탭'만.
+  useEffect(() => {
+    if (wizardStep !== 5) return;
+    const r = rounds[activeRoundIdx];
+    if (!r) return;
+    const activeGroups = r.customGroups.filter(g => g.types.length > 0);
+    const tabIds = [...(r.generalLeaderIds.length > 0 ? ['general'] : []), ...activeGroups.map(g => g.id)];
+    const current = tabIds.includes(previewTargetId) ? previewTargetId : (tabIds[0] ?? 'general');
+    const activeGroup = activeGroups.find(g => g.id === current);
+    const targetList = [
+      { targetId: 'general', topic: r.topic, contents: r.contents, contentBrief: r.contentBrief ?? '' },
+      ...(activeGroup ? [{ targetId: activeGroup.id, topic: activeGroup.topic, contents: activeGroup.contents, contentBrief: activeGroup.contentBrief ?? '' }] : []),
+    ];
+    const timers = contentSuggestTimers.current;
+    targetList.forEach(({ targetId, topic, contents, contentBrief }) => {
+      if (!topic.trim()) return; // 주제 없으면 추천하지 않음
+      if (contents.length > 0) return; // 이미 콘텐츠가 있으면 자동 재실행하지 않음(덮어쓰기 방지)
+      const sig = JSON.stringify({ roundIdx: activeRoundIdx, targetId, topic, contentBrief });
+      const key = `${activeRoundIdx}:${targetId}`;
+      if (contentSuggestSigRef.current[key] === sig) return; // 이미 이 시그니처로 시도함
+      if (timers[key]) clearTimeout(timers[key]);
+      timers[key] = setTimeout(() => {
+        contentSuggestSigRef.current[key] = sig;
+        if (targetId === 'general') void suggestContentsForRound(activeRoundIdx, topic);
+        else void suggestGroupContents(activeRoundIdx, targetId, topic);
+      }, 900);
     });
     return () => {
       targetList.forEach(({ targetId }) => {
@@ -963,7 +1007,9 @@ function ConfigureContent() {
     }
   }
 
-  // 회차 진입 시 주제 자동 추천 → 첫 추천 자동 선택 → 콘텐츠 자동 서칭 (공유 suggestions UI 미사용)
+  // 회차 진입 시 주제 자동 추천 → 첫 추천 자동 선택 (공유 suggestions UI 미사용)
+  // 콘텐츠 자동 서칭은 여기서 바로 호출하지 않음 — 세부 방향(contentBrief)을 입력할 틈을
+  // 주기 위해 별도 debounce effect(콘텐츠 세부 방향 감시)가 주제 설정 이후 담당한다.
   async function autoFillTarget(roundIdx: number, targetId: string) {
     const key = `${roundIdx}:${targetId}`;
     if (autoFilledRef.current.has(key)) return;
@@ -1003,8 +1049,6 @@ function ConfigureContent() {
       if (!first) { autoFilledRef.current.delete(key); return; }
       if (isCustom) setGroupTopic(roundIdx, targetId, first);
       else setRoundTopic(roundIdx, first);
-      if (isCustom) await suggestGroupContents(roundIdx, targetId, first);
-      else await suggestContentsForRound(roundIdx, first);
     } finally {
       setPreparingTargets(prev => { const s = new Set(prev); s.delete(key); return s; });
     }
@@ -1835,7 +1879,7 @@ function ConfigureContent() {
             value={contentBrief}
             onChange={e => opts.setContentBrief(e.target.value)}
             rows={3}
-            placeholder="이번 뉴스레터에 꼭 넣고 싶은 관점·사례·키워드를 적어주세요 (예: 신뢰 회복 사례 중심, 1on1 대화 스크립트 포함)"
+            placeholder="이번 뉴스레터에 꼭 반영하고 싶은 관점·사례·키워드를 적어주세요"
             className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition resize-y"
           />
         </div>
