@@ -244,7 +244,7 @@ const [search, setSearch] = useState('');
           <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-gray-50/60">
             <div className="flex items-center gap-2">
               <p className="text-sm text-gray-800 font-semibold leading-none">직책자 목록</p>
-              <span className="text-xs font-semibold text-[#55A4DA] leading-none">대상자 수 {participants.length}명</span>
+              <span className="text-xs font-bold text-[#2E7DB5] leading-none">대상자 수 {participants.length}명</span>
             </div>
             <div className="flex items-center gap-2">
               {/* Excel 업로드 */}
