@@ -124,18 +124,49 @@ export type GeneratedNewsletter = {
 export type InteractionTypeKey = 'quiz' | 'scenario' | 'selfcheck' | 'reflection' | 'dodont';
 export type SurveyTypeKey = 'always' | 'periodic';
 
-// ── 제작완료 후 영구 저장되는 회차별 생성 본문 ──
-export interface SavedNewsletterRound {
-  vol: number;
-  dateLabel: string;
-  leadershipLabel: string;
+// ── 회차 내 하나의 발송 타깃(일반형 또는 커스텀 그룹)에 대한 생성 본문 ──
+export interface SavedNewsletterGroup {
+  groupId: string;             // 'general' 또는 CustomGroup.id
+  types: string[];             // 이 타깃에 속한 리더십 유형 목록 (참여자 매칭용, 일반형이면 빈 배열)
+  label: string;                // 표시용 라벨 ('일반' 또는 유형 join)
   generated: GeneratedNewsletter;
   interactions: InteractionTypeKey[];
   surveys: SurveyTypeKey[];
 }
 
+// ── 제작완료 후 영구 저장되는 회차별 생성 본문 ──
+export interface SavedNewsletterRound {
+  vol: number;
+  dateLabel: string;
+  leadershipLabel: string;
+  // 대표(첫 번째) 타깃의 본문/인터랙션/서베이 — groups 도입 이전 저장 데이터 및
+  // 그룹을 아직 인지하지 못하는 소비처(발송 모달 등)를 위한 하위 호환 필드.
+  generated: GeneratedNewsletter;
+  interactions: InteractionTypeKey[];
+  surveys: SurveyTypeKey[];
+  // 회차 내 실제로 생성된 모든 타깃(일반형 + 커스텀 그룹별) 본문. 신규 저장 데이터에만 존재.
+  groups?: SavedNewsletterGroup[];
+}
+
 export interface SavedNewsletterContent {
   rounds: SavedNewsletterRound[];
+}
+
+// 참여자의 리더십 유형으로 회차 내 "본인이 속한" 그룹 콘텐츠를 찾는다.
+// groups가 없는(구버전) 저장 데이터는 회차 최상위 필드를 그대로 사용한다.
+export function resolveRoundGroup(round: SavedNewsletterRound, leadershipType?: string): {
+  label: string;
+  generated: GeneratedNewsletter;
+  interactions: InteractionTypeKey[];
+  surveys: SurveyTypeKey[];
+} {
+  const groups = round.groups;
+  if (!groups || groups.length === 0) {
+    return { label: round.leadershipLabel, generated: round.generated, interactions: round.interactions, surveys: round.surveys };
+  }
+  const matched = leadershipType ? groups.find(g => g.types.includes(leadershipType)) : undefined;
+  const target = matched ?? groups.find(g => g.groupId === 'general') ?? groups[0];
+  return { label: target.label, generated: target.generated, interactions: target.interactions, surveys: target.surveys };
 }
 
 // 헤드라인 줄바꿈: 쉼표 뒤에서 줄바꿈하되, 양쪽 절이 모두 5글자 초과일 때만 (whitespace-pre-line과 함께 사용)
@@ -999,11 +1030,20 @@ export function SavedNewsletterPreviewModal({
   content: SavedNewsletterContent | null;
 }) {
   const [roundIdx, setRoundIdx] = useState(0);
+  const [groupId, setGroupId] = useState<string | null>(null);
   const [tab, setTab] = useState<'full' | 'email'>('full');
 
   if (!open || !content || content.rounds.length === 0) return null;
   const safeIdx = Math.min(roundIdx, content.rounds.length - 1);
   const round = content.rounds[safeIdx];
+  // groups가 있으면(신규 저장 데이터) 그 안에서 선택, 없으면(구버전) 회차 최상위 필드를 그대로 사용.
+  const groups = round.groups && round.groups.length > 0 ? round.groups : null;
+  const curGroupId = groups?.some(g => g.groupId === groupId) ? groupId : (groups?.[0]?.groupId ?? null);
+  const activeGroup = groups ? (groups.find(g => g.groupId === curGroupId) ?? groups[0]) : null;
+  const generated = activeGroup?.generated ?? round.generated;
+  const interactions = activeGroup?.interactions ?? round.interactions;
+  const surveys = activeGroup?.surveys ?? round.surveys;
+  const leadershipLabel = activeGroup?.label ?? round.leadershipLabel;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
@@ -1019,19 +1059,32 @@ export function SavedNewsletterPreviewModal({
           </button>
         </div>
 
-        {/* 회차 탭 + 전체/이메일 탭 */}
+        {/* 회차 탭 + 그룹 탭 + 전체/이메일 탭 */}
         <div className="px-6 pt-4 bg-white border-b border-gray-100 flex-shrink-0">
           <div className="flex gap-1.5 overflow-x-auto pb-3 flex-nowrap">
             {content.rounds.map((r, idx) => (
               <button
                 key={idx}
-                onClick={() => setRoundIdx(idx)}
+                onClick={() => { setRoundIdx(idx); setGroupId(null); }}
                 className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${safeIdx === idx ? 'bg-[#55A4DA] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
               >
                 {r.vol}회차
               </button>
             ))}
           </div>
+          {groups && groups.length > 1 && (
+            <div className="flex gap-1.5 overflow-x-auto pb-3 flex-nowrap">
+              {groups.map(g => (
+                <button
+                  key={g.groupId}
+                  onClick={() => setGroupId(g.groupId)}
+                  className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors ${curGroupId === g.groupId ? 'bg-[#2E7DB5] text-white' : 'bg-[#EAF4FC] text-[#2E7DB5] hover:bg-[#d9ecfa]'}`}
+                >
+                  {g.label}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex gap-1.5 pb-3">
             {(['full', 'email'] as const).map(t => (
               <button
@@ -1048,16 +1101,16 @@ export function SavedNewsletterPreviewModal({
         {/* 본문 */}
         <div className="flex-1 overflow-y-auto p-6">
           {tab === 'full'
-            ? renderGeneratedFullBody(round.generated, {
+            ? renderGeneratedFullBody(generated, {
                 vol: round.vol,
                 dateLabel: round.dateLabel,
-                leadershipLabel: round.leadershipLabel,
-                templateInteractions: round.interactions,
-                templateSurveys: round.surveys,
-                templateSurveyContentLabels: round.generated.sections.map(s => s.contentTitle).filter(Boolean),
-                templateSurveyInteractionLabels: round.interactions.map(k => INTERACTION_SURVEY_LABELS[k] ?? k),
+                leadershipLabel,
+                templateInteractions: interactions,
+                templateSurveys: surveys,
+                templateSurveyContentLabels: generated.sections.map(s => s.contentTitle).filter(Boolean),
+                templateSurveyInteractionLabels: interactions.map(k => INTERACTION_SURVEY_LABELS[k] ?? k),
               })
-            : renderNewsletterEmailPreview(round.generated, {
+            : renderNewsletterEmailPreview(generated, {
                 vol: round.vol,
                 dateLabel: round.dateLabel,
                 onReadFull: () => setTab('full'),

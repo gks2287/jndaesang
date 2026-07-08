@@ -4,7 +4,8 @@ import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { type Participant } from '@/store/participantStore';
 import { type Newsletter } from '@/store/newsletterStore';
-import { renderGeneratedFullBody } from '@/components/newsletter/NewsletterRender';
+import { renderGeneratedFullBody, resolveRoundGroup } from '@/components/newsletter/NewsletterRender';
+import { INTERACTION_SURVEY_LABELS } from '@/lib/periodicSurvey';
 import { DEFAULT_STORYLINE, STEP_COLORS } from '@/lib/storyline';
 
 // ── 리더십 유형별 색상 (뱃지용) ──
@@ -214,15 +215,19 @@ export default function ParticipantNewsletterPage() {
                 <span className="text-xs text-gray-400">{activeRound.dateLabel}</span>
               </div>
             )}
-            {activeRound ? (
-              renderGeneratedFullBody(activeRound.generated, {
+            {activeRound ? (() => {
+              // 저장된 여러 타깃(일반형+커스텀 그룹) 중 본인의 리더십 유형이 속한 그룹을 찾아 렌더링.
+              const { label, generated, interactions, surveys } = resolveRoundGroup(activeRound, participant.leadershipType);
+              return renderGeneratedFullBody(generated, {
                 vol: activeRound.vol,
                 dateLabel: activeRound.dateLabel,
-                leadershipLabel: activeRound.leadershipLabel,
-                templateInteractions: activeRound.interactions,
-                templateSurveys: activeRound.surveys,
-              })
-            ) : (
+                leadershipLabel: label,
+                templateInteractions: interactions,
+                templateSurveys: surveys,
+                templateSurveyContentLabels: generated.sections.map(s => s.contentTitle).filter(Boolean),
+                templateSurveyInteractionLabels: interactions.map(k => INTERACTION_SURVEY_LABELS[k] ?? k),
+              });
+            })() : (
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-12 text-center space-y-3">
                 {accessible === 0 ? (
                   <>

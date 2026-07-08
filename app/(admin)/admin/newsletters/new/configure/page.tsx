@@ -22,6 +22,7 @@ import {
   type GeneratedNewsletter,
   type SavedNewsletterContent,
   type SavedNewsletterRound,
+  type SavedNewsletterGroup,
 } from '@/components/newsletter/NewsletterRender';
 
 type DeliveryInterval = 'weekly' | 'biweekly' | 'monthly' | 'bimonthly' | 'quarterly' | 'semiannual';
@@ -1328,15 +1329,32 @@ function ConfigureContent() {
     const leadershipLabel = leadershipTypes.join(', ');
     const savedRounds: SavedNewsletterRound[] = [];
     rounds.forEach((r, idx) => {
-      const gen = generatedContent[idx] ?? livePreviewContent[`${idx}:general`];
-      if (!gen) return;
+      // 실제로 구성된 타깃만 대상 — 카탈로그 백필로 존재하지만 손대지 않은 빈 그룹은 제외.
+      const hasGeneralTarget = r.generalLeaderIds.length > 0 && (r.topic.trim().length > 0 || r.contents.length > 0);
+      const configuredGroups = r.customGroups.filter(g => g.types.length > 0 && (g.topic.trim().length > 0 || g.contents.length > 0));
+      const targets = [
+        ...(hasGeneralTarget ? [{ groupId: 'general', types: [] as string[], label: '일반', interactions: r.interactions, surveys: r.surveys }] : []),
+        ...configuredGroups.map(g => ({ groupId: g.id, types: g.types, label: g.types.join('·'), interactions: g.interactions, surveys: g.surveys })),
+      ];
+
+      const groups: SavedNewsletterGroup[] = targets.flatMap(t => {
+        const gen = t.groupId === 'general'
+          ? (generatedContent[idx] ?? livePreviewContent[`${idx}:general`])
+          : livePreviewContent[`${idx}:${t.groupId}`];
+        if (!gen) return [];
+        return [{ groupId: t.groupId, types: t.types, label: t.label, generated: gen, interactions: t.interactions, surveys: t.surveys }];
+      });
+      if (groups.length === 0) return;
+
+      const primary = groups[0];
       savedRounds.push({
         vol: idx + 1,
         dateLabel: schedDates[idx] ? formatKoreanDate(schedDates[idx]) : '',
         leadershipLabel,
-        generated: gen,
-        interactions: r.interactions,
-        surveys: r.surveys,
+        generated: primary.generated,
+        interactions: primary.interactions,
+        surveys: primary.surveys,
+        groups,
       });
     });
     return savedRounds.length > 0 ? { rounds: savedRounds } : undefined;
@@ -3728,13 +3746,20 @@ function ConfigureContent() {
                   </div>
                   {/* AI 생성 영역 */}
                   {activeRound && (() => {
-                    // 회차 내 발송 그룹 탭 (일반 대상자가 있을 때만 일반 탭 + 각 그룹) — 그룹이 있을 때만 노출
-                    const activeGroups = activeRound.customGroups.filter(g => g.types.length > 0);
-                    const groupTabs = activeGroups.length > 0
-                      ? [...(activeRound.generalLeaderIds.length > 0 ? [{ id: 'general', label: '일반' }] : []), ...activeGroups.map(g => ({ id: g.id, label: g.types.join('·') }))]
-                      : [];
-                    const curGroup = groupTabs.some(t => t.id === previewGroupId) ? previewGroupId : (groupTabs[0]?.id ?? 'general');
+                    // 회차 내 발송 그룹 탭 — customGroups에는 카탈로그 백필로 자동 추가된 미구성 그룹도
+                    // 섞여 있을 수 있으므로, types.length만으로 걸러선 안 되고 실제로 주제/콘텐츠가
+                    // 구성되어 생성 대상인 그룹만 노출한다 (일반 탭도 동일 기준 적용).
+                    const generatedGroups = activeRound.customGroups.filter(
+                      g => g.types.length > 0 && (g.topic.trim().length > 0 || g.contents.length > 0)
+                    );
                     const generalGen = generatedContent[previewTab] ?? livePreviewContent[`${previewTab}:general`];
+                    const hasGeneralTarget = activeRound.generalLeaderIds.length > 0
+                      && (activeRound.topic.trim().length > 0 || activeRound.contents.length > 0);
+                    const groupTabs = [
+                      ...(hasGeneralTarget ? [{ id: 'general', label: '일반' }] : []),
+                      ...generatedGroups.map(g => ({ id: g.id, label: g.types.join('·') })),
+                    ];
+                    const curGroup = groupTabs.some(t => t.id === previewGroupId) ? previewGroupId : (groupTabs[0]?.id ?? 'general');
                     const displayGenerated = curGroup === 'general' ? generalGen : livePreviewContent[`${previewTab}:${curGroup}`];
                     const contentTab = previewContentTab[previewTab] ?? 'full';
                     const firstThumbnail = activeRound.contents[0]?.thumbnail ?? '';
