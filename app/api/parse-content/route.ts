@@ -74,13 +74,12 @@ async function extractText(file: File): Promise<string> {
   }
 
   if (name.endsWith('.pdf')) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfParse = require('pdf-parse') as (
-      buf: Buffer,
-    ) => Promise<{ text: string }>;
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const result = await pdfParse(buffer);
-    return result.text;
+    // 서버리스(Vercel)에서 브라우저 전역(DOMMatrix 등)에 의존하지 않는 unpdf 사용
+    const { extractText: extractPdfText, getDocumentProxy } = await import('unpdf');
+    const data = new Uint8Array(await file.arrayBuffer());
+    const pdf = await getDocumentProxy(data);
+    const { text } = await extractPdfText(pdf, { mergePages: true });
+    return typeof text === 'string' ? text : (text as string[]).join('\n\n');
   }
 
   throw new Error('지원하지 않는 파일 형식입니다. (.docx, .pdf, .txt만 지원)');
