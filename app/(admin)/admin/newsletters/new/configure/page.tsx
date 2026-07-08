@@ -2720,25 +2720,26 @@ function ConfigureContent() {
                                   </button>
                                   {open && (
                                     <div className="px-4 pb-3 space-y-2.5">
-                                      {!desc && (
-                                        <p className="text-[11px] text-gray-400">상단 <span className="font-semibold text-[#55A4DA]">AI로 그룹 설명 생성</span>을 눌러 초안을 만드세요. 직접 입력도 가능합니다.</p>
+                                      {!desc ? (
+                                        <p className="text-[11px] text-gray-400">상단 <span className="font-semibold text-[#55A4DA]">AI로 그룹 설명 생성</span>을 눌러 설명을 만들어 주세요. 생성 후 내용을 수정할 수 있습니다.</p>
+                                      ) : (
+                                        ([
+                                          { field: 'summary' as const, label: '요약', rows: 2 },
+                                          { field: 'characteristics' as const, label: '특성', rows: 3 },
+                                          { field: 'developmentPoints' as const, label: '개발 포인트', rows: 3 },
+                                        ]).map(({ field, label, rows }) => (
+                                          <div key={field}>
+                                            <label className="block text-[11px] font-semibold text-gray-500 mb-1">{label}</label>
+                                            <textarea
+                                              value={desc[field] ?? ''}
+                                              onChange={e => updateGroupDescription(g.types, field, e.target.value)}
+                                              rows={rows}
+                                              placeholder={`${label}을(를) 입력하세요`}
+                                              className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition resize-none bg-white"
+                                            />
+                                          </div>
+                                        ))
                                       )}
-                                      {([
-                                        { field: 'summary' as const, label: '요약', rows: 2 },
-                                        { field: 'characteristics' as const, label: '특성', rows: 3 },
-                                        { field: 'developmentPoints' as const, label: '개발 포인트', rows: 3 },
-                                      ]).map(({ field, label, rows }) => (
-                                        <div key={field}>
-                                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">{label}</label>
-                                          <textarea
-                                            value={desc?.[field] ?? ''}
-                                            onChange={e => updateGroupDescription(g.types, field, e.target.value)}
-                                            rows={rows}
-                                            placeholder={`${label}을(를) 입력하세요`}
-                                            className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition resize-none bg-white"
-                                          />
-                                        </div>
-                                      ))}
                                     </div>
                                   )}
                                 </div>
