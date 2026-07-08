@@ -168,7 +168,7 @@ export default function NewCompanyPage() {
     const created = await addCompany({
       name: form.name,
       industry: form.industry,
-      participantCount: Number(form.participantCount),
+      participantCount: draftParticipants.length,
       status: form.status as CoachingStatus,
       hrName: form.hrName,
       hrEmail: form.hrEmail,
@@ -333,15 +333,15 @@ export default function NewCompanyPage() {
                   <div className="relative">
                     <input
                       type="number"
-                      min="1"
-                      value={form.participantCount}
-                      onChange={e => set('participantCount', e.target.value)}
-                      placeholder="0"
-                      required
-                      className={inputCls + ' pr-8'}
+                      value={draftParticipants.length}
+                      readOnly
+                      tabIndex={-1}
+                      aria-readonly
+                      className={inputCls + ' pr-8 bg-gray-50 text-gray-600 cursor-not-allowed'}
                     />
                     <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-gray-400">명</span>
                   </div>
+                  <p className="mt-1 text-[11px] text-gray-400">아래 직책자 명단에 맞춰 자동 계산됩니다.</p>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 mb-1.5">코칭 상태</label>
