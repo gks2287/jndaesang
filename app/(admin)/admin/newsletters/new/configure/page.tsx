@@ -476,11 +476,14 @@ function ConfigureContent() {
     if (!seeded?.rounds?.length) return;
     const gen: Record<number, GeneratedNewsletter> = {};
     const live: Record<string, GeneratedNewsletter> = {};
+    // 완료 회차는 미리보기를 즉시 공개 — 회차 전환 후 돌아와도 초기 화면이 아닌 완성 미리보기가 보이도록
+    const revealed: string[] = [];
     seeded.rounds.forEach(sr => {
       const idx = (sr.vol ?? 0) - 1;
       if (idx < 0 || !sr.generated) return;
       gen[idx] = sr.generated;
       live[`${idx}:general`] = sr.generated;
+      revealed.push(`${idx}:general`);
       const r = configDraft.rounds[idx];
       if (r) {
         livePreviewSigRef.current[`${idx}:general`] = JSON.stringify({
@@ -493,6 +496,7 @@ function ConfigureContent() {
     generatedContentRef.current = { ...generatedContentRef.current, ...gen };
     setGeneratedContent(prev => ({ ...gen, ...prev }));
     setLivePreviewContent(prev => ({ ...live, ...prev }));
+    setRevealedPreviews(prev => new Set([...prev, ...revealed]));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

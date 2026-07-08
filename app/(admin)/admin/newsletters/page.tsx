@@ -926,7 +926,9 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
         const totalCount = typesInRound.reduce((s, t) => s + t.count, 0);
         const roundKey = `c${company.companyId}-r${rn}`;
         const open = openKeys.has(roundKey);
-        const isDone = rep.status === 'completed';
+        // 회차 내 모든 유형(발송 그룹)이 완료돼야 헤더를 '제작완료'로 표시 — 하나라도 미완이면 '제작 중'
+        const roundInstances = typesInRound.map(t => t.visibleRounds.find(r => r.round === rn)).filter((r): r is RoundData => !!r);
+        const allDone = roundInstances.length > 0 && roundInstances.every(r => r.status === 'completed');
         const groups = sendGroupsFor(typesInRound, rn, rep.topic);
         return (
           <div key={rn}>
@@ -936,7 +938,7 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
               <span className="text-xs font-bold text-gray-700 w-11 flex-shrink-0">{rn}회차</span>
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium flex-shrink-0 w-9 text-center">{rep.stage}</span>
               <span className="flex-1" />
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 ${isDone ? 'bg-emerald-50 text-emerald-600' : 'bg-[#55A4DA]/10 text-[#55A4DA]'}`}>{isDone ? '제작완료' : '제작 중'}</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 ${allDone ? 'bg-emerald-50 text-emerald-600' : 'bg-[#55A4DA]/10 text-[#55A4DA]'}`}>{allDone ? '제작완료' : '제작 중'}</span>
               <span className="text-xs text-gray-400">{totalCount}명</span>
               <svg className={`w-3.5 h-3.5 text-gray-400 flex-shrink-0 transition-transform duration-150 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
             </button>
@@ -946,10 +948,11 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
               const allSel = ids.length > 0 && ids.every(id => selectedIds.has(id));
               const nl = newsletters.find(n => n.id === grp.members[0]?.newsletterId);
               const count = grp.members.reduce((s, t) => s + t.count, 0);
+              const grpDone = grp.members.every(t => t.visibleRounds.find(r => r.round === rn)?.status === 'completed');
               const isSent = !!nl && isSendGroupSent(nl.sentGroups, rn, grp.members.map(m => m.typeName));
               return (
                 <div key={grp.label} className={`flex items-center gap-3 ${isCompleteTab ? 'pl-14' : 'pl-16'} pr-5 py-2.5 bg-white border-b border-gray-100 last:border-b-0 hover:bg-gray-50/50 transition-colors`}>
-                  {isCompleteTab && isDone && (
+                  {isCompleteTab && grpDone && (
                     <input type="checkbox" className="w-3.5 h-3.5 accent-[#55A4DA] cursor-pointer flex-shrink-0"
                       checked={allSel} onChange={e => onSelectRoundBulk(ids, e.target.checked)} />
                   )}
@@ -960,7 +963,7 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
                   )}
                   <span className="text-xs text-gray-400 flex-shrink-0">{count}명</span>
                   <div className="flex-shrink-0 flex items-center gap-1.5">
-                    {isDone ? (
+                    {grpDone ? (
                       <>
                         <button
                           onClick={() => { if (nl && !isSent) onEditRound(nl, rn - 1); }}
