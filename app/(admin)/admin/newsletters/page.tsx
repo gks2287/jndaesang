@@ -322,6 +322,23 @@ function formatRelativeTime(dateStr: string): string {
   return `${y}.${m}.${d}`;
 }
 
+// 이 기업의 뉴스레터들 중 해당 회차(1-based)의 발송일(dateLabel)을 찾는다.
+// 같은 회차를 여러 유형(뉴스레터)이 나눠 받아도 발송일은 보통 회차 단위로 동일하므로,
+// 처음 발견되는 유효한 값 하나만 사용해 회차당 한 번만 표시한다.
+function findRoundDateLabel(companyNewsletters: Newsletter[], roundNum: number): string | null {
+  for (const nl of companyNewsletters) {
+    const label = nl.generatedContent?.rounds?.[roundNum - 1]?.dateLabel;
+    if (label && label.trim()) return label.trim();
+  }
+  return null;
+}
+
+// "2026년 7월 22일" → "7/22" 축약. 형식이 다르면 원본을 그대로 반환.
+function toShortDateLabel(dateLabel: string): string {
+  const m = dateLabel.match(/(\d+)년\s*(\d+)월\s*(\d+)일/);
+  return m ? `${Number(m[2])}/${Number(m[3])}` : dateLabel;
+}
+
 // ── 복구 팝업 ─────────────────────────────────────────────────────────
 function RecoveryModal({ companyNames, stepLabel, onNew, onContinue, onClose }: {
   companyNames: string[]; stepLabel: string;
@@ -930,12 +947,25 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
         const roundInstances = typesInRound.map(t => t.visibleRounds.find(r => r.round === rn)).filter((r): r is RoundData => !!r);
         const allDone = roundInstances.length > 0 && roundInstances.every(r => r.status === 'completed');
         const groups = sendGroupsFor(typesInRound, rn, rep.topic);
+        // 회차 발송일 — 여러 유형이 같은 회차를 나눠 받아도 회차 단위로 한 번만 표시
+        const dateLabel = findRoundDateLabel(
+          newsletters.filter(n => n.companyId === company.companyId), rn
+        );
+        // 회차 내 모든 발송 그룹이 실제로 발송완료됐는지 (발송일 옆에 뱃지로 병기)
+        const allSent = groups.length > 0 && groups.every(grp => {
+          const nl = newsletters.find(n => n.id === grp.members[0]?.newsletterId);
+          return !!nl && isSendGroupSent(nl.sentGroups, rn, grp.members.map(m => m.typeName));
+        });
         return (
           <div key={rn}>
             {/* 회차 헤더 */}
             <button onClick={() => onToggle(roundKey)}
               className="w-full flex items-center gap-3 pl-8 pr-5 py-2.5 bg-gray-50 hover:bg-gray-100/70 border-b border-gray-100 transition-colors text-left">
               <span className="text-xs font-bold text-gray-700 w-11 flex-shrink-0">{rn}회차</span>
+              <span className={`text-[11px] flex-shrink-0 ${dateLabel ? 'text-gray-400' : 'text-gray-300 italic'}`}>{dateLabel ? toShortDateLabel(dateLabel) : '발송일 미정'}</span>
+              {allSent && (
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 flex-shrink-0">발송완료</span>
+              )}
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium flex-shrink-0 w-9 text-center">{rep.stage}</span>
               <span className="flex-1" />
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 ${allDone ? 'bg-emerald-50 text-emerald-600' : 'bg-[#55A4DA]/10 text-[#55A4DA]'}`}>{allDone ? '제작완료' : '제작 중'}</span>
@@ -1033,6 +1063,9 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
   const completedCount = distinctRounds.filter(r => r.status === 'completed').length;
   const totalCount = distinctRounds.length;
   const progressPct = totalCount > 0 ? Math.round(completedCount / totalCount * 100) : 0;
+  // 다음 발송 예정 회차(가장 빠른 미완료 회차)의 발송일
+  const nextRound = [...distinctRounds].filter(r => r.status !== 'completed').sort((a, b) => a.round - b.round)[0];
+  const nextDateLabel = nextRound ? findRoundDateLabel(companyNewsletters, nextRound.round) : null;
 
   if (!hasVisible) return null;
 
@@ -1048,6 +1081,14 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
             <span className="text-xs text-gray-400">리더 {company.totalLeaders}명</span>
             <span className="text-gray-300">·</span>
             <span className="text-xs text-gray-400">{completedCount}/{totalCount}회차 완료</span>
+            {nextRound && (
+              <>
+                <span className="text-gray-300">·</span>
+                <span className="text-xs text-gray-400">
+                  다음 발송 {nextDateLabel ? toShortDateLabel(nextDateLabel) : '미정'}
+                </span>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-2 mt-1.5">
             <div className="w-36 bg-gray-200 rounded-full h-1.5">
