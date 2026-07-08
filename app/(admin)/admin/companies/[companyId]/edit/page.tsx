@@ -135,6 +135,7 @@ export default function CompanyEditPage() {
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<EditingParticipant | null>(null);
+  const [clearConfirm, setClearConfirm] = useState(false);
   const [showAddRow, setShowAddRow] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const participantFileRef = useRef<HTMLInputElement>(null);
@@ -516,8 +517,20 @@ export default function CompanyEditPage() {
               </div>
             </div>
 
-            {/* 오른쪽: 템플릿 다운로드 + 직책자 추가 버튼 */}
+            {/* 오른쪽: 전체 삭제 + 템플릿 다운로드 + 직책자 추가 버튼 */}
             <div className="flex items-center gap-2">
+              {participants.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setClearConfirm(true)}
+                  className="flex items-center gap-1.5 text-sm font-semibold text-red-500 bg-white border border-red-200 hover:bg-red-50 px-3.5 py-1.5 rounded-lg transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  전체 삭제
+                </button>
+              )}
               <button
                 onClick={downloadTemplate}
                 className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 bg-white border border-gray-200 hover:border-gray-300 hover:bg-gray-50 px-3.5 py-1.5 rounded-lg transition-colors"
@@ -697,6 +710,41 @@ export default function CompanyEditPage() {
                 className="text-sm font-semibold text-white bg-red-500 hover:bg-red-600 px-4 py-2 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {deleting ? '삭제 중…' : '삭제'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 직책자 전체 삭제 확인 모달 ── */}
+      {clearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={() => setClearConfirm(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-5" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-gray-800">{selectedYear}년 직책자를 전체 삭제하시겠습니까?</h3>
+                <p className="text-sm text-gray-500 mt-1">{selectedYear}년 직책자 <span className="font-semibold text-gray-700">{participants.length}명</span>이 모두 삭제됩니다. 되돌릴 수 없습니다.</p>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setClearConfirm(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => { participants.forEach(p => removeParticipant(p.id)); cancelEdit(); setShowAddRow(false); setClearConfirm(false); }}
+                className="px-4 py-2 text-sm font-bold bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
+              >
+                전체 삭제
               </button>
             </div>
           </div>
