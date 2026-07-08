@@ -870,8 +870,8 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
   selectedIds: Set<string>;
   onSelectRoundBulk: (selectionIds: string[], checked: boolean) => void;
   onPreview: (t: PreviewTarget) => void; activeTab: TabType;
-  onResumeRound: (nl: Newsletter, roundIdx: number) => void;
-  onEditRound: (nl: Newsletter, roundIdx: number) => void;
+  onResumeRound: (nl: Newsletter, roundIdx: number, groupId?: string | null) => void;
+  onEditRound: (nl: Newsletter, roundIdx: number, groupId?: string | null) => void;
   onEditRoundGroups: (nl: Newsletter, roundIdx: number) => void;
 }) {
   const types = useMemo(() => {
@@ -895,7 +895,7 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
       arr.push(t);
       byNl.set(t.newsletterId, arr);
     }
-    const result: { label: string; members: typeof types; topic: string | null }[] = [];
+    const result: { label: string; members: typeof types; topic: string | null; groupId: string | null }[] = [];
     for (const [nlId, members] of byNl) {
       const nl = newsletters.find(n => n.id === nlId);
       const cgs = nl?.authoring?.rounds?.[rn - 1]?.customGroups;
@@ -905,13 +905,13 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
           const mem = members.filter(t => cg.types.includes(t.typeName));
           if (mem.length === 0) continue;
           mem.forEach(m => used.add(m.typeName));
-          result.push({ label: mem.map(m => m.typeName).join(' / '), members: mem, topic: cg.topic?.trim() || fallbackTopic });
+          result.push({ label: mem.map(m => m.typeName).join(' / '), members: mem, topic: cg.topic?.trim() || fallbackTopic, groupId: cg.id });
         }
         const rest = members.filter(t => !used.has(t.typeName));
-        if (rest.length) result.push({ label: rest.map(m => m.typeName).join(' / '), members: rest, topic: fallbackTopic });
+        if (rest.length) result.push({ label: rest.map(m => m.typeName).join(' / '), members: rest, topic: fallbackTopic, groupId: null });
       } else {
         // authoring 없음 → 같은 뉴스레터를 받는 유형은 한 그룹으로 (회차 공통 주제)
-        result.push({ label: members.map(m => m.typeName).join(' / '), members, topic: fallbackTopic });
+        result.push({ label: members.map(m => m.typeName).join(' / '), members, topic: fallbackTopic, groupId: null });
       }
     }
     return result;
@@ -966,7 +966,7 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
                     {grpDone ? (
                       <>
                         <button
-                          onClick={() => { if (nl && !isSent) onEditRound(nl, rn - 1); }}
+                          onClick={() => { if (nl && !isSent) onEditRound(nl, rn - 1, grp.groupId); }}
                           disabled={!nl || isSent}
                           className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
                           title={isSent ? '발송 완료된 그룹은 수정할 수 없습니다.' : '수정하기 · 콘텐츠 구성(5단계)'}
@@ -981,7 +981,7 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
                       </>
                     ) : (
                       <button
-                        onClick={() => { if (nl) onResumeRound(nl, rn - 1); }}
+                        onClick={() => { if (nl) onResumeRound(nl, rn - 1, grp.groupId); }}
                         disabled={!nl}
                         className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-100 transition-colors whitespace-nowrap disabled:opacity-50"
                       >이어만들기</button>
@@ -1008,10 +1008,10 @@ function CompanyRow({ company, openKeys, onToggle, isCompleteTab, onPreview, act
   selectedNewsletterIds: Set<number>; onToggleNewsletters: (ids: number[]) => void;
   newsletters: Newsletter[];
   onContinue: (nl: Newsletter) => void; onEdit: (nl: Newsletter) => void;
-  onResumeRound: (nl: Newsletter, roundIdx: number) => void;
+  onResumeRound: (nl: Newsletter, roundIdx: number, groupId?: string | null) => void;
   onEditTypes: (nl: Newsletter) => void;
   onEditRoundGroups: (nl: Newsletter, roundIdx: number) => void;
-  onEditRound: (nl: Newsletter, roundIdx: number) => void;
+  onEditRound: (nl: Newsletter, roundIdx: number, groupId?: string | null) => void;
 }) {
   // 이 기업의 캠페인(뉴스레터) — 이어서/수정 대상
   const companyNewsletters = newsletters.filter(n => n.companyId === company.companyId);
@@ -1122,7 +1122,7 @@ function NewslettersContent() {
   const companies = useCompanyStore(s => s.companies);
 
   // 이어서/수정: 기존 캠페인의 제작 스냅샷으로 위저드를 미리 채워 진입
-  function seedFromNewsletter(nl: Newsletter, mode: 'continue' | 'edit', opts?: { targetRoundIdx?: number; targetStep?: WizardStep }) {
+  function seedFromNewsletter(nl: Newsletter, mode: 'continue' | 'edit', opts?: { targetRoundIdx?: number; targetStep?: WizardStep; targetGroupId?: string | null }) {
     const a = nl.authoring ?? null;
     const storyline = a?.storyline?.length ? a.storyline : DEFAULT_STORYLINE;
     const totalRounds = a?.totalRounds && a.totalRounds > 0 ? a.totalRounds : (nl.totalRounds || storyline.length);
@@ -1165,6 +1165,8 @@ function NewslettersContent() {
       seededActiveRoundIdx: activeRoundIdx,
       seededStartDate: a?.startDate ?? null,
       seededDeliveryInterval: a?.deliveryInterval ?? null,
+      // 5단계에서 클릭한 그룹 탭을 자동 선택 (없으면 일반형)
+      seededPreviewTargetId: opts?.targetGroupId ?? null,
     });
     // 초안 복구 팝업 억제
     if (typeof window !== 'undefined') {
@@ -1626,11 +1628,11 @@ function NewslettersContent() {
                 onToggleNewsletters={toggleNewsletterSelect}
                 newsletters={newslettersDeduped}
                 onContinue={nl => seedFromNewsletter(nl, 'continue')}
-                onResumeRound={(nl, roundIdx) => seedFromNewsletter(nl, 'continue', { targetRoundIdx: roundIdx, targetStep: 5 })}
+                onResumeRound={(nl, roundIdx, groupId) => seedFromNewsletter(nl, 'continue', { targetRoundIdx: roundIdx, targetStep: 5, targetGroupId: groupId })}
                 onEdit={nl => seedFromNewsletter(nl, 'edit', { targetStep: 5 })}
                 onEditTypes={nl => seedFromNewsletter(nl, 'edit', { targetStep: 1 })}
                 onEditRoundGroups={(nl, roundIdx) => seedFromNewsletter(nl, 'edit', { targetStep: 4, targetRoundIdx: roundIdx })}
-                onEditRound={(nl, roundIdx) => seedFromNewsletter(nl, 'edit', { targetStep: 5, targetRoundIdx: roundIdx })}
+                onEditRound={(nl, roundIdx, groupId) => seedFromNewsletter(nl, 'edit', { targetStep: 5, targetRoundIdx: roundIdx, targetGroupId: groupId })}
               />
             ))
           )}

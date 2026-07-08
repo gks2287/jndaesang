@@ -300,8 +300,8 @@ function ConfigureContent() {
   // ── 5단계: 콘텐츠 구성 (회차별 통합) ──
   const [rounds, setRounds] = useState<Round[]>(configDraft.rounds);
   const [activeRoundIdx, setActiveRoundIdx] = useState(configDraft.seededActiveRoundIdx ?? 0);
-  // 좌측 실시간 미리보기 대상 탭 ('general' 또는 그룹 id)
-  const [previewTargetId, setPreviewTargetId] = useState<string>('general');
+  // 좌측 실시간 미리보기 대상 탭 ('general' 또는 그룹 id) — 이어서/수정 진입 시 클릭한 그룹으로 시작
+  const [previewTargetId, setPreviewTargetId] = useState<string>(configDraft.seededPreviewTargetId ?? 'general');
   // 좌측 실시간 미리보기 표시 모드 (전체 본문 / 요약본)
   const [livePreviewMode, setLivePreviewMode] = useState<'full' | 'email'>('full');
   // '구성 완료' 버튼으로 공개된 미리보기 대상 (`${roundIdx}:${targetId}`) — 클릭 전까지 미리보기 숨김
@@ -456,10 +456,16 @@ function ConfigureContent() {
   }, [wizardStep, activeRoundIdx]);
 
   // 회차 전환 시 아코디언 초기화 (모두 펼침) + 미리보기 대상 일반형으로 리셋
+  // 단, 최초 마운트에서는 seed된 그룹 탭(seededPreviewTargetId)을 유지한다.
+  const skipFirstPreviewResetRef = useRef(true);
   useEffect(() => {
     setCollapsedSections(new Set());
     setSuggestionsTarget('general');
-    setPreviewTargetId('general');
+    if (skipFirstPreviewResetRef.current) {
+      skipFirstPreviewResetRef.current = false;
+    } else {
+      setPreviewTargetId('general');
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeRoundIdx]);
 
