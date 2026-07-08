@@ -133,6 +133,17 @@ export default function CompanyEditPage() {
     [allParticipants, selectedYear],
   );
 
+  // 직책자 검색 (이름·부서·직책·이메일·리더십 유형)
+  const [participantSearch, setParticipantSearch] = useState('');
+  const visibleParticipants = useMemo(() => {
+    const q = participantSearch.trim().toLowerCase();
+    if (!q) return participants;
+    return participants.filter(p =>
+      [p.name, p.department, p.position, p.email, p.leadershipType]
+        .some(v => (v ?? '').toLowerCase().includes(q)),
+    );
+  }, [participants, participantSearch]);
+
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<EditingParticipant | null>(null);
   const [clearConfirm, setClearConfirm] = useState(false);
@@ -499,7 +510,7 @@ export default function CompanyEditPage() {
                 {years.map(y => (
                   <button
                     key={y}
-                    onClick={() => { setSelectedYear(y); setShowAddRow(false); cancelEdit(); setHistoryOpen(false); }}
+                    onClick={() => { setSelectedYear(y); setShowAddRow(false); cancelEdit(); setHistoryOpen(false); setParticipantSearch(''); }}
                     className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-colors ${
                       y === selectedYear ? 'bg-[#55A4DA] text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                     }`}
@@ -589,6 +600,34 @@ export default function CompanyEditPage() {
             </div>
           </div>
 
+          {/* 직책자 검색 */}
+          <div className="flex items-center gap-2 mb-3">
+            <div className="relative w-full max-w-xs">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                value={participantSearch}
+                onChange={e => setParticipantSearch(e.target.value)}
+                placeholder="이름·부서·직책·이메일·유형 검색"
+                className="w-full pl-9 pr-8 py-2 text-sm border border-gray-200 rounded-lg text-gray-700 placeholder-gray-300 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/20 transition"
+              />
+              {participantSearch && (
+                <button
+                  type="button"
+                  onClick={() => setParticipantSearch('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              )}
+            </div>
+            {participantSearch.trim() && (
+              <span className="text-xs text-gray-400">{visibleParticipants.length}명 검색됨</span>
+            )}
+          </div>
+
           <div className="rounded-xl border border-gray-200 overflow-hidden">
             <div className="grid grid-cols-[2fr_1.2fr_1fr_2fr_1.4fr_0.8fr_88px] px-4 py-2.5 bg-gray-50 border-b border-gray-200">
               {['이름', '부서', '직책', '이메일', '리더십 유형', '발송 회차', ''].map(h => (
@@ -603,7 +642,13 @@ export default function CompanyEditPage() {
                 </div>
               )}
 
-              {participants.map(p =>
+              {participants.length > 0 && visibleParticipants.length === 0 && (
+                <div className="flex items-center justify-center h-20 text-sm text-gray-400">
+                  &lsquo;{participantSearch.trim()}&rsquo; 검색 결과가 없습니다.
+                </div>
+              )}
+
+              {visibleParticipants.map(p =>
                 editingId === p.id && editForm ? (
                   <div key={p.id} className="grid grid-cols-[2fr_1.2fr_1fr_2fr_1.4fr_0.8fr_88px] px-4 py-2.5 items-center bg-blue-50/40 gap-2">
                     <input value={editForm.name} onChange={e => setEditForm(f => f && ({ ...f, name: e.target.value }))} className={rowInputCls} />
