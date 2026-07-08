@@ -87,6 +87,7 @@ function makeRoundsFromDistribution(dist: { stepIndex: number; count: number }[]
       customLeaderIds: [],
       generalLeaderIds: [],
       customGroups: [],
+      contentBrief: '',
       attachments: [],
     }))
   );
@@ -773,6 +774,7 @@ function ConfigureContent() {
     const contents = isCustom ? (group?.contents ?? []) : r.contents;
     const interactions = isCustom ? (group?.interactions ?? []) : r.interactions;
     const surveys = isCustom ? (group?.surveys ?? []) : r.surveys;
+    const contentBrief = isCustom ? (group?.contentBrief ?? '') : (r.contentBrief ?? '');
     if (!topic.trim() && contents.length === 0) return;
     // '본문에 반영' 체크 + 파싱 성공한 추가 자료만 컨텍스트로 주입 (미체크·실패 자료는 제외)
     const referenceData = buildReferenceData(roundIdx, targetId);
@@ -791,6 +793,7 @@ function ConfigureContent() {
             contents,
             interactions,
             surveys,
+            contentBrief,
           },
           leadershipType: isCustom && group && group.types.length > 0 ? group.types.join(', ') : '일반형',
           companyName: targetCompanies.map(c => c.name).join(', ') || '대상 기업',
@@ -1007,6 +1010,11 @@ function ConfigureContent() {
     }
   }
 
+  function setRoundContentBrief(roundIdx: number, contentBrief: string) {
+    if (isTargetLocked(roundIdx, 'general')) { showToast('발송 완료된 그룹은 수정할 수 없습니다.'); return; }
+    setRounds(prev => prev.map((r, i) => i === roundIdx ? { ...r, contentBrief } : r));
+  }
+
   function setRoundTopic(roundIdx: number, topic: string) {
     if (isTargetLocked(roundIdx, 'general')) { showToast('발송 완료된 그룹은 수정할 수 없습니다.'); return; }
     setRounds(prev => prev.map((r, i) => i === roundIdx ? { ...r, topic } : r));
@@ -1108,6 +1116,10 @@ function ConfigureContent() {
     updateGroup(roundIdx, groupId, g => ({ ...g, topic }));
   }
 
+  function setGroupContentBrief(roundIdx: number, groupId: string, contentBrief: string) {
+    updateGroup(roundIdx, groupId, g => ({ ...g, contentBrief }));
+  }
+
   function addCustomContentToGroup(item: ContentPoolItem, groupId: string) {
     updateGroup(activeRoundIdx, groupId, g => ({
       ...g,
@@ -1139,7 +1151,8 @@ function ConfigureContent() {
     setContentSuggestLoading(prev => { const n = [...prev]; n[roundIdx] = true; return n; });
     try {
       const leadershipType = '일반형';
-      const cacheKey = `${topic.trim()}|${leadershipType}`;
+      const contentBrief = rounds[roundIdx]?.contentBrief?.trim() ?? '';
+      const cacheKey = `${topic.trim()}|${leadershipType}|${contentBrief}`;
       let suggested = contentsCacheRef.current.get(cacheKey);
       if (suggested) {
         console.log('[client contents/suggest] 캐시 HIT');
@@ -1150,6 +1163,7 @@ function ConfigureContent() {
           body: JSON.stringify({
             topic,
             leadershipType,
+            contentBrief,
             storyStage: customStoryline[rounds[roundIdx]?.stepIndex ?? 0]?.title ?? '',
             existingIds: rounds[roundIdx]?.contents.map(c => c.id) ?? [],
           }),
@@ -1184,7 +1198,8 @@ function ConfigureContent() {
       const r = rounds[roundIdx];
       const group = r?.customGroups.find(g => g.id === groupId);
       const leadershipType = group && group.types.length ? group.types.join(', ') : '맞춤형';
-      const cacheKey = `${topic.trim()}|${leadershipType}`;
+      const contentBrief = group?.contentBrief?.trim() ?? '';
+      const cacheKey = `${topic.trim()}|${leadershipType}|${contentBrief}`;
       let suggested = contentsCacheRef.current.get(cacheKey);
       if (suggested) {
         console.log('[client contents/suggest] 캐시 HIT');
@@ -1195,6 +1210,7 @@ function ConfigureContent() {
           body: JSON.stringify({
             topic,
             leadershipType,
+            contentBrief,
             storyStage: customStoryline[r?.stepIndex ?? 0]?.title ?? '',
             existingIds: group?.contents.map(c => c.id) ?? [],
           }),
@@ -1696,6 +1712,8 @@ function ConfigureContent() {
     surveys: ('always' | 'periodic')[];
     placeholder: string;
     setTopic: (t: string) => void;
+    contentBrief: string;
+    setContentBrief: (v: string) => void;
     suggestContents: (t: string) => void;
     removeContent: (itemId: string) => void;
     toggleInteractionFn: (v: 'quiz' | 'scenario' | 'selfcheck' | 'reflection' | 'dodont') => void;
@@ -1708,7 +1726,7 @@ function ConfigureContent() {
     setAttachmentNoteFn: (id: string, note: string) => void;
     locked?: boolean;
   }) {
-    const { keyPrefix, targetId, topic, contents, interactions, surveys, placeholder, attachments, locked } = opts;
+    const { keyPrefix, targetId, topic, contents, interactions, surveys, placeholder, contentBrief, attachments, locked } = opts;
     const kTopic = `${keyPrefix}:2`, kContent = `${keyPrefix}:3`, kAttach = `${keyPrefix}:3b`, kInter = `${keyPrefix}:4`, kSurvey = `${keyPrefix}:5`;
     const attachDropId = `${keyPrefix}:attach`;
     const usedAttachCount = attachments.filter(a => a.useForGeneration && a.parseStatus === 'done').length;
@@ -1805,6 +1823,21 @@ function ConfigureContent() {
               </div>
             </div>
           </div>
+        </div>
+        {/* 콘텐츠 세부 방향 (선택) */}
+        <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-2">
+          <div className="flex items-center gap-2">
+            <p className="text-base font-medium text-gray-800">콘텐츠 세부 방향</p>
+            <span className="text-[11px] text-gray-400 flex-shrink-0">선택</span>
+          </div>
+          <p className="text-xs text-gray-500">이번 뉴스레터에 꼭 반영하고 싶은 관점·사례·키워드가 있다면 적어주세요. AI 콘텐츠 수집·본문 생성에 우선 반영됩니다.</p>
+          <textarea
+            value={contentBrief}
+            onChange={e => opts.setContentBrief(e.target.value)}
+            rows={3}
+            placeholder="이번 뉴스레터에 꼭 넣고 싶은 관점·사례·키워드를 적어주세요 (예: 신뢰 회복 사례 중심, 1on1 대화 스크립트 포함)"
+            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-300 focus:outline-none focus:border-[#55A4DA] focus:ring-1 focus:ring-[#55A4DA]/30 transition resize-y"
+          />
         </div>
         {/* 콘텐츠 선택 */}
         <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -2996,6 +3029,8 @@ function ConfigureContent() {
                           surveys: g.surveys,
                           placeholder: '맞춤형 뉴스레터 주제를 입력하세요 (Enter로 AI 콘텐츠 추천)',
                           setTopic: t => setGroupTopic(activeRoundIdx, g.id, t),
+                          contentBrief: g.contentBrief ?? '',
+                          setContentBrief: v => setGroupContentBrief(activeRoundIdx, g.id, v),
                           suggestContents: t => suggestGroupContents(activeRoundIdx, g.id, t),
                           removeContent: id => removeCustomContentFromGroup(activeRoundIdx, g.id, id),
                           toggleInteractionFn: v => toggleGroupInteraction(activeRoundIdx, g.id, v),
@@ -3037,6 +3072,8 @@ function ConfigureContent() {
                       surveys: r.surveys,
                       placeholder: '일반형 뉴스레터 주제를 입력하세요 (Enter로 AI 콘텐츠 추천)',
                       setTopic: t => setRoundTopic(activeRoundIdx, t),
+                      contentBrief: r.contentBrief ?? '',
+                      setContentBrief: v => setRoundContentBrief(activeRoundIdx, v),
                       suggestContents: t => suggestContentsForRound(activeRoundIdx, t),
                       removeContent: id => removeContentFromRound(activeRoundIdx, id),
                       toggleInteractionFn: v => toggleInteraction(activeRoundIdx, v),

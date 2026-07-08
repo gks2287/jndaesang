@@ -15,6 +15,8 @@ export interface CustomGroup {
   contents: ContentPoolItem[];
   interactions: InteractionType[];
   surveys: SurveyType[];
+  // 그룹별 콘텐츠 세부 방향(선택) — AI 콘텐츠 수집·본문 생성에 반영. 기존 드래프트 호환을 위해 optional
+  contentBrief?: string;
   // 그룹별 추가 자료 (선택) — 기존 드래프트 호환을 위해 optional
   attachments?: RoundAttachment[];
 }
@@ -47,12 +49,14 @@ export interface Round {
   generalLeaderIds: number[];
   // 맞춤형 그룹 (기존 customTypes/customTopic/customContents/... 대체)
   customGroups: CustomGroup[];
+  // 일반형 콘텐츠 세부 방향(선택) — AI 콘텐츠 수집·본문 생성에 반영. 기존 드래프트 호환을 위해 optional
+  contentBrief?: string;
   // 회차별 추가 자료 (선택) — 기존 드래프트 호환을 위해 optional
   attachments?: RoundAttachment[];
 }
 
 export function makeCustomGroup(id: string, types: string[] = [], leaderIds: number[] = []): CustomGroup {
-  return { id, types, leaderIds, topic: '', contents: [], interactions: [], surveys: [], attachments: [] };
+  return { id, types, leaderIds, topic: '', contents: [], interactions: [], surveys: [], contentBrief: '', attachments: [] };
 }
 
 // 그룹 설명: 기업 학습 리더십 정보를 종합해 AI가 도출하고 관리자가 편집하는 그룹 단위 정의.

@@ -71,6 +71,7 @@ type RoundPayload = {
   contents: ContentItem[];
   interactions: string[];
   surveys: string[];
+  contentBrief?: string;
 };
 
 // ── 썸네일 폴백 URL 생성 ──────────────────────────────────────────────
@@ -122,7 +123,7 @@ function buildPeriodicSurvey(round: RoundPayload): GeneratedSurvey {
 function buildInteractionPrompt(types: string[]): string {
   const parts: string[] = [];
   if (types.includes('quiz')) {
-    parts.push(`{"type":"quiz","title":"이번 주 퀴즈","content":{"question":"주제 관련 퀴즈 질문 1개","options":["선택지1","선택지2","선택지3","선택지4"],"answer":0}}`);
+    parts.push(`{"type":"quiz","title":"이번 주 퀴즈","content":{"question":"본문에서 다룬 핵심 내용을 묻는 구체적 질문. 반드시 '다음 중 ○○에 대한 설명으로 옳은 것은?' 또는 '…틀린 것은?' 형식","options":["본문 근거로 만든 실제 선택지 문장 1","실제 선택지 문장 2","실제 선택지 문장 3","실제 선택지 문장 4"],"answer":0}}`);
   }
   if (types.includes('scenario')) {
     parts.push(`{"type":"scenario","title":"이런 상황이라면?","content":{"situation":"상황 설명 2~3문장","options":[{"label":"선택지 A","result":"이 선택의 결과/피드백"},{"label":"선택지 B","result":"이 선택의 결과/피드백"},{"label":"선택지 C","result":"이 선택의 결과/피드백"}]}}`);
@@ -150,6 +151,11 @@ export async function POST(req: NextRequest) {
       leadershipInfo?: { type: string; characteristics?: string; developmentPoints?: string }[];
       groupDescription?: { summary?: string; characteristics?: string; developmentPoints?: string };
     };
+
+    // 관리자가 입력한 콘텐츠 세부 방향 (있으면 본문 작성 시 최우선 반영)
+    const briefBlock = round.contentBrief?.trim()
+      ? `\n\n[사용자 지정 세부 방향 — 본문에 최우선 반영]\n${round.contentBrief.trim()}\n(위 방향의 관점·사례·키워드가 본문 전체에 자연스럽게 녹아들도록 작성하세요. 이 방향에서 벗어나지 않게 하되, 억지로 끼워맞추지 말고 자연스럽게 반영하세요.)`
+      : '';
 
     // 그룹 설정 단계에서 도출·편집한 그룹 정의 (있으면 맞춤형 본문 방향의 상위 기준)
     const gd = groupDescription;
@@ -190,6 +196,7 @@ ${referenceData.trim()}`
       : '(콘텐츠 미선정)';
 
     const hasInteractions = round.interactions.length > 0;
+    const hasQuiz = round.interactions.includes('quiz');
     const interactionSchema = hasInteractions ? buildInteractionPrompt(round.interactions) : '';
 
     const prompt = `당신은 뉴닉 스타일의 B2B 리더십 코칭 뉴스레터 작가입니다.
@@ -200,6 +207,7 @@ ${referenceData.trim()}`
 - 리더십 유형: ${leadershipType}
 - 스토리라인 단계: ${round.stepLabel}
 - 이번 호 주제: ${round.topic.trim() || '(미선정)'}
+${briefBlock}
 ${groupBlock}
 ${infoBlock}
 
@@ -265,7 +273,13 @@ ${referenceBlock}
 
 [인터랙션 생성 — 주제·리더십 유형, 그리고 위 본론(sections) 내용과 맥락이 자연스럽게 이어지는 구체적인 내용으로 작성]
 "interactions" 배열에 아래 구조로 정확히 생성하세요:
-${interactionSchema}` : ''}
+${interactionSchema}${hasQuiz ? `
+
+[퀴즈(quiz) 필수 규칙]
+- question/options는 반드시 위에서 작성한 뉴스레터 본문(sections)의 실제 내용에 근거해 출제하세요. 본문에 없는 내용으로 문제를 내지 마세요.
+- question은 "다음 중 [주제]에 대한 설명으로 옳은 것은?" 또는 "다음 중 [주제]에 대한 설명으로 틀린 것은?" 형태의 구체적 사실 확인 문제로 작성하세요.
+- options는 4개 모두 완결된 문장으로 작성하고, 본문 내용에 근거한 정답 1개와 그럴듯한 오답 3개로 구성하세요. "선택지1", "A/B/C" 같은 placeholder 문구는 절대 사용하지 마세요.
+- answer는 정답 선택지의 0-based 인덱스(0~3)로 정확히 지정하세요.` : ''}` : ''}
 
 반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트 포함 금지:
 (아래 예시는 한 섹션의 전체 필드 형태일 뿐입니다. sections는 3개를 만들되, 세 섹션의 contentTitle은 서로 의미가 다른 고유 헤드라인이어야 합니다. 역할별로 블록을 다르게 채우세요 — 서론(짚어보기)=dataStat 1개+keyTakeaway 한 줄, quote·caseStudy·actionPlan은 빈 값 / 본론(파고들기)=quote·dataStat·caseStudy·keyTakeaway 모두 채움 / 결론(행동하기)=keyTakeaway+actionPlan, dataStat·caseStudy는 빈 값.)

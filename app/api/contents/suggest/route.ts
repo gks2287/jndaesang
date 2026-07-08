@@ -103,15 +103,16 @@ function parseContentsFromText(text: string): SearchedContent[] | null {
 
 export async function POST(req: NextRequest) {
   try {
-    const { topic, leadershipType, storyStage } = await req.json() as {
+    const { topic, leadershipType, storyStage, contentBrief } = await req.json() as {
       topic: string;
       leadershipType?: string;
       storyStage?: string;
+      contentBrief?: string;
       existingIds?: string[];
     };
 
-    // 캐시 키: 주제 + 리더십유형
-    const cacheKey = `${(topic ?? '').trim()}|${leadershipType ?? '일반형'}`;
+    // 캐시 키: 주제 + 리더십유형 + 콘텐츠 세부 방향 (세부 방향이 바뀌면 재수집해야 하므로 반드시 포함)
+    const cacheKey = `${(topic ?? '').trim()}|${leadershipType ?? '일반형'}|${(contentBrief ?? '').trim()}`;
     contentsCallCount += 1;
     const cachedContents = contentsCache.get(cacheKey);
     console.log(`[contents/suggest] 호출 #${contentsCallCount}, 캐시: ${cachedContents ? 'HIT' : 'MISS'}`);
@@ -149,11 +150,11 @@ ${isCustomType ? `- 검색 핵심 키워드: ${typeSearchHint} (${leadershipType
 - 콘텐츠는 절대 3개 이상 수집하지 말 것
 
 [수집 기준 — 우선순위 순]
-1. 뉴스레터 주제 "${topic}"와 직접 관련된 콘텐츠
-2. ${storyStage ? `"${storyStage}" 단계 목적(${storyStage === '수용' ? '진단 수용·성찰' : storyStage === '분석' ? 'Gap 파악' : storyStage === '실행' ? '즉시 실행 가능한 변화' : storyStage === '유지' ? '습관화' : '성장 복기'})에 부합하는 콘텐츠` : '스토리 단계에 맞는 콘텐츠'}
-3. 아티클, 인터뷰, 책, 성공 사례, 카드뉴스, 웹툰만 수집 (영상 제외)
-4. 신뢰할 수 있는 출처 (언론사, 전문 매체, 학술 자료, 유명 저자)
-5. 한국어 또는 영어 콘텐츠 모두 가능
+${contentBrief?.trim() ? `1. 사용자가 지정한 세부 방향: ${contentBrief.trim()} — 이 방향에 부합하는 콘텐츠를 최우선으로 수집\n` : ''}${contentBrief?.trim() ? '2' : '1'}. 뉴스레터 주제 "${topic}"와 직접 관련된 콘텐츠
+${contentBrief?.trim() ? '3' : '2'}. ${storyStage ? `"${storyStage}" 단계 목적(${storyStage === '수용' ? '진단 수용·성찰' : storyStage === '분석' ? 'Gap 파악' : storyStage === '실행' ? '즉시 실행 가능한 변화' : storyStage === '유지' ? '습관화' : '성장 복기'})에 부합하는 콘텐츠` : '스토리 단계에 맞는 콘텐츠'}
+${contentBrief?.trim() ? '4' : '3'}. 아티클, 인터뷰, 책, 성공 사례, 카드뉴스, 웹툰만 수집 (영상 제외)
+${contentBrief?.trim() ? '5' : '4'}. 신뢰할 수 있는 출처 (언론사, 전문 매체, 학술 자료, 유명 저자)
+${contentBrief?.trim() ? '6' : '5'}. 한국어 또는 영어 콘텐츠 모두 가능
 
 [body 작성 가이드]
 - 뉴닉 뉴스레터 스타일: 친근하고 재밌되 정제된 말투
