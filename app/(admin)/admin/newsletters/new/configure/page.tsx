@@ -843,11 +843,10 @@ function ConfigureContent() {
           companyName: targetCompanies.map(c => c.name).join(', ') || '대상 기업',
           referenceData,
           leadershipInfo: matchLeadershipInfo(isCustom && group && group.types.length > 0 ? group.types : []),
+          // 원문 기반으로 도출된 그룹 설명이 본문 방향의 근거 (원문 직접 주입 대신)
           groupDescription: isCustom && group && group.types.length > 0
             ? groupDescriptions[groupCompositionKey(group.types)]
             : undefined,
-          companyId: leadershipCompanyId ?? undefined, // 다면진단 보고서 원문 기반 생성용
-          infoYear: leadershipInfoYear,
         }),
       });
       if (!res.ok) throw new Error('생성 실패');
@@ -971,9 +970,16 @@ function ConfigureContent() {
     setTotalRounds(next);
   }
 
-  // 주제 추천 캐시 키 (서버 키와 동일 의미 — 회차+단계+유형+기업명+kind)
-  function topicsCacheKey(leadershipTypes: string[], companyName: string, kind: string, stepTitle: string, roundIndex: number): string {
-    return JSON.stringify({ roundIndex, stepTitle: stepTitle ?? '', types: [...leadershipTypes].sort(), companyName: companyName ?? '', kind });
+  // 주제 추천 캐시 키 (서버 키와 동일 의미 — 회차+단계+유형+기업명+kind+그룹설명)
+  function topicsCacheKey(leadershipTypes: string[], companyName: string, kind: string, stepTitle: string, roundIndex: number, groupDescription?: GroupDescription): string {
+    const gd = groupDescription ? `${groupDescription.summary ?? ''}|${groupDescription.characteristics ?? ''}`.slice(0, 120) : '';
+    return JSON.stringify({ roundIndex, stepTitle: stepTitle ?? '', types: [...leadershipTypes].sort(), companyName: companyName ?? '', kind, gd });
+  }
+
+  // 그룹 유형 조합의 그룹 설명 조회 (없으면 undefined — 서버는 유형 요약 기반 fallback)
+  function groupDescriptionFor(types: string[] | undefined): GroupDescription | undefined {
+    if (!types || types.length === 0) return undefined;
+    return groupDescriptions[groupCompositionKey(types)];
   }
 
   // ── 3단계: 주제 선정 함수 ──
@@ -990,13 +996,14 @@ function ConfigureContent() {
       const companyName = targetCompanies[0]?.name ?? '';
       const kind = isCustom ? '맞춤형' : '일반형';
       const stepTitle = currentRound ? (customStoryline[currentRound.stepIndex]?.title ?? '') : '';
-      const cacheKey = topicsCacheKey(leadershipTypes, companyName, kind, stepTitle, roundIdx + 1);
+      const groupDescription = isCustom ? groupDescriptionFor(group?.types) : undefined;
+      const cacheKey = topicsCacheKey(leadershipTypes, companyName, kind, stepTitle, roundIdx + 1, groupDescription);
       const cachedTopics = topicsCacheRef.current.get(cacheKey);
       if (cachedTopics) { console.log('[client topics/suggest] 캐시 HIT'); setSuggestions(cachedTopics); return; }
       const res = await fetch('/api/topics/suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadershipTypes, companyName, kind, stepTitle, roundIndex: roundIdx + 1, leadershipInfo: matchLeadershipInfo((leadershipTypes ?? []).filter(t => t !== '일반형')), companyId: leadershipCompanyId ?? undefined, infoYear: leadershipInfoYear }),
+        body: JSON.stringify({ leadershipTypes, companyName, kind, stepTitle, roundIndex: roundIdx + 1, leadershipInfo: matchLeadershipInfo((leadershipTypes ?? []).filter(t => t !== '일반형')), groupDescription }),
       });
       if (!res.ok) throw new Error('API 오류');
       const data = await res.json() as { topics: TopicSuggestion[] };
@@ -1029,10 +1036,11 @@ function ConfigureContent() {
       const companyName = targetCompanies[0]?.name ?? '';
       const kind = isCustom ? '맞춤형' : '일반형';
       const stepTitle = customStoryline[r.stepIndex]?.title ?? '';
-      const cacheKey = topicsCacheKey(leadershipTypes, companyName, kind, stepTitle, roundIdx + 1);
+      const groupDescription = isCustom ? groupDescriptionFor(group?.types) : undefined;
+      const cacheKey = topicsCacheKey(leadershipTypes, companyName, kind, stepTitle, roundIdx + 1, groupDescription);
       const cachedTopics = topicsCacheRef.current.get(cacheKey);
       if (cachedTopics && cachedTopics.length) { console.log('[client topics/suggest] 캐시 HIT'); return cachedTopics; }
-      const body = JSON.stringify({ leadershipTypes, companyName, kind, stepTitle, roundIndex: roundIdx + 1, leadershipInfo: matchLeadershipInfo((leadershipTypes ?? []).filter(t => t !== '일반형')), companyId: leadershipCompanyId ?? undefined, infoYear: leadershipInfoYear });
+      const body = JSON.stringify({ leadershipTypes, companyName, kind, stepTitle, roundIndex: roundIdx + 1, leadershipInfo: matchLeadershipInfo((leadershipTypes ?? []).filter(t => t !== '일반형')), groupDescription });
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
           const res = await fetch('/api/topics/suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });

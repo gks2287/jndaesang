@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callClaude } from '@/lib/api/claude';
 import { safeParseJson } from '@/lib/repairJson';
-import { getLeadershipRawText, buildRawTextBlock } from '@/lib/leadershipRawText';
 import {
   PERIODIC_SURVEY_TITLE,
   PERIODIC_SURVEY_DESCRIPTION,
@@ -144,15 +143,13 @@ function buildInteractionPrompt(types: string[]): string {
 // ── POST 핸들러 ───────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
-    const { round, leadershipType, companyName, referenceData, leadershipInfo, groupDescription, companyId, infoYear } = await req.json() as {
+    const { round, leadershipType, companyName, referenceData, leadershipInfo, groupDescription } = await req.json() as {
       round: RoundPayload;
       leadershipType: string;
       companyName: string;
       referenceData?: string;
       leadershipInfo?: { type: string; characteristics?: string; developmentPoints?: string }[];
       groupDescription?: { summary?: string; characteristics?: string; developmentPoints?: string };
-      companyId?: number; // 다면진단 보고서 원문 조회용
-      infoYear?: number;
     };
 
     // 관리자가 입력한 콘텐츠 세부 방향 (있으면 본문 작성 시 최우선 반영)
@@ -179,9 +176,6 @@ export async function POST(req: NextRequest) {
             .join('\n')
         + `\n(특징은 intro·본문의 공감/문제 인식에, 개발 포인트는 keyTakeaway와 actionPlan의 실천 처방에 직접 반영하세요. 문서에 없는 내용은 지어내지 마세요.)`
       : '';
-
-    // 다면진단 보고서 원문 — 있으면 요약보다 우선하는 근거 자료로 주입 (없으면 요약 기반 fallback)
-    const rawBlock = buildRawTextBlock(await getLeadershipRawText(companyId, infoYear));
 
     // 관리자가 첨부하고 '본문에 반영' 체크한 조직 진단 자료에서 추출된 데이터 (있을 때만)
     const referenceBlock = referenceData?.trim()
@@ -216,7 +210,6 @@ ${referenceData.trim()}`
 ${briefBlock}
 ${groupBlock}
 ${infoBlock}
-${rawBlock}
 
 [이번 호 콘텐츠]
 ${contentSummary}
