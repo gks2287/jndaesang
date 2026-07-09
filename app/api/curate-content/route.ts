@@ -47,7 +47,7 @@ JSON만 반환하세요.`;
 
   for (let turn = 0; turn < 8; turn++) {
     const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'claude-sonnet-4-6',
       max_tokens: 4096,
       system: PARSE_SYSTEM,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -113,7 +113,7 @@ JSON만 반환하세요.`;
 
   for (let turn = 0; turn < 8; turn++) {
     const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'claude-sonnet-4-6',
       max_tokens: 4096,
       system: PARSE_SYSTEM,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

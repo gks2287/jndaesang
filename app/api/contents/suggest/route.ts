@@ -183,7 +183,7 @@ ${contentBrief?.trim() ? '6' : '5'}. 한국어 또는 영어 콘텐츠 모두 �
     let searched: SearchedContent[] | null = null;
     for (let attempt = 1; attempt <= 2 && !searched; attempt += 1) {
       const response = await client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
+        model: 'claude-sonnet-4-6',
         max_tokens: 4096,
         system: SYSTEM_PROMPT,
         tools: [{ type: 'web_search_20250305' as const, name: 'web_search' }],
