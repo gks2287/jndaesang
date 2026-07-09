@@ -7,7 +7,7 @@ import { useNewNewsletterDraftStore, type WizardStep } from '@/store/newNewslett
 import { DEFAULT_STORYLINE } from '@/lib/storyline';
 import type { Round } from '@/lib/content';
 import { sentKey, isSendGroupSent } from '@/lib/newsletterSend';
-import { type DeliveryInterval, calcScheduleDates, formatKoreanDate } from '@/lib/schedule';
+import { type DeliveryInterval, DELIVERY_INTERVAL_OPTIONS, calcScheduleDates, formatKoreanDate } from '@/lib/schedule';
 import { useCompanyStore } from '@/store/companyStore';
 import { useNewsletterStore, type Newsletter } from '@/store/newsletterStore';
 import CompanyLogo from '@/components/CompanyLogo';
@@ -323,11 +323,21 @@ function formatRelativeTime(dateStr: string): string {
   return `${y}.${m}.${d}`;
 }
 
+// "2026년 7월 1일" → Date. 형식이 다르면 null.
+function parseKoreanDateLabel(label: string): Date | null {
+  const m = label.match(/(\d+)년\s*(\d+)월\s*(\d+)일/);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 // 이 기업의 뉴스레터들 중 해당 회차(1-based)의 발송일을 찾는다.
 // 같은 회차를 여러 유형(뉴스레터)이 나눠 받아도 발송일은 보통 회차 단위로 동일하므로,
 // 처음 발견되는 유효한 값 하나만 사용해 회차당 한 번만 표시한다.
 // 우선순위: ① 제작완료 시 저장된 본문의 dateLabel → ② authoring의 회차별 수동 변경(scheduleDateOverrides)
-// → ③ authoring의 startDate·deliveryInterval로 균등 계산 → ④ 계산 불가(null, 화면에서 '발송일 미정'으로 표시)
+// → ③ authoring의 startDate·deliveryInterval로 균등 계산
+// → ④ (레거시 — authoring.startDate가 없는 구버전 캠페인) 1회차 실제 저장 발송일 + deliveryInterval로 순연 계산
+// → ⑤ 계산 불가(null, 화면에서 '발송일 미정'으로 표시)
 function findRoundDateLabel(companyNewsletters: Newsletter[], roundNum: number): string | null {
   // ① 제작완료된 회차는 저장된 본문에 실제 발송일이 확정되어 있음
   for (const nl of companyNewsletters) {
@@ -347,6 +357,18 @@ function findRoundDateLabel(companyNewsletters: Newsletter[], roundNum: number):
     }
     const computed = calcScheduleDates(a.startDate, a.deliveryInterval as DeliveryInterval, totalRounds)[roundNum - 1];
     if (computed) return formatKoreanDate(computed);
+  }
+  // ④ 레거시 폴백 — authoring.startDate가 없어도 deliveryInterval과 1회차 실제 발송일만 있으면 순연 계산
+  for (const nl of companyNewsletters) {
+    const interval = nl.authoring?.deliveryInterval as DeliveryInterval | undefined;
+    if (!interval) continue;
+    const round1Label = nl.generatedContent?.rounds?.[0]?.dateLabel;
+    const round1Date = round1Label ? parseKoreanDateLabel(round1Label) : null;
+    if (!round1Date) continue;
+    const days = DELIVERY_INTERVAL_OPTIONS.find(o => o.value === interval)?.days ?? 30;
+    const target = new Date(round1Date);
+    target.setDate(target.getDate() + (roundNum - 1) * days);
+    return formatKoreanDate(target);
   }
   return null;
 }
