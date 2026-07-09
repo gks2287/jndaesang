@@ -63,7 +63,8 @@ export async function POST(req: NextRequest) {
         developmentPoints: (i.developmentPoints ?? '').trim(),
       }));
 
-    return NextResponse.json({ info, fileName: file.name });
+    // rawText: 추출된 원본 전체 텍스트 — 저장 후 뉴스레터 생성 시 근거 자료로 사용
+    return NextResponse.json({ info, fileName: file.name, rawText: text });
   } catch (err) {
     console.error('[admin/leadership-info/extract]', err);
     return NextResponse.json({ error: '보고서 분석 중 오류가 발생했습니다.' }, { status: 500 });

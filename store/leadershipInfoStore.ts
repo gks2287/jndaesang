@@ -38,7 +38,14 @@ interface LeadershipInfoStore {
   loadForCompany: (companyId: number, year: number, force?: boolean) => Promise<void>;
   getCurrent: (companyId: number, year: number) => LeadershipInfo[];
   getHistory: (companyId: number, year: number) => LeadershipInfoVersion[];
-  updateInfo: (companyId: number, year: number, info: LeadershipInfo[], fileName: string) => Promise<void>;
+  updateInfo: (
+    companyId: number,
+    year: number,
+    info: LeadershipInfo[],
+    fileName: string,
+    // rawText: 업로드 파일 원본 전체 텍스트 / copyRawTextFromVersionId: 히스토리 복원 시 원문 이어받기
+    options?: { rawText?: string; copyRawTextFromVersionId?: number },
+  ) => Promise<void>;
 }
 
 export const useLeadershipInfoStore = create<LeadershipInfoStore>((set, get) => ({
@@ -69,13 +76,13 @@ export const useLeadershipInfoStore = create<LeadershipInfoStore>((set, get) => 
   getHistory: (companyId, year) => get().history[infoKey(companyId, year)] ?? [],
 
   // 저장 → DB에 새 버전 생성 후 current/history 갱신
-  updateInfo: async (companyId, year, info, fileName) => {
+  updateInfo: async (companyId, year, info, fileName, options) => {
     const key = infoKey(companyId, year);
     try {
       const res = await fetch('/api/admin/leadership-info', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyId, year, info, fileName }),
+        body: JSON.stringify({ companyId, year, info, fileName, ...options }),
       });
       if (!res.ok) throw new Error('저장 실패');
       const data = (await res.json()) as { current: LeadershipInfo[]; history: LeadershipInfoVersion[] };

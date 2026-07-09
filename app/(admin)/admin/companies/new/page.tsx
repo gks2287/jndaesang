@@ -109,6 +109,7 @@ export default function NewCompanyPage() {
   // 다면진단 보고서 → AI 추출 리더십 유형 정보 (제출 전 미리보기/수정)
   const saveLeadershipInfo = useLeadershipInfoStore(s => s.updateInfo);
   const [extractedInfo, setExtractedInfo] = useState<LeadershipInfo[]>([]);
+  const [extractedRawText, setExtractedRawText] = useState(''); // 보고서 원본 전체 텍스트 — 저장 시 함께 전달
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
   const [reportFileName, setReportFileName] = useState('');
@@ -135,6 +136,7 @@ export default function NewCompanyPage() {
   async function handleReportExtract(file: File) {
     setExtracting(true);
     setExtractError(null);
+    setExtractedRawText('');
     setReportFileName(file.name);
     try {
       const fd = new FormData();
@@ -147,6 +149,7 @@ export default function NewCompanyPage() {
         setExtractError('보고서에서 리더십 유형을 찾지 못했습니다. 형식을 확인하거나 직접 입력해 주세요.');
       }
       setExtractedInfo(info);
+      setExtractedRawText((data.rawText as string) ?? '');
     } catch (err) {
       setExtractError(err instanceof Error ? err.message : '분석 중 오류가 발생했습니다.');
     } finally {
@@ -226,7 +229,7 @@ export default function NewCompanyPage() {
     }
     // 다면진단 보고서에서 추출한 리더십 유형 정보 저장 (이 기업 뉴스레터 맞춤용)
     if (extractedInfo.length > 0) {
-      await saveLeadershipInfo(created.id, currentYear, extractedInfo, reportFileName || '다면진단 보고서');
+      await saveLeadershipInfo(created.id, currentYear, extractedInfo, reportFileName || '다면진단 보고서', { rawText: extractedRawText });
     }
     setSubmitting(false);
     router.push('/admin/dashboard');

@@ -846,6 +846,8 @@ function ConfigureContent() {
           groupDescription: isCustom && group && group.types.length > 0
             ? groupDescriptions[groupCompositionKey(group.types)]
             : undefined,
+          companyId: leadershipCompanyId ?? undefined, // 다면진단 보고서 원문 기반 생성용
+          infoYear: leadershipInfoYear,
         }),
       });
       if (!res.ok) throw new Error('생성 실패');
@@ -994,7 +996,7 @@ function ConfigureContent() {
       const res = await fetch('/api/topics/suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadershipTypes, companyName, kind, stepTitle, roundIndex: roundIdx + 1, leadershipInfo: matchLeadershipInfo((leadershipTypes ?? []).filter(t => t !== '일반형')) }),
+        body: JSON.stringify({ leadershipTypes, companyName, kind, stepTitle, roundIndex: roundIdx + 1, leadershipInfo: matchLeadershipInfo((leadershipTypes ?? []).filter(t => t !== '일반형')), companyId: leadershipCompanyId ?? undefined, infoYear: leadershipInfoYear }),
       });
       if (!res.ok) throw new Error('API 오류');
       const data = await res.json() as { topics: TopicSuggestion[] };
@@ -1030,7 +1032,7 @@ function ConfigureContent() {
       const cacheKey = topicsCacheKey(leadershipTypes, companyName, kind, stepTitle, roundIdx + 1);
       const cachedTopics = topicsCacheRef.current.get(cacheKey);
       if (cachedTopics && cachedTopics.length) { console.log('[client topics/suggest] 캐시 HIT'); return cachedTopics; }
-      const body = JSON.stringify({ leadershipTypes, companyName, kind, stepTitle, roundIndex: roundIdx + 1, leadershipInfo: matchLeadershipInfo((leadershipTypes ?? []).filter(t => t !== '일반형')) });
+      const body = JSON.stringify({ leadershipTypes, companyName, kind, stepTitle, roundIndex: roundIdx + 1, leadershipInfo: matchLeadershipInfo((leadershipTypes ?? []).filter(t => t !== '일반형')), companyId: leadershipCompanyId ?? undefined, infoYear: leadershipInfoYear });
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
           const res = await fetch('/api/topics/suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
@@ -1620,7 +1622,7 @@ function ConfigureContent() {
       const res = await fetch('/api/admin/leadership-info/group-describe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ companyName: targetCompanies.map(c => c.name).join(', ') || '대상 기업', groups }),
+        body: JSON.stringify({ companyName: targetCompanies.map(c => c.name).join(', ') || '대상 기업', groups, companyId: leadershipCompanyId ?? undefined, infoYear: leadershipInfoYear }),
       });
       if (!res.ok) throw new Error('생성 실패');
       const data = (await res.json()) as { descriptions: Record<string, GroupDescription> };

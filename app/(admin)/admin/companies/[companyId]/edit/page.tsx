@@ -231,7 +231,8 @@ export default function CompanyEditPage() {
         setExtractError('보고서에서 리더십 유형을 찾지 못했습니다. 형식을 확인하거나 직접 입력해 주세요.');
         return;
       }
-      await updateInfo(companyId, infoYear, info, file.name);
+      // 원본 전체 텍스트도 함께 저장 — 뉴스레터 생성 시 원문을 근거로 사용
+      await updateInfo(companyId, infoYear, info, file.name, { rawText: (data.rawText as string) ?? '' });
       setUploadToast({ name: file.name });
       setTimeout(() => setUploadToast(null), 3000);
     } catch {
@@ -563,7 +564,7 @@ export default function CompanyEditPage() {
                       </div>
                     </div>
                     <button
-                      onClick={() => updateInfo(companyId, infoYear, v.info, `[복원] ${v.fileName}`)}
+                      onClick={() => updateInfo(companyId, infoYear, v.info, `[복원] ${v.fileName}`, { copyRawTextFromVersionId: v.id })}
                       className="text-xs font-medium text-[#55A4DA] hover:underline"
                     >
                       이 버전으로 복원
