@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useCompanyStore } from '@/store/companyStore';
 import { useParticipantStore, type LeadershipType, type Participant } from '@/store/participantStore';
@@ -133,81 +133,92 @@ function RoundChart({ members }: { members: Participant[] }) {
   );
 }
 
-const MOCK_QUESTIONS: {
+// ── 실제 직책자 응답 → 응답 요약/활동 로그 데이터 ──
+type QuestionType = '주관식' | '체크리스트' | '만족도 설문' | '퀴즈' | '시나리오';
+
+type CompanyResponseRow = {
+  kind: string;
+  elementKey: string;
+  response: Record<string, unknown>;
+  roundIndex: number;
+  updatedAt: string;
+  participant: { id: number; name: string; position: string; leadershipType: string };
+};
+
+type TypeQuestion = {
   round: number;
-  type: '주관식' | '체크리스트' | '만족도 설문' | '퀴즈';
+  type: QuestionType;
   question: string;
-  mockAnswers: string[];
-  mockSummary?: string;
-}[] = [
-  {
-    round: 1, type: '주관식',
-    question: '내가 가장 자주 사용하는 리더십 패턴은 무엇인가?',
-    mockAnswers: [
-      '저는 결과 중심으로 생각하다 보니 과정보다 성과를 우선시하는 경향이 있습니다.',
-      '팀원들이 말할 때 이미 결론을 생각하고 있어서 경청이 부족한 것 같습니다.',
-      '지시 중심으로 움직이다 보니 팀원들이 수동적으로 반응하는 것을 느낍니다.',
-      '급한 성격 탓에 팀원의 속도를 기다리지 못하고 직접 처리하게 됩니다.',
-      '결과가 좋으면 된다고 생각해서 과정에 대한 피드백이 부족했습니다.',
-    ],
-    mockSummary: '대부분의 응답자는 결과·성과 우선 사고와 지시형 패턴을 가장 자주 사용한다고 인식하고 있습니다. 경청 부족과 팀원 속도를 기다리지 못하는 점을 스스로 인지하는 경우가 많았으며, 과정보다 결과에 집중하는 경향이 공통적으로 나타났습니다. 자신의 리더십 패턴에 대한 인식은 있으나, 실제 행동 변화로 이어지지 못하고 있다는 점이 주목됩니다.',
-  },
-  {
-    round: 1, type: '체크리스트',
-    question: '경청 실천 3가지 항목 체크',
-    mockAnswers: [
-      '✅ 회의 중 핸드폰 내려놓기\n✅ 팀원 발언 도중 끼어들지 않기\n☐ 발언 후 요약 확인하기',
-      '✅ 회의 중 핸드폰 내려놓기\n☐ 팀원 발언 도중 끼어들지 않기\n☐ 발언 후 요약 확인하기',
-      '✅ 회의 중 핸드폰 내려놓기\n✅ 팀원 발언 도중 끼어들지 않기\n✅ 발언 후 요약 확인하기',
-      '☐ 회의 중 핸드폰 내려놓기\n✅ 팀원 발언 도중 끼어들지 않기\n✅ 발언 후 요약 확인하기',
-    ],
-  },
-  {
-    round: 2, type: '주관식',
-    question: '팀원이 나에게 가장 원하는 변화는 무엇이라고 생각하는가?',
-    mockAnswers: [
-      '더 많이 들어주고 지시보다 함께 고민해주는 리더가 되길 원할 것 같습니다.',
-      '실패를 허용하고 과정을 인정해주는 분위기를 만들어주길 바랄 것 같습니다.',
-      '명확한 기대치 전달과 적절한 자율성 부여가 필요하다고 느낄 것 같습니다.',
-      '감정적 반응을 줄이고 일관된 태도를 유지해주길 원할 것 같습니다.',
-      '칭찬과 긍정 피드백을 더 자주 전달해주길 원할 것 같습니다.',
-    ],
-    mockSummary: '팀원들이 원하는 변화로 "경청과 함께 고민하는 자세"가 가장 많이 언급되었습니다. 실패 허용과 과정 인정, 감정적 일관성, 명확한 기대치 전달에 대한 요구도 공통적으로 나타났습니다. 긍정적 피드백 부족에 대한 인식도 여러 응답에서 발견되어, 인정과 칭찬이 주요 개선 과제로 부각됩니다.',
-  },
-  {
-    round: 2, type: '체크리스트',
-    question: '팀원 피드백 실천 항목',
-    mockAnswers: [
-      '✅ 주 1회 1:1 미팅 진행\n✅ 긍정 피드백 먼저 전달\n☐ 개선 제안 구체적으로 기술',
-      '☐ 주 1회 1:1 미팅 진행\n✅ 긍정 피드백 먼저 전달\n✅ 개선 제안 구체적으로 기술',
-      '✅ 주 1회 1:1 미팅 진행\n☐ 긍정 피드백 먼저 전달\n✅ 개선 제안 구체적으로 기술',
-      '✅ 주 1회 1:1 미팅 진행\n✅ 긍정 피드백 먼저 전달\n✅ 개선 제안 구체적으로 기술',
-    ],
-  },
-  {
-    round: 3, type: '주관식',
-    question: '최근 팀 내 갈등 상황에서 나는 어떻게 대응했는가?',
-    mockAnswers: [
-      '당사자 간 대화를 주선했지만 결론을 내가 일방적으로 내려줬습니다.',
-      '갈등을 회피하고 시간이 해결해주길 기다렸는데 상황이 더 악화됐습니다.',
-      '양측 이야기를 충분히 듣고 중립적 입장에서 조율을 시도했습니다.',
-      '갈등 원인 파악보다 빠른 결과 복구에 집중했습니다.',
-    ],
-    mockSummary: '갈등 대응 방식으로 "일방적 결론 도출"과 "회피"가 주된 패턴으로 나타났습니다. 중립적 조율을 시도한 사례도 있었으나, 빠른 결과 복구에 집중하거나 시간이 해결해주길 기다리는 소극적 방식을 선택한 경우가 더 많았습니다. 대부분의 응답자가 갈등의 근본 원인보다 표면적 해소에 집중하고 있음을 스스로 인지하고 있었습니다.',
-  },
-  {
-    round: 3, type: '만족도 설문',
-    question: '이번 회차 콘텐츠에 대한 전반적인 평가',
-    mockAnswers: [
-      '실무에 바로 적용할 수 있는 내용이어서 도움이 됐습니다.',
-      '이론보다 사례 중심으로 구성되어 이해하기 쉬웠습니다.',
-      '분량이 적당했고 핵심 메시지가 명확했습니다.',
-      '좀 더 심층적인 내용이 있으면 더 좋겠습니다.',
-      '팀 상황에 맞게 유연하게 활용할 수 있었습니다.',
-    ],
-    mockSummary: '전반적으로 콘텐츠 만족도가 높게 나타났습니다. 실무 적용 가능성과 사례 중심 구성, 명확한 핵심 메시지가 긍정적 요소로 자주 언급되었습니다. 일부 응답에서는 더 심층적인 내용에 대한 요구가 있었으며, 팀 상황에 맞게 유연하게 활용할 수 있다는 점도 호평을 받았습니다.',
-  },
-];
+  summary?: string;
+  responses: { name: string; answer: string }[];
+};
+
+// 응답 1건 → 답변 문자열 (활동 로그 탭 표시용)
+function responseAnswerText(row: CompanyResponseRow): string {
+  const r = row.response ?? {};
+  if (row.kind === 'quiz') {
+    return `선택: ${String(r.selectedLabel ?? '')} — ${r.correct ? '정답 ✅' : '오답 ❌'}`;
+  }
+  if (row.kind === 'scenario') {
+    return String(r.selectedLabel ?? '');
+  }
+  if (row.kind === 'selfcheck') {
+    const items = Array.isArray(r.items) ? (r.items as string[]) : [];
+    const checked = new Set(Array.isArray(r.checkedItems) ? (r.checkedItems as string[]) : []);
+    if (items.length > 0) return items.map(it => `${checked.has(it) ? '✅' : '☐'} ${it}`).join('\n');
+    return [...checked].map(it => `✅ ${it}`).join('\n') || '체크된 항목 없음';
+  }
+  if (row.kind === 'survey-always') {
+    const helpful = Array.isArray(r.helpful) ? (r.helpful as string[]) : [];
+    const comment = String(r.comment ?? '').trim();
+    return [`만족도: ${String(r.rating ?? '')}`, ...helpful.map(h => `도움됨: ${h}`), ...(comment ? [comment] : [])].join('\n');
+  }
+  // survey-periodic
+  const answers = Array.isArray(r.answers) ? (r.answers as { question: string; type: string; answer: unknown }[]) : [];
+  return answers
+    .filter(a => (Array.isArray(a.answer) ? a.answer.length > 0 : String(a.answer ?? '').trim().length > 0))
+    .map(a => `${a.question} → ${Array.isArray(a.answer) ? (a.answer as string[]).join(', ') : String(a.answer)}`)
+    .join('\n');
+}
+
+const KIND_TO_TYPE: Record<string, QuestionType> = {
+  'quiz': '퀴즈',
+  'scenario': '시나리오',
+  'selfcheck': '체크리스트',
+  'survey-always': '만족도 설문',
+  'survey-periodic': '만족도 설문',
+};
+
+// 회차·요소별 그룹핑 (응답 요약/활동 로그 공용)
+function buildTypeQuestions(rows: CompanyResponseRow[]): TypeQuestion[] {
+  const groups = new Map<string, CompanyResponseRow[]>();
+  for (const row of rows) {
+    const key = `${row.roundIndex}|${row.kind}|${row.elementKey}`;
+    const list = groups.get(key);
+    if (list) list.push(row); else groups.set(key, [row]);
+  }
+  return [...groups.entries()]
+    .map(([, list]) => {
+      const first = list[0];
+      const question = first.kind === 'quiz'
+        ? String(first.response?.question ?? first.elementKey)
+        : first.elementKey;
+      // 퀴즈는 정답률 요약 제공
+      let summary: string | undefined;
+      if (first.kind === 'quiz') {
+        const correct = list.filter(row => Boolean(row.response?.correct)).length;
+        summary = `정답률 ${Math.round((correct / list.length) * 100)}% (${correct}/${list.length}명 정답)`;
+      }
+      return {
+        round: first.roundIndex,
+        type: KIND_TO_TYPE[first.kind] ?? '주관식',
+        question,
+        summary,
+        responses: list.map(row => ({ name: row.participant.name, answer: responseAnswerText(row) })),
+      };
+    })
+    .sort((a, b) => a.round - b.round);
+}
 
 export default function CompanyDetailPage() {
   const params = useParams();
@@ -331,21 +342,31 @@ export default function CompanyDetailPage() {
     return Array.from({ length: maxStep }, (_, i) => i + 1);
   }, [typeMembers, activeLeadership]);
 
+  // 이 기업 전체 직책자의 실제 응답 로드
+  const [companyResponses, setCompanyResponses] = useState<CompanyResponseRow[]>([]);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch(`/api/admin/participant-responses?companyId=${companyId}`);
+        if (!res.ok || !alive) return;
+        const data = (await res.json()) as { responses: CompanyResponseRow[] };
+        if (alive) setCompanyResponses(data.responses);
+      } catch (e) {
+        console.error('기업 응답 로드 오류:', e);
+      }
+    })();
+    return () => { alive = false; };
+  }, [companyId]);
+
   const typeQuestions = useMemo(() => {
-    return MOCK_QUESTIONS
-      .filter(q => activeLogRound === 'all' || q.round === activeLogRound)
-      .filter(q => typeMembers.some(p => p.stepCurrent >= q.round))
-      .map(q => ({
-        round: q.round,
-        type: q.type,
-        question: q.question,
-        mockSummary: q.mockSummary,
-        responses: typeMembers
-          .filter(p => p.stepCurrent >= q.round)
-          .map((p, i) => ({ name: p.name, answer: q.mockAnswers[i % q.mockAnswers.length] })),
-      }))
-      .filter(q => q.responses.length > 0);
-  }, [typeMembers, activeLogRound]);
+    if (!activeLeadership) return [];
+    const memberIds = new Set(typeMembers.map(p => p.id));
+    const rows = companyResponses
+      .filter(row => memberIds.has(row.participant.id))
+      .filter(row => activeLogRound === 'all' || row.roundIndex === activeLogRound);
+    return buildTypeQuestions(rows);
+  }, [companyResponses, typeMembers, activeLeadership, activeLogRound]);
 
   const handleDownloadExcel = () => {
     const rows = yearMembers.map(p => {
@@ -812,14 +833,14 @@ export default function CompanyDetailPage() {
                       })}
                     </div>
                   ) : (() => {
-                    const summary = q.mockSummary;
+                    const summary = q.summary;
 
-                    // 만족도 설문: 키워드 빈도 순위 계산
+                    // 만족도 설문·시나리오: 응답 빈도 순위 계산
                     const rankItems: { text: string; count: number }[] = [];
-                    if (q.type === '만족도 설문') {
+                    if (q.type === '만족도 설문' || q.type === '시나리오') {
                       const freq: Record<string, number> = {};
                       q.responses.forEach(r => {
-                        r.answer.split(/[.,\n]/).forEach(chunk => {
+                        r.answer.split(/\n/).forEach(chunk => {
                           const t = chunk.trim();
                           if (t.length > 4) freq[t] = (freq[t] ?? 0) + 1;
                         });
@@ -832,8 +853,8 @@ export default function CompanyDetailPage() {
 
                     return (
                       <div className="px-4 py-4 space-y-3">
-                        {/* 만족도 설문: 응답 빈도 순위 */}
-                        {q.type === '만족도 설문' && rankItems.length > 0 && (
+                        {/* 만족도 설문·시나리오: 응답 빈도 순위 */}
+                        {rankItems.length > 0 && (
                           <div className="space-y-2">
                             {rankItems.map((item, ri) => (
                               <div key={ri} className="flex items-center gap-3">
@@ -849,11 +870,13 @@ export default function CompanyDetailPage() {
                           </div>
                         )}
 
-                        {/* 주관식: 요약 텍스트 */}
-                        {q.type === '주관식' && summary && (
+                        {/* 요약 텍스트 (퀴즈 정답률 등) */}
+                        {summary && (
                           <p className="text-xs text-gray-600 leading-relaxed">{summary}</p>
                         )}
-
+                        {!summary && rankItems.length === 0 && (
+                          <p className="text-xs text-gray-300">개별 응답은 활동 로그 탭에서 확인할 수 있습니다.</p>
+                        )}
                       </div>
                     );
                   })()}

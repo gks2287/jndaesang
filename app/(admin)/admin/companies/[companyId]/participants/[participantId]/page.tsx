@@ -57,34 +57,77 @@ const MOCK_STEPS = [
   { step: 5, title: '성장 지원: 코칭형 리더십', sentAt: null, openedAt: null, interactionRate: 0, completed: false },
 ];
 
-// 목 활동 로그
-const MOCK_LOGS = [
-  { date: '2026-05-07 14:32', action: '뉴스레터 열람', detail: 'Step 3 — 소통의 재발견', type: 'open', response: null },
-  { date: '2026-05-07 14:45', action: '성찰 질문 제출', detail: '"나는 팀원의 말을 얼마나 끝까지 듣는가?"', type: 'interact', response: '솔직히 말하면 팀원이 말할 때 이미 내 답을 생각하고 있을 때가 많습니다. 앞으로는 말이 끝날 때까지 기다리고, 요약해서 확인하는 습관을 들이겠습니다.' },
-  { date: '2026-05-07 14:50', action: '체크리스트 완료', detail: '경청 실천 3가지 항목 체크', type: 'interact', response: '✅ 회의 중 핸드폰 내려놓기\n✅ 팀원 발언 도중 끼어들지 않기\n☐ 발언 후 요약 확인하기' },
-  { date: '2026-05-07 15:10', action: '상시설문 완료', detail: '뉴스레터 만족도 설문 제출', type: 'survey', response: { checks: ['콘텐츠 내용이 실무에 도움이 됐다', '읽기 쉽고 구성이 명확했다', '다음 회차도 받고 싶다'], unchecked: ['분량이 적당했다'], text: '내용 자체는 좋았는데 텍스트 위주라 읽다가 중간에 집중력이 떨어졌습니다. 짧은 영상이나 인포그래픽 같은 게 중간에 있으면 더 좋을 것 같아요.' } },
-  { date: '2026-04-29 09:15', action: '뉴스레터 열람', detail: 'Step 2 — 팀원의 시선', type: 'open', response: null },
-  { date: '2026-04-29 09:28', action: '퀴즈 응답', detail: '4/5문항 정답', type: 'interact', response: '1번 ✅  2번 ✅  3번 ✅  4번 ❌  5번 ✅\n오답: 피드백 전달 시 적절한 타이밍에 관한 문항' },
-  { date: '2026-04-22 11:03', action: '뉴스레터 열람', detail: 'Step 1 — 자기인식', type: 'open', response: null },
-  { date: '2026-04-22 11:20', action: '성찰 질문 제출', detail: '"내가 가장 자주 사용하는 리더십 패턴은?"', type: 'interact', response: '저는 결과 중심으로 생각하다 보니 과정보다 성과를 우선시하는 경향이 있습니다. 팀원들이 왜 힘들어하는지 좀 더 들여다볼 필요가 있다고 느꼈습니다.' },
-];
-
 const logIcon = {
   open:     { bg: 'bg-blue-50',    icon: 'text-blue-500' },
   interact: { bg: 'bg-purple-50',  icon: 'text-purple-500' },
   survey:   { bg: 'bg-gray-200',   icon: 'text-gray-600' },
 };
 
-// 각 로그가 속한 회차(step) 계산 — 열람 로그의 "Step N" 기준으로 그룹핑
-const LOG_ROUNDS: number[] = (() => {
-  let cur = 0;
-  return MOCK_LOGS.map(log => {
-    const m = log.detail.match(/Step (\d+)/);
-    if (m) cur = Number(m[1]);
-    return cur;
-  });
-})();
-const AVAILABLE_ROUNDS = [...new Set(LOG_ROUNDS)].filter(r => r > 0).sort((a, b) => a - b);
+// ── 실제 응답 기록 → 활동 로그 항목 매핑 ──
+type ActivityLog = {
+  date: string;
+  action: string;
+  detail: string;
+  type: 'open' | 'interact' | 'survey';
+  response: string | { checks: string[]; unchecked: string[]; text: string } | null;
+  round: number;
+};
+type ResponseRow = { kind: string; elementKey: string; response: Record<string, unknown>; roundIndex: number; updatedAt: string };
+
+function formatLogDate(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function responseToLog(row: ResponseRow): ActivityLog {
+  const r = row.response ?? {};
+  const base = { date: formatLogDate(row.updatedAt), round: row.roundIndex || 0 };
+  if (row.kind === 'quiz') {
+    const correct = Boolean(r.correct);
+    return {
+      ...base, action: '퀴즈 응답', type: 'interact',
+      detail: `${row.elementKey} — ${correct ? '정답 ✅' : '오답 ❌'}`,
+      response: `Q. ${String(r.question ?? '')}\n선택: ${String(r.selectedLabel ?? '')}\n${correct ? '✅ 정답입니다' : `❌ 오답 (정답: ${Number(r.answerIndex ?? 0) + 1}번)`}`,
+    };
+  }
+  if (row.kind === 'scenario') {
+    return { ...base, action: '시나리오 선택', type: 'interact', detail: row.elementKey, response: `선택: ${String(r.selectedLabel ?? '')}` };
+  }
+  if (row.kind === 'selfcheck') {
+    const items = Array.isArray(r.checkedItems) ? (r.checkedItems as string[]) : [];
+    return {
+      ...base, action: '체크리스트 응답', type: 'interact',
+      detail: `${row.elementKey} — ${Number(r.checkedCount ?? items.length)}/${Number(r.totalCount ?? 0)} 체크`,
+      response: items.map(i => `✅ ${i}`).join('\n') || '체크된 항목 없음',
+    };
+  }
+  if (row.kind === 'survey-always') {
+    const helpful = Array.isArray(r.helpful) ? (r.helpful as string[]) : [];
+    return {
+      ...base, action: '상시설문 완료', type: 'survey',
+      detail: `이번 호 만족도: ${String(r.rating ?? '')}`,
+      response: {
+        checks: [`만족도: ${String(r.rating ?? '')}`, ...helpful.map(h => `도움됨: ${h}`)],
+        unchecked: [],
+        text: String(r.comment ?? '').trim() || '(의견 없음)',
+      },
+    };
+  }
+  // survey-periodic
+  const answers = Array.isArray(r.answers) ? (r.answers as { question: string; type: string; answer: unknown }[]) : [];
+  const hasAnswer = (a: { answer: unknown }) => Array.isArray(a.answer) ? a.answer.length > 0 : String(a.answer ?? '').trim().length > 0;
+  const objective = answers.filter(a => (a.type === 'single' || a.type === 'multiple') && hasAnswer(a));
+  const subjective = answers.filter(a => (a.type === 'short' || a.type === 'long') && hasAnswer(a));
+  return {
+    ...base, action: '정기설문 완료', type: 'survey', detail: row.elementKey,
+    response: {
+      checks: objective.map(a => `${a.question} → ${Array.isArray(a.answer) ? (a.answer as string[]).join(', ') : String(a.answer)}`),
+      unchecked: [],
+      text: subjective.map(a => `Q. ${a.question}\n${String(a.answer)}`).join('\n\n') || '(주관식 응답 없음)',
+    },
+  };
+}
 
 const POSITIONS = ['부장', '차장', '과장', '대리', '팀장', '이사', '상무', '전무', '본부장'];
 const DELIVERY_STATUSES: DeliveryStatus[] = ['미발송', '발송완료', '열람', '완료'];
@@ -118,6 +161,23 @@ export default function ParticipantDetailPage() {
   // 훅은 조기 return 이전에 모두 호출해야 함 (participant 로딩 프레임에서 훅 개수 불일치 방지)
   const [expandedLog, setExpandedLog] = useState<number | null>(null);
   const [activeRound, setActiveRound] = useState<number | null>(null);
+
+  // 실제 응답 기록 로드 (인터랙션·만족도)
+  const [responseLogs, setResponseLogs] = useState<ActivityLog[]>([]);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch(`/api/admin/participant-responses?participantId=${participantId}`);
+        if (!res.ok || !alive) return;
+        const data = (await res.json()) as { responses: ResponseRow[] };
+        if (alive) setResponseLogs(data.responses.map(responseToLog));
+      } catch (e) {
+        console.error('응답 기록 로드 오류:', e);
+      }
+    })();
+    return () => { alive = false; };
+  }, [participantId]);
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({
     name: participant?.name ?? '',
@@ -151,9 +211,10 @@ export default function ParticipantDetailPage() {
   // 아직 뉴스레터가 발송되지 않은 직책자는 빈 상태로 표시
   const hasStarted = participant.stepCurrent > 0 || participant.deliveryStatus !== '미발송';
   const activeSteps = hasStarted ? MOCK_STEPS : [];
-  const activeLogs = hasStarted ? MOCK_LOGS : [];
-  const activeLogRounds = hasStarted ? LOG_ROUNDS : [];
-  const activeAvailableRounds = hasStarted ? AVAILABLE_ROUNDS : [];
+  // 활동 로그: 실제 응답 기록 (인터랙션·만족도)
+  const activeLogs = responseLogs;
+  const activeLogRounds = responseLogs.map(l => l.round);
+  const activeAvailableRounds = [...new Set(activeLogRounds)].filter(r => r > 0).sort((a, b) => a - b);
 
   const progressPct = Math.round((participant.stepCurrent / participant.stepTotal) * 100);
 
@@ -387,8 +448,7 @@ export default function ParticipantDetailPage() {
               전체
             </button>
             {activeAvailableRounds.map(round => {
-              const step = activeSteps.find(s => s.step === round);
-              const rate = step?.interactionRate ?? 0;
+              const count = activeLogRounds.filter(r => r === round).length;
               const isActive = activeRound === round;
               return (
                 <button
@@ -404,9 +464,9 @@ export default function ParticipantDetailPage() {
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
                     isActive
                       ? 'bg-white/20 text-white'
-                      : rate > 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-200 text-gray-400'
+                      : count > 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-200 text-gray-400'
                   }`}>
-                    {rate}%
+                    {count}건
                   </span>
                 </button>
               );

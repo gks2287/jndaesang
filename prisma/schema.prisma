@@ -52,11 +52,31 @@ model Participant {
   stepTotal        Int                     @default(5)
   token            String?                 @unique
   diagnosisHistory DiagnosisHistoryEntry[]
+  responses        ParticipantResponse[]
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
 
   @@index([companyId])
   @@map("participants")
+}
+
+// 직책자 응답 기록 — 인터랙션(퀴즈/시나리오/셀프체크) + 만족도 설문(상시/정기)
+// 같은 요소에 다시 응답하면 최신 응답으로 갱신(upsert)
+model ParticipantResponse {
+  id            Int         @id @default(autoincrement())
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  participantId Int
+  newsletterId  Int         @default(0) // 0 = 뉴스레터 미연결
+  roundIndex    Int         @default(0) // 회차 (1부터), 0 = 미지정
+  kind          String      // 'quiz' | 'scenario' | 'selfcheck' | 'survey-always' | 'survey-periodic'
+  elementKey    String      // 요소 식별 (제목)
+  response      Json        // 응답 내용 (kind별 구조)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([participantId, newsletterId, roundIndex, kind, elementKey])
+  @@index([participantId])
+  @@map("participant_responses")
 }
 
 model Newsletter {

@@ -296,50 +296,57 @@ export function renderInteractionTemplates(types: InteractionTypeKey[], headerle
   );
 }
 
-// 만족도 템플릿: 선택된 타입을 AI 생성과 무관하게 예시 UI로 즉시 렌더
-// 복수 선택(multiple) 미리보기 — minSelect~maxSelect 제한 적용. 초과 선택 차단 + 안내 문구 표시.
-function MultiSelectPreview({ options, minSelect, maxSelect }: { options: string[]; minSelect: number; maxSelect: number }) {
-  const [selected, setSelected] = useState<number[]>([]);
-  const [overflow, setOverflow] = useState(false);
-  const toggle = (j: number) => {
-    setSelected(prev => {
-      if (prev.includes(j)) { setOverflow(false); return prev.filter(x => x !== j); }
-      if (prev.length >= maxSelect) { setOverflow(true); return prev; }
-      setOverflow(false);
-      return [...prev, j];
+// ── 정기 만족도 조사 카드 — 실제 응답 가능 (단일/복수 선택, 단답/서술 입력, 필수 검증, 제출) ──
+type PeriodicAnswer = { choice?: number; choices?: number[]; text?: string };
+
+function PeriodicSurveyCard({ questions, onRespond }: { questions: PeriodicSurveyQuestion[]; onRespond?: import('./NewsletterRender').InteractionResponder }) {
+  const [answers, setAnswers] = useState<Record<number, PeriodicAnswer>>({});
+  const [overflowIdx, setOverflowIdx] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
+
+  const patch = (i: number, p: PeriodicAnswer) => {
+    setSubmitted(false);
+    setAnswers(prev => ({ ...prev, [i]: { ...prev[i], ...p } }));
+  };
+  const toggleMulti = (i: number, j: number, maxSelect: number) => {
+    setSubmitted(false);
+    setAnswers(prev => {
+      const cur = prev[i]?.choices ?? [];
+      if (cur.includes(j)) { setOverflowIdx(null); return { ...prev, [i]: { ...prev[i], choices: cur.filter(x => x !== j) } }; }
+      if (cur.length >= maxSelect) { setOverflowIdx(i); return prev; }
+      setOverflowIdx(null);
+      return { ...prev, [i]: { ...prev[i], choices: [...cur, j] } };
     });
   };
-  return (
-    <div>
-      <div className="flex flex-wrap gap-2">
-        {options.map((opt, j) => {
-          const on = selected.includes(j);
-          return (
-            <button
-              key={j}
-              type="button"
-              onClick={() => toggle(j)}
-              aria-pressed={on}
-              className={`px-3.5 py-1.5 text-sm rounded-lg border transition-colors ${on ? 'bg-[#55A4DA] text-white border-[#55A4DA]' : 'bg-white text-[#2C2C2C] border-[#E1EFFB] hover:border-[#55A4DA]'}`}
-            >
-              {opt}
-            </button>
-          );
-        })}
-      </div>
-      <p className={`text-xs mt-1.5 ${overflow ? 'text-red-500' : 'text-gray-400'}`}>
-        {overflow ? `최대 ${maxSelect}개까지만 선택할 수 있어요.` : `최소 ${minSelect}개, 최대 ${maxSelect}개까지 선택할 수 있어요.`}
-      </p>
-    </div>
-  );
-}
 
-// 정기 만족도 조사 카드 — 즉시 미리보기/AI 생성 결과 양쪽에서 공용으로 사용.
-// 제목·안내문 + 영역별 그룹 + 유형 텍스트 뱃지 + 필수(*) 표시.
-function renderPeriodicSurveyCard(questions: PeriodicSurveyQuestion[], key?: string) {
+  function submit() {
+    for (let i = 0; i < questions.length; i++) {
+      const q = questions[i];
+      if (!q.required) continue;
+      const a = answers[i];
+      if (q.type === 'single' && a?.choice == null) { setError(`Q${i + 1} 필수 문항에 응답해 주세요.`); return; }
+      if (q.type === 'multiple' && (a?.choices?.length ?? 0) < q.minSelect) { setError(`Q${i + 1}은(는) 최소 ${q.minSelect}개 선택해 주세요.`); return; }
+      if ((q.type === 'short' || q.type === 'long') && !a?.text?.trim()) { setError(`Q${i + 1} 필수 문항에 응답해 주세요.`); return; }
+    }
+    setError(null);
+    onRespond?.('survey-periodic', PERIODIC_SURVEY_TITLE, {
+      answers: questions.map((q, i) => {
+        const a = answers[i];
+        const answer = q.type === 'single'
+          ? (a?.choice != null ? q.options[a.choice] : '')
+          : q.type === 'multiple'
+            ? (a?.choices ?? []).map(j => q.options[j])
+            : (a?.text?.trim() ?? '');
+        return { question: q.question, area: q.area, type: q.type, answer };
+      }),
+    });
+    setSubmitted(true);
+  }
+
   let lastArea = '';
   return (
-    <div key={key} className="rounded-2xl p-6 space-y-4 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+    <div className="rounded-2xl p-6 space-y-4 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
       <div>
         <p className="text-base font-semibold text-[#2C2C2C]">{PERIODIC_SURVEY_TITLE}</p>
         <p className="text-xs text-[#6B7280] mt-1 leading-relaxed">{PERIODIC_SURVEY_DESCRIPTION}</p>
@@ -347,6 +354,7 @@ function renderPeriodicSurveyCard(questions: PeriodicSurveyQuestion[], key?: str
       {questions.map((q, i) => {
         const showArea = q.area !== lastArea;
         lastArea = q.area;
+        const a = answers[i];
         return (
           <div key={i} className={showArea ? 'pt-2' : ''}>
             {showArea && <p className="text-xs font-bold text-[#55A4DA] mb-2">{q.area}</p>}
@@ -361,34 +369,182 @@ function renderPeriodicSurveyCard(questions: PeriodicSurveyQuestion[], key?: str
             </div>
             {q.type === 'single' && (
               <div className="space-y-2">
-                {q.options.map((opt, j) => (
-                  <div key={j} className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded-full border-2 border-[#55A4DA]/40 flex-shrink-0 bg-white" />
-                    <p className="text-sm text-[#2C2C2C]">{opt}</p>
-                  </div>
-                ))}
+                {q.options.map((opt, j) => {
+                  const on = a?.choice === j;
+                  return (
+                    <button key={j} type="button" onClick={() => patch(i, { choice: j })} className="flex items-center gap-2 text-left group">
+                      <span className={`w-4 h-4 rounded-full border-2 flex-shrink-0 bg-white flex items-center justify-center transition-colors ${on ? 'border-[#55A4DA]' : 'border-[#55A4DA]/40 group-hover:border-[#55A4DA]'}`}>
+                        {on && <span className="w-2 h-2 rounded-full bg-[#55A4DA]" />}
+                      </span>
+                      <p className={`text-sm ${on ? 'text-[#2C2C2C] font-semibold' : 'text-[#2C2C2C]'}`}>{opt}</p>
+                    </button>
+                  );
+                })}
               </div>
             )}
             {q.type === 'multiple' && (
-              <MultiSelectPreview options={q.options} minSelect={q.minSelect} maxSelect={q.maxSelect} />
+              <div>
+                <div className="flex flex-wrap gap-2">
+                  {q.options.map((opt, j) => {
+                    const on = (a?.choices ?? []).includes(j);
+                    return (
+                      <button
+                        key={j}
+                        type="button"
+                        onClick={() => toggleMulti(i, j, q.maxSelect)}
+                        aria-pressed={on}
+                        className={`px-3.5 py-1.5 text-sm rounded-lg border transition-colors ${on ? 'bg-[#55A4DA] text-white border-[#55A4DA]' : 'bg-white text-[#2C2C2C] border-[#E1EFFB] hover:border-[#55A4DA]'}`}
+                      >
+                        {opt}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className={`text-xs mt-1.5 ${overflowIdx === i ? 'text-red-500' : 'text-gray-400'}`}>
+                  {overflowIdx === i ? `최대 ${q.maxSelect}개까지만 선택할 수 있어요.` : `최소 ${q.minSelect}개, 최대 ${q.maxSelect}개까지 선택할 수 있어요.`}
+                </p>
+              </div>
             )}
             {q.type === 'short' && (
-              <div className="w-full h-10 bg-white rounded-xl border border-[#E1EFFB] px-3 py-2 text-sm text-gray-400 flex items-center">답변을 입력해 주세요...</div>
+              <input
+                type="text"
+                value={a?.text ?? ''}
+                onChange={e => patch(i, { text: e.target.value })}
+                placeholder="답변을 입력해 주세요..."
+                className="w-full h-10 bg-white rounded-xl border border-[#E1EFFB] px-3 py-2 text-sm text-[#2C2C2C] placeholder:text-gray-400 focus:outline-none focus:border-[#55A4DA]"
+              />
             )}
             {q.type === 'long' && (
-              <div className="w-full h-16 bg-white rounded-xl border border-[#E1EFFB] px-3 py-2 text-sm text-gray-400 flex items-start">답변을 입력해 주세요...</div>
+              <textarea
+                value={a?.text ?? ''}
+                onChange={e => patch(i, { text: e.target.value })}
+                placeholder="답변을 입력해 주세요..."
+                rows={3}
+                className="w-full bg-white rounded-xl border border-[#E1EFFB] px-3 py-2 text-sm text-[#2C2C2C] placeholder:text-gray-400 focus:outline-none focus:border-[#55A4DA] resize-none"
+              />
             )}
           </div>
         );
       })}
-      <button className="w-full py-3 bg-[#55A4DA] hover:bg-[#3A8BC4] text-white text-sm font-semibold rounded-xl transition-colors">제출하기</button>
+      {error && <p className="text-xs font-semibold text-red-500">{error}</p>}
+      <button
+        type="button"
+        onClick={submit}
+        className={`w-full py-3 text-white text-sm font-semibold rounded-xl transition-colors ${submitted ? 'bg-emerald-500' : 'bg-[#55A4DA] hover:bg-[#3A8BC4]'}`}
+      >
+        {submitted ? '제출 완료 ✓' : '제출하기'}
+      </button>
+      {submitted && <p className="text-xs text-center text-gray-400">응답이 저장되었습니다. 수정 후 다시 제출할 수 있어요.</p>}
+    </div>
+  );
+}
+
+// ── 상시 만족도 카드 — 이모지 단일 선택 + 체크박스 복수 선택 + 한 줄 의견 + 제출 ──
+function AlwaysSurveyCard({ ratingOptions, followUp, followUpOptions, openQuestion, onRespond }: {
+  ratingOptions?: string[];
+  followUp?: string;
+  followUpOptions?: string[];
+  openQuestion?: string;
+  onRespond?: InteractionResponder;
+}) {
+  const opts = ratingOptions?.length ? ratingOptions : ['아쉬워요', '괜찮아요', '최고예요'];
+  const followUpLabel = followUp || '도움이 된 콘텐츠가 있었나요?';
+  const followUpOpts = followUpOptions?.length ? followUpOptions : ['본문 콘텐츠', '인터랙션', '특별히 없음'];
+  const openLabel = openQuestion || '한 줄 의견을 남겨주세요';
+  const EMOJIS = ['😐', '😊', '🤩'];
+  const [rating, setRating] = useState<number | null>(null);
+  const [checks, setChecks] = useState<Set<number>>(new Set());
+  const [text, setText] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
+
+  const toggleCheck = (i: number) => {
+    setSubmitted(false);
+    setChecks(prev => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i); else next.add(i);
+      return next;
+    });
+  };
+
+  function submit() {
+    if (rating === null) { setError('이번 호가 어떠셨는지 선택해 주세요.'); return; }
+    setError(null);
+    onRespond?.('survey-always', '이번 호 어떠셨나요?', {
+      rating: opts[rating],
+      ratingIndex: rating,
+      helpful: followUpOpts.filter((_, i) => checks.has(i)),
+      comment: text.trim(),
+    });
+    setSubmitted(true);
+  }
+
+  return (
+    <div className="rounded-2xl p-6 space-y-4 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+      <p className="text-base font-semibold text-[#2C2C2C]">이번 호 어떠셨나요?</p>
+      <div className="flex gap-2">
+        {opts.map((opt, i) => {
+          const on = rating === i;
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => { setSubmitted(false); setRating(i); }}
+              aria-pressed={on}
+              className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-xl border transition-colors ${on ? 'bg-[#EAF4FC] border-[#55A4DA] ring-1 ring-[#55A4DA]' : 'bg-white border-[#E1EFFB] hover:border-[#55A4DA]'}`}
+            >
+              <span className="text-2xl">{EMOJIS[i] ?? '🙂'}</span>
+              <span className={`text-xs ${on ? 'text-[#55A4DA] font-bold' : 'text-[#6B7280]'}`}>{opt}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div>
+        <p className="text-sm font-semibold text-[#2C2C2C] mb-2">{followUpLabel}</p>
+        <div className="space-y-2">
+          {followUpOpts.map((opt, i) => {
+            const on = checks.has(i);
+            return (
+              <button key={i} type="button" onClick={() => toggleCheck(i)} className="flex items-center gap-2 text-left group">
+                <span className={`w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${on ? 'bg-[#55A4DA] border-[#55A4DA]' : 'bg-white border-[#55A4DA]/40 group-hover:border-[#55A4DA]'}`}>
+                  {on && (
+                    <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </span>
+                <p className={`text-sm ${on ? 'text-[#55A4DA] font-medium' : 'text-[#2C2C2C]'}`}>{opt}</p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div>
+        <p className="text-sm font-semibold text-[#2C2C2C] mb-1.5">{openLabel}</p>
+        <textarea
+          value={text}
+          onChange={e => { setSubmitted(false); setText(e.target.value); }}
+          placeholder="답변을 입력해 주세요..."
+          rows={2}
+          className="w-full bg-white rounded-xl border border-[#E1EFFB] px-3 py-2 text-sm text-[#2C2C2C] placeholder:text-gray-400 focus:outline-none focus:border-[#55A4DA] resize-none"
+        />
+      </div>
+      {error && <p className="text-xs font-semibold text-red-500">{error}</p>}
+      <button
+        type="button"
+        onClick={submit}
+        className={`w-full py-3 text-white text-sm font-semibold rounded-xl transition-colors ${submitted ? 'bg-emerald-500' : 'bg-[#55A4DA] hover:bg-[#3A8BC4]'}`}
+      >
+        {submitted ? '제출 완료 ✓' : '제출하기'}
+      </button>
+      {submitted && <p className="text-xs text-center text-gray-400">응답이 저장되었습니다. 수정 후 다시 제출할 수 있어요.</p>}
     </div>
   );
 }
 
 export function renderSurveyTemplates(
   types: SurveyTypeKey[],
-  opts?: { contentLabels?: string[]; interactionLabels?: string[] },
+  opts?: { contentLabels?: string[]; interactionLabels?: string[]; onRespond?: InteractionResponder },
 ) {
   if (types.length === 0) return null;
   return (
@@ -397,37 +553,10 @@ export function renderSurveyTemplates(
       <div className="space-y-5">
         {types.map(type => {
           if (type === 'always') {
-            return (
-              <div key={type} className="rounded-2xl p-6 space-y-4 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
-                <p className="text-base font-semibold text-[#2C2C2C]">이번 호 어떠셨나요?</p>
-                <div className="flex gap-2">
-                  {['아쉬워요', '괜찮아요', '최고예요'].map((opt, i) => (
-                    <button key={i} className="flex-1 flex flex-col items-center gap-1 py-3 bg-white rounded-xl border border-[#E1EFFB] hover:border-[#55A4DA] transition-colors">
-                      <span className="text-2xl">{['😐', '😊', '🤩'][i]}</span>
-                      <span className="text-xs text-[#6B7280]">{opt}</span>
-                    </button>
-                  ))}
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-[#2C2C2C] mb-2">도움이 된 콘텐츠가 있었나요?</p>
-                  <div className="space-y-2">
-                    {['본문 콘텐츠', '인터랙션', '특별히 없음'].map((opt, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <div className="w-4 h-4 rounded border-2 border-[#55A4DA]/40 flex-shrink-0 bg-white" />
-                        <p className="text-sm text-[#2C2C2C]">{opt}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-[#2C2C2C] mb-1.5">한 줄 의견을 남겨주세요</p>
-                  <div className="w-full h-16 bg-white rounded-xl border border-[#E1EFFB] px-3 py-2 text-sm text-gray-400 flex items-start">답변을 입력해 주세요...</div>
-                </div>
-              </div>
-            );
+            return <AlwaysSurveyCard key={type} onRespond={opts?.onRespond} />;
           }
           // periodic — 확정 12문항(동적 선택지 포함)
-          return renderPeriodicSurveyCard(buildPeriodicSurveyQuestions(opts), type);
+          return <PeriodicSurveyCard key={type} questions={buildPeriodicSurveyQuestions(opts)} onRespond={opts?.onRespond} />;
         })}
       </div>
     </>
@@ -449,6 +578,8 @@ export interface FullBodyOpts {
   templateSurveyInteractionLabels?: string[];
   /** 인라인 편집 콜백 — 전달 시 텍스트를 직접 클릭하여 수정 가능 */
   onInlineEdit?: InlineEditCallback;
+  /** 응답 기록 콜백 — 직책자 페이지에서만 전달 (인터랙션·만족도 응답 저장) */
+  onRespond?: InteractionResponder;
 }
 
 // 썸네일 — 오류 없이 항상 표시. 후보 URL을 순서대로 시도(onError 시 다음 후보) →
@@ -514,8 +645,171 @@ function HeroOverlay({ sources, label, children }: {
 }
 
 // 전체 본문 렌더 (실시간 미리보기·미리보기 모달·제작완료 미리보기 공통)
+// ── 응답 기록 콜백 — 직책자 페이지에서만 전달됨 (관리자 미리보기에서는 저장 안 함) ──
+export type InteractionResponder = (kind: 'quiz' | 'scenario' | 'selfcheck' | 'survey-always' | 'survey-periodic', elementKey: string, response: Record<string, unknown>) => void;
+
+// ── 인터랙션: 퀴즈 — 선택지 클릭 후 정답 확인 (정답/오답 하이라이트) ──
+function QuizInteraction({ title, content, onRespond }: { title: string; content: { question: string; options: string[]; answer: number }; onRespond?: InteractionResponder }) {
+  const [selected, setSelected] = useState<number | null>(null);
+  const [revealed, setRevealed] = useState(false);
+  const answer = Number.isInteger(content.answer) ? content.answer : -1;
+  const isCorrect = revealed && selected === answer;
+  return (
+    <div className="rounded-2xl p-6 space-y-3 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+      <div className="flex items-center gap-2"><span className="text-lg">🧠</span><p className="text-base font-semibold text-[#2C2C2C]">{title}</p></div>
+      <p className="text-base text-[#6B7280] leading-[1.8]">{content.question}</p>
+      <div className="space-y-2">
+        {(content.options ?? []).map((opt, i) => {
+          const isSelected = selected === i;
+          const isAnswer = i === answer;
+          const stateClass = revealed
+            ? isAnswer
+              ? 'border-emerald-400 bg-emerald-50'
+              : isSelected
+                ? 'border-red-300 bg-red-50'
+                : 'border-[#E1EFFB] bg-white opacity-60'
+            : isSelected
+              ? 'border-[#55A4DA] bg-white ring-1 ring-[#55A4DA]'
+              : 'border-[#E1EFFB] bg-white hover:border-[#55A4DA]';
+          return (
+            <button
+              key={i}
+              type="button"
+              disabled={revealed}
+              onClick={() => setSelected(i)}
+              className={`w-full text-left flex items-center gap-2.5 px-4 py-3 rounded-xl border text-base text-[#2C2C2C] transition-colors ${stateClass} ${revealed ? 'cursor-default' : 'cursor-pointer'}`}
+            >
+              <span className={`w-4 h-4 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${isSelected && !revealed ? 'border-[#55A4DA]' : revealed && isAnswer ? 'border-emerald-400' : revealed && isSelected ? 'border-red-300' : 'border-gray-300'}`}>
+                {isSelected && !revealed && <span className="w-2 h-2 rounded-full bg-[#55A4DA]" />}
+              </span>
+              <span className="flex-1">{opt}</span>
+              {revealed && isAnswer && <span className="text-emerald-500 font-bold flex-shrink-0">✓</span>}
+              {revealed && isSelected && !isAnswer && <span className="text-red-400 font-bold flex-shrink-0">✕</span>}
+            </button>
+          );
+        })}
+      </div>
+      {!revealed ? (
+        <button
+          type="button"
+          onClick={() => {
+            if (selected === null) return;
+            setRevealed(true);
+            // 정답 확인 시점에 응답 기록
+            onRespond?.('quiz', title, {
+              question: content.question,
+              selectedIndex: selected,
+              selectedLabel: content.options?.[selected] ?? '',
+              answerIndex: answer,
+              correct: selected === answer,
+            });
+          }}
+          disabled={selected === null}
+          className={`text-sm font-bold ${selected === null ? 'text-gray-300 cursor-not-allowed' : 'text-[#55A4DA] hover:underline'}`}
+        >
+          정답 확인하기 →
+        </button>
+      ) : (
+        <div className="flex items-center justify-between gap-2">
+          <p className={`text-sm font-bold ${isCorrect ? 'text-emerald-600' : 'text-red-500'}`}>
+            {isCorrect ? '🎉 정답입니다!' : `아쉬워요, 정답은 ${answer + 1}번이에요.`}
+          </p>
+          <button type="button" onClick={() => { setSelected(null); setRevealed(false); }} className="text-xs font-medium text-gray-400 hover:text-gray-600">
+            다시 풀기
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 인터랙션: 상황 시나리오 — 선택지 클릭 시 해당 선택의 피드백(result) 표시 ──
+function ScenarioInteraction({ title, content, onRespond }: { title: string; content: { situation: string; options: { label: string; result: string }[] }; onRespond?: InteractionResponder }) {
+  const [selected, setSelected] = useState<number | null>(null);
+  const options = content.options ?? [];
+  const result = selected !== null ? (options[selected]?.result ?? '') : '';
+  return (
+    <div className="rounded-2xl p-6 space-y-3 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+      <div className="flex items-center gap-2"><span className="text-lg">🎭</span><p className="text-base font-semibold text-[#2C2C2C]">{title}</p></div>
+      <p className="text-base text-[#6B7280] leading-[1.8]">{content.situation}</p>
+      <div className="space-y-2">
+        {options.map((opt, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => {
+              const next = selected === i ? null : i;
+              setSelected(next);
+              // 선택 시점에 응답 기록 (해제는 기록하지 않음)
+              if (next !== null) {
+                onRespond?.('scenario', title, {
+                  situation: content.situation,
+                  selectedIndex: next,
+                  selectedLabel: options[next]?.label ?? '',
+                });
+              }
+            }}
+            className={`w-full text-left px-4 py-3 rounded-xl border text-base text-[#2C2C2C] transition-colors ${selected === i ? 'border-[#55A4DA] bg-white ring-1 ring-[#55A4DA]' : 'bg-white border-[#E1EFFB] hover:border-[#55A4DA]'}`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+      {result && (
+        <div className="rounded-xl px-4 py-3.5 bg-white border border-[#55A4DA]/40">
+          <p className="text-xs font-bold text-[#55A4DA] mb-1">💡 이 선택은요</p>
+          <p className="text-base text-[#2C2C2C] leading-[1.7]">{result}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 인터랙션: 셀프 체크리스트 — 항목 체크 토글 + 체크 개수 표시 ──
+function SelfCheckInteraction({ title, content, onRespond }: { title: string; content: { items: string[] }; onRespond?: InteractionResponder }) {
+  const [checked, setChecked] = useState<Set<number>>(new Set());
+  const items = content.items ?? [];
+  const toggle = (i: number) => setChecked(prev => {
+    const next = new Set(prev);
+    if (next.has(i)) next.delete(i); else next.add(i);
+    // 체크 변경 시점마다 최신 상태 기록 (upsert라 마지막 상태만 유지됨)
+    onRespond?.('selfcheck', title, {
+      items, // 전체 항목 목록 — 분석 페이지 항목별 체크율 집계용
+      checkedItems: items.filter((_, j) => next.has(j)),
+      checkedCount: next.size,
+      totalCount: items.length,
+    });
+    return next;
+  });
+  return (
+    <div className="rounded-2xl p-6 space-y-3 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2"><span className="text-lg">✅</span><p className="text-base font-semibold text-[#2C2C2C]">{title}</p></div>
+        {checked.size > 0 && <p className="text-xs font-bold text-[#55A4DA]">{checked.size}/{items.length} 체크</p>}
+      </div>
+      <div className="space-y-2.5">
+        {items.map((item, i) => {
+          const on = checked.has(i);
+          return (
+            <button key={i} type="button" onClick={() => toggle(i)} className="w-full flex items-start gap-2.5 text-left group">
+              <span className={`w-4 h-4 rounded border-2 flex-shrink-0 mt-1 flex items-center justify-center transition-colors ${on ? 'bg-[#55A4DA] border-[#55A4DA]' : 'bg-white border-[#55A4DA]/40 group-hover:border-[#55A4DA]'}`}>
+                {on && (
+                  <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </span>
+              <p className={`text-base ${on ? 'text-[#55A4DA] font-medium' : 'text-[#2C2C2C]'}`}>{item}</p>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: FullBodyOpts) {
-  const { vol, dateLabel, leadershipLabel, templateInteractions, templateSurveys, templateSurveyContentLabels, templateSurveyInteractionLabels, onInlineEdit } = opts;
+  const { vol, dateLabel, leadershipLabel, templateInteractions, templateSurveys, templateSurveyContentLabels, templateSurveyInteractionLabels, onInlineEdit, onRespond } = opts;
   const useTemplateSurveys = templateSurveys !== undefined;
   const e = onInlineEdit; // shorthand
 
@@ -778,50 +1072,15 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
               {genList.map((ia, idx) => {
                 if (ia.type === 'quiz') {
                   const c = ia.content as { question: string; options: string[]; answer: number };
-                  return (
-                    <div key={idx} className="rounded-2xl p-6 space-y-3 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
-                      <div className="flex items-center gap-2"><span className="text-lg">🧠</span><p className="text-base font-semibold text-[#2C2C2C]">{ia.title}</p></div>
-                      <p className="text-base text-[#6B7280] leading-[1.8]">{c.question}</p>
-                      <div className="space-y-2">
-                        {(c.options ?? []).map((opt, i) => (
-                          <div key={i} className="flex items-center gap-2.5 px-4 py-3 bg-white rounded-xl border border-[#E1EFFB] text-base text-[#2C2C2C]">
-                            <div className="w-4 h-4 rounded-full border-2 border-gray-300 flex-shrink-0" />{opt}
-                          </div>
-                        ))}
-                      </div>
-                      <button className="text-sm font-bold text-[#55A4DA] hover:underline">정답 확인하기 →</button>
-                    </div>
-                  );
+                  return <QuizInteraction key={idx} title={ia.title} content={c} onRespond={onRespond} />;
                 }
                 if (ia.type === 'scenario') {
                   const c = ia.content as { situation: string; options: { label: string; result: string }[] };
-                  return (
-                    <div key={idx} className="rounded-2xl p-6 space-y-3 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
-                      <div className="flex items-center gap-2"><span className="text-lg">🎭</span><p className="text-base font-semibold text-[#2C2C2C]">{ia.title}</p></div>
-                      <p className="text-base text-[#6B7280] leading-[1.8]">{c.situation}</p>
-                      <div className="space-y-2">
-                        {(c.options ?? []).map((opt, i) => (
-                          <button key={i} className="w-full text-left px-4 py-3 bg-white rounded-xl border border-[#E1EFFB] text-base text-[#2C2C2C] hover:border-[#55A4DA] transition-colors">{opt.label}</button>
-                        ))}
-                      </div>
-                    </div>
-                  );
+                  return <ScenarioInteraction key={idx} title={ia.title} content={c} onRespond={onRespond} />;
                 }
                 if (ia.type === 'selfcheck') {
                   const c = ia.content as { items: string[] };
-                  return (
-                    <div key={idx} className="rounded-2xl p-6 space-y-3 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
-                      <div className="flex items-center gap-2"><span className="text-lg">✅</span><p className="text-base font-semibold text-[#2C2C2C]">{ia.title}</p></div>
-                      <div className="space-y-2.5">
-                        {(c.items ?? []).map((item, i) => (
-                          <div key={i} className="flex items-start gap-2.5">
-                            <div className="w-4 h-4 rounded border-2 border-[#55A4DA]/40 flex-shrink-0 mt-1 bg-white" />
-                            <p className="text-base text-[#2C2C2C]">{item}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
+                  return <SelfCheckInteraction key={idx} title={ia.title} content={c} onRespond={onRespond} />;
                 }
                 if (ia.type === 'reflection') {
                   const c = ia.content as { questions: string[] };
@@ -874,7 +1133,7 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
         })()}
 
         {/* 만족도 — 템플릿 override 시 선택된 타입을 즉시 렌더 */}
-        {useTemplateSurveys && renderSurveyTemplates(templateSurveys!, { contentLabels: templateSurveyContentLabels, interactionLabels: templateSurveyInteractionLabels })}
+        {useTemplateSurveys && renderSurveyTemplates(templateSurveys!, { contentLabels: templateSurveyContentLabels, interactionLabels: templateSurveyInteractionLabels, onRespond })}
         {!useTemplateSurveys && generated.surveys.length > 0 && (
           <>
             {renderSectionHeader('💬', '의견 들려주세요', 'Feedback')}
@@ -883,36 +1142,18 @@ export function renderGeneratedFullBody(generated: GeneratedNewsletter, opts: Fu
                 if (survey.type === 'always') {
                   const q = survey.questions[0] as { type: 'rating'; options: string[]; followUp: string; followUpOptions: string[]; openQuestion: string };
                   return (
-                    <div key={idx} className="rounded-2xl p-6 space-y-4 border border-[#E1EFFB]" style={{ backgroundColor: '#F0F7FF' }}>
-                      <p className="text-base font-semibold text-[#2C2C2C]">이번 호 어떠셨나요?</p>
-                      <div className="flex gap-2">
-                        {(q.options ?? []).map((opt, i) => (
-                          <button key={i} className="flex-1 flex flex-col items-center gap-1 py-3 bg-white rounded-xl border border-[#E1EFFB] hover:border-[#55A4DA] transition-colors">
-                            <span className="text-2xl">{['😐', '😊', '🤩'][i]}</span>
-                            <span className="text-xs text-[#6B7280]">{opt}</span>
-                          </button>
-                        ))}
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-[#2C2C2C] mb-2">{q.followUp}</p>
-                        <div className="space-y-2">
-                          {(q.followUpOptions ?? []).map((opt, i) => (
-                            <div key={i} className="flex items-center gap-2">
-                              <div className="w-4 h-4 rounded border-2 border-[#55A4DA]/40 flex-shrink-0 bg-white" />
-                              <p className="text-sm text-[#2C2C2C]">{opt}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-[#2C2C2C] mb-1.5">{q.openQuestion}</p>
-                        <div className="w-full h-16 bg-white rounded-xl border border-[#E1EFFB] px-3 py-2 text-sm text-gray-400 flex items-start">답변을 입력해 주세요...</div>
-                      </div>
-                    </div>
+                    <AlwaysSurveyCard
+                      key={idx}
+                      ratingOptions={q.options}
+                      followUp={q.followUp}
+                      followUpOptions={q.followUpOptions}
+                      openQuestion={q.openQuestion}
+                      onRespond={onRespond}
+                    />
                   );
                 }
                 if (survey.type === 'periodic') {
-                  return renderPeriodicSurveyCard(survey.questions as PeriodicSurveyQuestion[], String(idx));
+                  return <PeriodicSurveyCard key={idx} questions={survey.questions as PeriodicSurveyQuestion[]} onRespond={onRespond} />;
                 }
                 return null;
               })}

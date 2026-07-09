@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { type Participant } from '@/store/participantStore';
 import { type Newsletter } from '@/store/newsletterStore';
-import { renderGeneratedFullBody, resolveRoundGroup } from '@/components/newsletter/NewsletterRender';
+import { renderGeneratedFullBody, resolveRoundGroup, type InteractionResponder } from '@/components/newsletter/NewsletterRender';
 import { INTERACTION_SURVEY_LABELS } from '@/lib/periodicSurvey';
 import { DEFAULT_STORYLINE, STEP_COLORS } from '@/lib/storyline';
 
@@ -171,6 +171,22 @@ export default function ParticipantNewsletterPage() {
     setActiveTab('newsletter');
   };
 
+  // 인터랙션·만족도 응답 저장 — 실패해도 화면 흐름은 막지 않음
+  const submitResponse: InteractionResponder = (kind, elementKey, response) => {
+    void fetch('/api/newsletter/respond', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token,
+        kind,
+        elementKey,
+        response,
+        newsletterId: newsletter?.id ?? 0,
+        roundIndex: activeVol,
+      }),
+    }).catch(err => console.error('응답 저장 오류:', err));
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* 상단 헤더 + 탭 */}
@@ -226,6 +242,7 @@ export default function ParticipantNewsletterPage() {
                 templateSurveys: surveys,
                 templateSurveyContentLabels: generated.sections.map(s => s.contentTitle).filter(Boolean),
                 templateSurveyInteractionLabels: interactions.map(k => INTERACTION_SURVEY_LABELS[k] ?? k),
+                onRespond: submitResponse,
               });
             })() : (
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-12 text-center space-y-3">
