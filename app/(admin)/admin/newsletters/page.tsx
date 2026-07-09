@@ -7,6 +7,7 @@ import { useNewNewsletterDraftStore, type WizardStep } from '@/store/newNewslett
 import { DEFAULT_STORYLINE } from '@/lib/storyline';
 import type { Round } from '@/lib/content';
 import { sentKey, isSendGroupSent } from '@/lib/newsletterSend';
+import { type DeliveryInterval, calcScheduleDates, formatKoreanDate } from '@/lib/schedule';
 import { useCompanyStore } from '@/store/companyStore';
 import { useNewsletterStore, type Newsletter } from '@/store/newsletterStore';
 import CompanyLogo from '@/components/CompanyLogo';
@@ -322,13 +323,30 @@ function formatRelativeTime(dateStr: string): string {
   return `${y}.${m}.${d}`;
 }
 
-// 이 기업의 뉴스레터들 중 해당 회차(1-based)의 발송일(dateLabel)을 찾는다.
+// 이 기업의 뉴스레터들 중 해당 회차(1-based)의 발송일을 찾는다.
 // 같은 회차를 여러 유형(뉴스레터)이 나눠 받아도 발송일은 보통 회차 단위로 동일하므로,
 // 처음 발견되는 유효한 값 하나만 사용해 회차당 한 번만 표시한다.
+// 우선순위: ① 제작완료 시 저장된 본문의 dateLabel → ② authoring의 회차별 수동 변경(scheduleDateOverrides)
+// → ③ authoring의 startDate·deliveryInterval로 균등 계산 → ④ 계산 불가(null, 화면에서 '발송일 미정'으로 표시)
 function findRoundDateLabel(companyNewsletters: Newsletter[], roundNum: number): string | null {
+  // ① 제작완료된 회차는 저장된 본문에 실제 발송일이 확정되어 있음
   for (const nl of companyNewsletters) {
     const label = nl.generatedContent?.rounds?.[roundNum - 1]?.dateLabel;
     if (label && label.trim()) return label.trim();
+  }
+  // ②·③ 제작 중 회차는 authoring(시작일·주기·수동 변경분)으로 계산
+  for (const nl of companyNewsletters) {
+    const a = nl.authoring;
+    if (!a?.startDate || !a?.deliveryInterval) continue;
+    const totalRounds = a.totalRounds && a.totalRounds > 0 ? a.totalRounds : (a.rounds?.length ?? 0);
+    if (totalRounds <= 0 || roundNum > totalRounds) continue;
+    const override = a.scheduleDateOverrides?.[roundNum - 1];
+    if (override) {
+      const od = new Date(override + 'T00:00:00');
+      if (!Number.isNaN(od.getTime())) return formatKoreanDate(od);
+    }
+    const computed = calcScheduleDates(a.startDate, a.deliveryInterval as DeliveryInterval, totalRounds)[roundNum - 1];
+    if (computed) return formatKoreanDate(computed);
   }
   return null;
 }
@@ -1206,6 +1224,7 @@ function NewslettersContent() {
       seededActiveRoundIdx: activeRoundIdx,
       seededStartDate: a?.startDate ?? null,
       seededDeliveryInterval: a?.deliveryInterval ?? null,
+      seededScheduleDateOverrides: a?.scheduleDateOverrides ?? null,
       // 5단계에서 클릭한 그룹 탭을 자동 선택 (없으면 일반형)
       seededPreviewTargetId: opts?.targetGroupId ?? null,
     });

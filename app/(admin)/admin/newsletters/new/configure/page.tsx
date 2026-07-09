@@ -11,6 +11,7 @@ import { LEADERSHIP_COLOR } from '@/lib/constants/leadershipColors';
 import { type Round, type CustomGroup, type RoundAttachment, type GroupDescription, makeCustomGroup, groupCompositionKey } from '@/lib/content';
 import { getContentList, type ContentPoolItem, type ContentCategory } from '@/lib/api/contentPool';
 import { isSendGroupSent } from '@/lib/newsletterSend';
+import { type DeliveryInterval, DELIVERY_INTERVAL_OPTIONS, calcScheduleDates, formatKoreanDate } from '@/lib/schedule';
 import { useNewNewsletterDraftStore, type TopicSuggestion as DraftTopicSuggestion } from '@/store/newNewsletterDraftStore';
 import { useParticipantStore } from '@/store/participantStore';
 import { useLeadershipInfoStore } from '@/store/leadershipInfoStore';
@@ -25,18 +26,9 @@ import {
   type SavedNewsletterGroup,
 } from '@/components/newsletter/NewsletterRender';
 
-type DeliveryInterval = 'weekly' | 'biweekly' | 'monthly' | 'bimonthly' | 'quarterly' | 'semiannual';
 type WizardStep = 1 | 2 | 3 | 4 | 5;
 type TopicSuggestion = DraftTopicSuggestion;
 
-const DELIVERY_INTERVAL_OPTIONS: Array<{ value: DeliveryInterval; label: string; days: number; desc: string }> = [
-  { value: 'weekly',     label: '주간',   days: 7,   desc: '7일마다' },
-  { value: 'biweekly',   label: '격주',   days: 14,  desc: '14일마다' },
-  { value: 'monthly',    label: '월 1회', days: 30,  desc: '30일마다' },
-  { value: 'bimonthly',  label: '월 2회', days: 15,  desc: '15일마다' },
-  { value: 'quarterly',  label: '분기',   days: 90,  desc: '90일마다' },
-  { value: 'semiannual', label: '반기',   days: 180, desc: '180일마다' },
-];
 const WIZARD_STEPS: Array<{ n: WizardStep; label: string }> = [
   { n: 1, label: '스토리라인' },
   { n: 2, label: '회차 설계' },
@@ -97,20 +89,6 @@ function getDefaultStartDate(): string {
   const d = new Date();
   d.setDate(d.getDate() + 14);
   return d.toISOString().split('T')[0];
-}
-
-function calcScheduleDates(startDate: string, interval: DeliveryInterval, count: number): Date[] {
-  const days = DELIVERY_INTERVAL_OPTIONS.find(o => o.value === interval)?.days ?? 30;
-  const start = new Date(startDate + 'T00:00:00');
-  return Array.from({ length: count }, (_, i) => {
-    const d = new Date(start);
-    d.setDate(d.getDate() + i * days);
-    return d;
-  });
-}
-
-function formatKoreanDate(date: Date): string {
-  return date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
 // 발송일 <input type="date"> 값용 로컬 기준 YYYY-MM-DD 문자열.
@@ -357,7 +335,7 @@ function ConfigureContent() {
   const [deliveryInterval, setDeliveryInterval] = useState<DeliveryInterval | null>((configDraft.seededDeliveryInterval as DeliveryInterval | null) ?? null);
   const [startDate, setStartDate] = useState<string>(configDraft.seededStartDate ?? getDefaultStartDate());
   // 회차별 발송일 수동 변경분 (회차 index → 'YYYY-MM-DD'). 휴일 등으로 특정 회차만 옮길 때 사용.
-  const [scheduleDateOverrides, setScheduleDateOverrides] = useState<Record<number, string>>({});
+  const [scheduleDateOverrides, setScheduleDateOverrides] = useState<Record<number, string>>(configDraft.seededScheduleDateOverrides ?? {});
 
   // ── 저장/임시저장 토스트 ──
   const [showDraftToast, setShowDraftToast] = useState(false);
@@ -1438,6 +1416,7 @@ function ConfigureContent() {
       storyline: customStoryline, totalRounds, roundDistribution, rounds,
       startDate, deliveryInterval: deliveryInterval ?? undefined,
       lastWizardStep: wizardStep, lastActiveRoundIdx,
+      scheduleDateOverrides,
     };
   }
 

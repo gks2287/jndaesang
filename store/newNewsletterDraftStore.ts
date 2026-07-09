@@ -38,6 +38,7 @@ interface NewNewsletterDraft {
   seededActiveRoundIdx: number;
   seededStartDate: string | null;
   seededDeliveryInterval: string | null;
+  seededScheduleDateOverrides: Record<number, string> | null;
   // 이어서/수정 진입 시 5단계에서 자동 선택할 그룹/일반형 탭 id ('general' 또는 customGroup.id)
   seededPreviewTargetId: string | null;
 }
@@ -61,6 +62,7 @@ const DEFAULT_DRAFT: NewNewsletterDraft = {
   seededActiveRoundIdx: 0,
   seededStartDate: null,
   seededDeliveryInterval: null,
+  seededScheduleDateOverrides: null,
   seededPreviewTargetId: null,
 };
 
