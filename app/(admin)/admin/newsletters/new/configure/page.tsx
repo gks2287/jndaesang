@@ -2129,10 +2129,14 @@ function ConfigureContent() {
       );
     }
 
+    // 회차별 발송일(발송일 설정 단계 자동 계산 + 회차별 수동 변경분 반영) — buildSavedContent와 동일 방식
+    const schedDate = getEffectiveScheduleDates()[activeRoundIdx];
+    const dateLabel = schedDate ? formatKoreanDate(schedDate) : '발송일 미정';
+
     if (livePreviewMode === 'email') {
-      return renderNewsletterEmailPreview(generated, { vol: activeRoundIdx + 1, dateLabel: '발송일 미정', firstThumbnail, onReadFull: () => setLivePreviewMode('full') });
+      return renderNewsletterEmailPreview(generated, { vol: activeRoundIdx + 1, dateLabel, firstThumbnail, onReadFull: () => setLivePreviewMode('full') });
     }
-    return renderGeneratedFullBody(generated, { vol: activeRoundIdx + 1, dateLabel: '발송일 미정', leadershipLabel, firstThumbnail, templateInteractions: interactions, templateSurveys: surveys, templateSurveyContentLabels: contents.map(c => c.title), templateSurveyInteractionLabels: interactions.map(k => INTERACTION_LABELS[k] ?? k), onInlineEdit: handleInlineEdit });
+    return renderGeneratedFullBody(generated, { vol: activeRoundIdx + 1, dateLabel, leadershipLabel, firstThumbnail, templateInteractions: interactions, templateSurveys: surveys, templateSurveyContentLabels: contents.map(c => c.title), templateSurveyInteractionLabels: interactions.map(k => INTERACTION_LABELS[k] ?? k), onInlineEdit: handleInlineEdit });
   }
 
   // ── 본문 편집 패널 (미리보기 모달) ──
