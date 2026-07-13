@@ -355,6 +355,15 @@ function ConfigureContent() {
     } else {
       setGroupTopic(activeRoundIdx, targetId, headline);
     }
+    // 불러온 본문을 갱신 후 구성(주제=headline) 기준 최신으로 표시 — 직후 '변경사항 반영' 버튼이 뜨지 않도록
+    {
+      const r = rounds[activeRoundIdx];
+      const group = targetId !== 'general' ? r?.customGroups.find(g => g.id === targetId) : undefined;
+      const ids = (targetId !== 'general' ? (group?.contents ?? []) : (r?.contents ?? [])).map(c => c.id);
+      const interactions = targetId !== 'general' ? (group?.interactions ?? []) : (r?.interactions ?? []);
+      const surveys = targetId !== 'general' ? (group?.surveys ?? []) : (r?.surveys ?? []);
+      livePreviewSigRef.current[key] = JSON.stringify({ roundIdx: activeRoundIdx, targetId, topic: headline, ids, interactions, surveys });
+    }
     setLivePreviewContent(prev => ({ ...prev, [key]: generated }));
     setGeneratedContent(prev => {
       const n = { ...prev, [activeRoundIdx]: generated };
@@ -540,6 +549,9 @@ function ConfigureContent() {
       const sig = JSON.stringify({ roundIdx: activeRoundIdx, targetId, topic, ids, interactions, surveys });
       const key = `${activeRoundIdx}:${targetId}`;
       if (livePreviewSigRef.current[key] === sig) return; // 현재 구성과 동일 — 이미 최신 (탭 전환 등)
+      // 미리보기가 이미 공개되고 본문이 있는 대상은 자동 재생성하지 않는다.
+      // 하단 '변경사항 반영' 버튼을 눌렀을 때만 반영 (applyConfigChanges) — 의도치 않은 AI 재생성 방지.
+      if (revealedPreviews.has(key) && livePreviewContent[key]) return;
       // 주제/콘텐츠 변경 → 편집 본문은 폐기하고 새로 생성 (general은 모달 캐시·편집 표시도 무효화)
       if (targetId === 'general') {
         editedRoundsRef.current.delete(activeRoundIdx);
@@ -836,6 +848,29 @@ function ConfigureContent() {
     } finally {
       setLivePreviewGenerating(prev => { const s = new Set(prev); s.delete(key); return s; });
     }
+  }
+
+  // 하단 '변경사항 반영' 버튼: 공개된 미리보기 대상의 구성 변경분을 본문에 수동 반영 (자동 재생성 대체)
+  function applyConfigChanges(roundIdx: number, targetId: string) {
+    const r = rounds[roundIdx];
+    if (!r) return;
+    if (isTargetLocked(roundIdx, targetId)) { showToast('발송 완료된 그룹은 수정할 수 없습니다.'); return; }
+    const isCustom = targetId !== 'general';
+    const group = isCustom ? r.customGroups.find(g => g.id === targetId) : undefined;
+    const topic = isCustom ? (group?.topic ?? '') : r.topic;
+    const ids = (isCustom ? (group?.contents ?? []) : r.contents).map(c => c.id);
+    const interactions = isCustom ? (group?.interactions ?? []) : r.interactions;
+    const surveys = isCustom ? (group?.surveys ?? []) : r.surveys;
+    const key = `${roundIdx}:${targetId}`;
+    // 자동 생성 경로(debounce 효과)와 동일한 시그니처 포맷 유지 — 반영 후 다시 '변경됨'으로 뜨지 않도록
+    livePreviewSigRef.current[key] = JSON.stringify({ roundIdx, targetId, topic, ids, interactions, surveys });
+    // 구성이 바뀌었으므로 직접 편집한 본문·모달 캐시는 폐기 (자동 생성 경로와 동일)
+    if (targetId === 'general') {
+      editedRoundsRef.current.delete(roundIdx);
+      delete generatedContentRef.current[roundIdx];
+      setGeneratedContent(prev => { const n = { ...prev }; delete n[roundIdx]; return n; });
+    }
+    void generateLivePreview(roundIdx, targetId);
   }
 
   // 우측 '구성 완료' 버튼: 해당 대상의 미리보기를 공개하고, 아직 본문이 없으면 즉시 생성 트리거
@@ -1547,6 +1582,17 @@ function ConfigureContent() {
     setActiveRoundIdx(idx);
     setSuggestions([]);
     setTopicError(null);
+  }
+
+  // 미리보기 모달 → 콘텐츠 구성(5단계)의 해당 회차·그룹으로 바로 이동
+  // 인터랙션 요소·콘텐츠 선택·만족도 조사는 구성 패널에서만 수정 가능하므로 모달에서 진입 경로를 제공한다.
+  function jumpToCompose(roundIdx: number, targetId: string) {
+    if (roundIdx !== activeRoundIdx) skipFirstPreviewResetRef.current = true; // 회차 전환 시 그룹 탭이 general로 리셋되지 않도록
+    switchRound(roundIdx);
+    setPreviewTargetId(targetId);
+    setEditMode(false);
+    setEditDraft(null);
+    setPreviewOpen(false);
   }
 
   // ── Step 4: 선택한 이전 회차의 유형 배분(맞춤형 그룹 구성)을 현재 회차에 동일하게 적용 ──
@@ -3133,14 +3179,59 @@ function ConfigureContent() {
                     const tTopic = isCustom ? (grp?.topic ?? '') : r.topic;
                     const tContents = isCustom ? (grp?.contents ?? []) : r.contents;
                     const canReveal = tTopic.trim().length > 0 || tContents.length > 0;
-                    const isRevealed = revealedPreviews.has(`${activeRoundIdx}:${currentTarget}`);
+                    const targetKey = `${activeRoundIdx}:${currentTarget}`;
+                    const isRevealed = revealedPreviews.has(targetKey);
+                    const bannerLocked = isTargetLocked(activeRoundIdx, currentTarget);
+                    const regenerating = livePreviewGenerating.has(targetKey) || preparingTargets.has(targetKey);
+                    const regenFailed = livePreviewErrors.has(targetKey);
+                    // 현재 구성이 마지막 생성 본문과 다른지 — 다르면 '변경사항 반영' 버튼 표시 (자동 재생성 없음)
+                    const tInteractions = isCustom ? (grp?.interactions ?? []) : r.interactions;
+                    const tSurveys = isCustom ? (grp?.surveys ?? []) : r.surveys;
+                    const configSig = JSON.stringify({ roundIdx: activeRoundIdx, targetId: currentTarget, topic: tTopic, ids: tContents.map(c => c.id), interactions: tInteractions, surveys: tSurveys });
+                    const configDirty = !!livePreviewContent[targetKey] && livePreviewSigRef.current[targetKey] !== configSig;
                     return (
                       <div className="pt-2 pb-1">
                         {isRevealed ? (
+                          bannerLocked ? (
+                            <div className="w-full flex items-center justify-center gap-1.5 py-3 rounded-xl bg-gray-100 text-gray-500 text-sm font-semibold">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                              발송 완료된 그룹 · 수정할 수 없습니다
+                            </div>
+                          ) : regenerating ? (
+                            <div className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#EAF4FC] text-[#2E7DB5] text-sm font-semibold">
+                              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
+                              변경사항 반영 중 · 본문을 다시 생성하고 있어요 (약 1분)
+                            </div>
+                          ) : regenFailed ? (
+                            <div className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-50 text-red-500 text-sm font-semibold">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                              본문 생성에 실패했어요
+                              <button
+                                type="button"
+                                onClick={() => { void generateLivePreview(activeRoundIdx, currentTarget); }}
+                                className="ml-1 px-2.5 py-1 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-bold transition-colors"
+                              >
+                                다시 생성
+                              </button>
+                            </div>
+                          ) : configDirty ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => applyConfigChanges(activeRoundIdx, currentTarget)}
+                                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#55A4DA] hover:bg-[#3A8BC4] text-white text-sm font-bold transition-colors shadow-sm"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                변경사항 반영 · 본문 다시 생성
+                              </button>
+                              <p className="text-xs text-gray-400 text-center mt-2">구성이 변경되었어요. 버튼을 누르면 미리보기 본문에 반영됩니다</p>
+                            </>
+                          ) : (
                           <div className="w-full flex items-center justify-center gap-1.5 py-3 rounded-xl bg-emerald-50 text-emerald-600 text-sm font-semibold">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-                            미리보기 표시 중 · 수정하면 자동 반영됩니다
+                            미리보기 표시 중 · 최신 구성이 반영된 상태입니다
                           </div>
+                          )
                         ) : (
                           <>
                             <button
@@ -3881,6 +3972,13 @@ function ConfigureContent() {
                                   <p className="text-sm font-semibold text-gray-600">{curGroup === 'general' ? '아직 생성된 본문이 없어요' : '이 그룹의 본문이 아직 생성되지 않았어요'}</p>
                                   <p className="text-xs text-gray-400 mt-1">콘텐츠 구성 단계에서 {curGroup === 'general' ? '이 회차를' : '이 그룹을'} 먼저 생성해주세요</p>
                                 </div>
+                                <button
+                                  type="button"
+                                  onClick={() => jumpToCompose(previewTab, curGroup)}
+                                  className="mt-1 inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-[#55A4DA] hover:bg-[#3A8BC4] px-3.5 py-1.5 rounded-lg transition-colors"
+                                >
+                                  콘텐츠 구성으로 이동
+                                </button>
                               </>
                             )}
                           </div>
@@ -3917,6 +4015,14 @@ function ConfigureContent() {
                           </div>
                           {!editMode && (
                             <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => jumpToCompose(previewTab, curGroup)}
+                                title="인터랙션 요소·콘텐츠 선택·만족도 조사를 콘텐츠 구성 화면에서 변경합니다"
+                                className="flex items-center gap-1 text-xs font-semibold text-[#55A4DA] hover:text-[#3A8BC4] transition-colors"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                구성 수정
+                              </button>
                               {canEdit && (
                                 <button
                                   onClick={startEdit}
