@@ -16,14 +16,8 @@ function avg(group: PeerRow[]): number | null {
 export async function GET(_req: NextRequest, { params }: { params: { token: string } }) {
   try {
     const token = params.token;
-    let participant = await prisma.participant.findFirst({ where: { token } });
-    if (!participant && token.startsWith('nl-')) {
-      const id = Number(token.slice(3));
-      if (Number.isInteger(id)) {
-        const byId = await prisma.participant.findUnique({ where: { id } });
-        if (byId && !byId.token) participant = byId; // 폴백 토큰은 token 미설정 참여자에게만 유효
-      }
-    }
+    // 추측 가능한 순번(nl-<id>) 폴백 제거 — 오직 발급된 랜덤 토큰으로만 조회(IDOR 차단).
+    const participant = token ? await prisma.participant.findFirst({ where: { token } }) : null;
     if (!participant) {
       return NextResponse.json({ error: '유효하지 않은 링크입니다.' }, { status: 404 });
     }

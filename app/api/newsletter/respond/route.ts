@@ -5,17 +5,10 @@ import { prisma } from '@/lib/db';
 const KINDS = ['quiz', 'scenario', 'selfcheck', 'survey-always', 'survey-periodic'] as const;
 type ResponseKind = typeof KINDS[number];
 
-// 직책자 token → 참여자 해석 (by-token 라우트와 동일한 규칙: nl-<id> 폴백은 token 미설정자만)
+// 직책자 token → 참여자 해석. 발급된 랜덤 토큰으로만 조회(추측 가능한 nl-<id> 폴백 제거).
 async function resolveParticipant(token: string) {
-  let participant = await prisma.participant.findFirst({ where: { token } });
-  if (!participant && token.startsWith('nl-')) {
-    const id = Number(token.slice(3));
-    if (Number.isInteger(id)) {
-      const byId = await prisma.participant.findUnique({ where: { id } });
-      if (byId && !byId.token) participant = byId;
-    }
-  }
-  return participant;
+  if (!token) return null;
+  return prisma.participant.findFirst({ where: { token } });
 }
 
 // POST /api/newsletter/respond — 직책자 응답 저장 (같은 요소 재응답 시 최신으로 갱신)

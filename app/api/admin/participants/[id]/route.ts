@@ -25,7 +25,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       return NextResponse.json({ error: '잘못된 직책자 ID입니다.' }, { status: 400 });
     }
     const data = (await req.json()) as UpdateBody;
-    const updated = await prisma.participant.update({ where: { id }, data });
+    // 토큰은 수정 API로 변경/삭제 불가 — 실수로 null 처리돼 접근 링크가 깨지거나 재추측 가능해지는 것을 방지.
+    const { token: _ignoredToken, ...safeData } = data;
+    void _ignoredToken;
+    const updated = await prisma.participant.update({ where: { id }, data: safeData });
     return NextResponse.json(updated);
   } catch (err) {
     console.error('[admin/participants PATCH]', err);

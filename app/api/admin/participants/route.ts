@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { generateParticipantToken } from '@/lib/token';
 
 // 클라이언트가 보내는 직책자 입력(id 제외)
 type ParticipantInput = {
@@ -32,7 +33,8 @@ function toCreateData(it: ParticipantInput) {
     lastOpenedAt: it.lastOpenedAt ?? null,
     stepCurrent: it.stepCurrent ?? 0,
     stepTotal: it.stepTotal ?? 5,
-    token: it.token ?? null,
+    // 토큰은 서버에서 강제 발급(추측 불가). 클라이언트가 보낸 값은 신뢰하지 않는다.
+    token: generateParticipantToken(),
   };
 }
 

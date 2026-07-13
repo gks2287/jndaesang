@@ -33,8 +33,10 @@ export interface Participant {
   token?: string;
 }
 
+// 참여자 접근 토큰. 추측 가능한 순번(nl-<id>) 폴백은 제거됨 —
+// 모든 참여자는 서버에서 발급한 랜덤 토큰을 가진다(생성 시 강제 발급 + 기존 데이터 백필).
 export function participantToken(p: Participant): string {
-  return p.token ?? `nl-${p.id}`;
+  return p.token ?? '';
 }
 
 type ParticipantInput = Omit<Participant, 'id'>;
