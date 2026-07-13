@@ -20,6 +20,21 @@ const nextConfig = {
       permanent: true,
     }));
   },
+  // HTTP→HTTPS 리디렉트는 Vercel 엣지에서 자동 처리됨. 추가로 HSTS 헤더를 내려
+  // 브라우저가 이후 요청을 항상 HTTPS로 하도록 강제(SSL 스트리핑 방지).
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Strict-Transport-Security',
+            value: 'max-age=63072000; includeSubDomains; preload',
+          },
+        ],
+      },
+    ];
+  },
   experimental: {
     serverComponentsExternalPackages: ['pdf-parse', 'mammoth', '@anthropic-ai/sdk'],
   },
