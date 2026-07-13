@@ -1000,7 +1000,8 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
   const roundNums = Array.from(new Set(types.flatMap(t => t.visibleRounds.map(r => r.round)))).sort((a, b) => a - b);
 
   // 같은 뉴스레터(=동일 발송 본문)를 받는 유형끼리 묶는다. authoring이 있으면 그 안에서 발송 그룹으로 세분화.
-  // 주제는 그룹별(authoring customGroup.topic) — 없으면 회차 공통 주제(fallbackTopic)로 폴백.
+  // 제작 여부(made)·주제는 그룹 단위로 판정 — generatedContent.rounds[].groups[]에 실제 생성된 그룹만 담기므로,
+  // 같은 뉴스레터의 다른 그룹이 만들어졌다고 해서 안 만든 그룹까지 '제작완료'로 뜨지 않도록 한다.
   function sendGroupsFor(typesInRound: typeof types, rn: number, fallbackTopic: string | null) {
     const byNl = new Map<number | undefined, typeof types>();
     for (const t of typesInRound) {
@@ -1008,9 +1009,23 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
       arr.push(t);
       byNl.set(t.newsletterId, arr);
     }
-    const result: { label: string; members: typeof types; topic: string | null; groupId: string | null }[] = [];
+    const result: { label: string; members: typeof types; topic: string | null; groupId: string | null; made: boolean }[] = [];
     for (const [nlId, members] of byNl) {
       const nl = newsletters.find(n => n.id === nlId);
+      const savedRound = nl?.generatedContent?.rounds?.find(r => r.vol === rn);
+      const savedGroups = savedRound?.groups ?? null;
+      const roundHeadline = savedRound?.generated?.headline?.trim() || null;
+      // 특정 타깃(그룹 id 또는 'general')이 실제로 생성됐는지 + 그 생성 본문의 헤드라인.
+      // generatedContent에 그룹 정보(groups)가 있으면 그룹 단위로, 없으면(레거시) 회차 헤드라인 유무로 판정.
+      const madeInfo = (targetId: string | null, targetTypes: string[]): { made: boolean; headline: string | null } => {
+        if (savedGroups && savedGroups.length > 0) {
+          const sg = (targetId ? savedGroups.find(g => g.groupId === targetId) : undefined)
+            ?? (targetId === null ? savedGroups.find(g => g.groupId === 'general') : undefined)
+            ?? (targetTypes.length ? savedGroups.find(g => g.groupId !== 'general' && g.types.length > 0 && g.types.join('·') === targetTypes.join('·')) : undefined);
+          return { made: !!sg?.generated?.headline?.trim(), headline: sg?.generated?.headline?.trim() || null };
+        }
+        return { made: !!roundHeadline, headline: roundHeadline };
+      };
       const cgs = nl?.authoring?.rounds?.[rn - 1]?.customGroups;
       if (cgs && cgs.length > 0) {
         const used = new Set<string>();
@@ -1018,13 +1033,20 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
           const mem = members.filter(t => cg.types.includes(t.typeName));
           if (mem.length === 0) continue;
           mem.forEach(m => used.add(m.typeName));
-          result.push({ label: mem.map(m => m.typeName).join(' / '), members: mem, topic: cg.topic?.trim() || fallbackTopic, groupId: cg.id });
+          const { made, headline } = madeInfo(cg.id, cg.types);
+          // 주제: authoring 주제 우선, 없으면 생성 헤드라인(제작된 경우). 안 만든 그룹은 회차 헤드라인으로 폴백하지 않음.
+          const topic = cg.topic?.trim() || (made ? headline : null);
+          result.push({ label: mem.map(m => m.typeName).join(' / '), members: mem, topic, groupId: cg.id, made });
         }
         const rest = members.filter(t => !used.has(t.typeName));
-        if (rest.length) result.push({ label: rest.map(m => m.typeName).join(' / '), members: rest, topic: fallbackTopic, groupId: null });
+        if (rest.length) {
+          const { made, headline } = madeInfo(null, rest.map(m => m.typeName));
+          result.push({ label: rest.map(m => m.typeName).join(' / '), members: rest, topic: made ? (headline ?? fallbackTopic) : null, groupId: null, made });
+        }
       } else {
         // authoring 없음 → 같은 뉴스레터를 받는 유형은 한 그룹으로 (회차 공통 주제)
-        result.push({ label: members.map(m => m.typeName).join(' / '), members, topic: fallbackTopic, groupId: null });
+        const { made, headline } = madeInfo(null, members.map(m => m.typeName));
+        result.push({ label: members.map(m => m.typeName).join(' / '), members, topic: made ? (headline ?? fallbackTopic) : fallbackTopic, groupId: null, made });
       }
     }
     return result;
@@ -1074,7 +1096,8 @@ function RoundFirstView({ company, newsletters, openKeys, onToggle, isCompleteTa
               const allSel = ids.length > 0 && ids.every(id => selectedIds.has(id));
               const nl = newsletters.find(n => n.id === grp.members[0]?.newsletterId);
               const count = grp.members.reduce((s, t) => s + t.count, 0);
-              const grpDone = grp.members.every(t => t.visibleRounds.find(r => r.round === rn)?.status === 'completed');
+              // 제작 완료 여부는 그룹 단위로 — 같은 뉴스레터의 다른 그룹 제작으로 이 그룹까지 완료 처리되지 않도록
+              const grpDone = grp.made;
               const isSent = !!nl && isSendGroupSent(nl.sentGroups, rn, grp.members.map(m => m.typeName));
               return (
                 <div key={grp.label} className={`flex items-center gap-3 ${isCompleteTab ? 'pl-14' : 'pl-16'} pr-5 py-2.5 bg-white border-b border-gray-100 last:border-b-0 hover:bg-gray-50/50 transition-colors`}>
