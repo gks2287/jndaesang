@@ -12,7 +12,8 @@ import { useCompanyStore } from '@/store/companyStore';
 import { useNewsletterStore, type Newsletter } from '@/store/newsletterStore';
 import CompanyLogo from '@/components/CompanyLogo';
 import { useParticipantStore, participantToken, type Participant } from '@/store/participantStore';
-import { SavedNewsletterPreviewModal, type SavedNewsletterContent } from '@/components/newsletter/NewsletterRender';
+import { SavedNewsletterPreviewModal, type SavedNewsletterContent, type SavedNewsletterRound, type GeneratedNewsletter } from '@/components/newsletter/NewsletterRender';
+import { getContentList, type ContentPoolItem } from '@/lib/api/contentPool';
 
 // ── 타입 ─────────────────────────────────────────────────────────────
 type RoundStatus = 'inProgress' | 'completed';
@@ -273,6 +274,61 @@ function makeFallbackRounds(totalRounds: number, stepCount: number): Round[] {
         attachments: [],
       }))
     );
+}
+
+// 저장 본문 sections에서 원래 사용한 콘텐츠 목록을 복원.
+// 콘텐츠 풀에 실물 아이템(id 일치)이 있으면 그대로 사용하고, 없으면 저장된 섹션 정보로 항목을 재구성한다.
+function contentsFromGenerated(gen: GeneratedNewsletter, pool: ContentPoolItem[]): ContentPoolItem[] {
+  return (gen.sections ?? [])
+    .filter(s => (s.contentId ?? '').length > 0 || (s.contentTitle ?? '').length > 0)
+    .map((s, i) => {
+      const real = pool.find(p => p.id === s.contentId);
+      if (real) return real;
+      return {
+        id: s.contentId || `restored-${i}`,
+        type: 'curation' as const,
+        title: s.contentTitle,
+        category: '아티클' as const,
+        duration: 0,
+        author: '',
+        tags: [],
+        thumbnail: s.thumbnail ?? '',
+        thumbnailUrl: s.thumbnailUrl,
+        body: s.body && s.body.length > 0 ? s.body.join('\n\n') : (s.mainBody ?? s.summary ?? ''),
+        summary: s.summary,
+        createdAt: '',
+      };
+    });
+}
+
+// 수정/이어서 진입 시: 회차 구성(주제·콘텐츠·인터랙션·만족도)이 비어 있으면 저장된 생성 본문에서 복원.
+// 비어 있는 항목만 채우므로, 진입 직후 AI가 주제·콘텐츠를 새로 자동 선택하는 것을 막고 원래 구성을 보여준다.
+function restoreRoundFromSaved(r: Round, savedRound: SavedNewsletterRound | undefined, pool: ContentPoolItem[]): Round {
+  if (!savedRound?.generated?.headline) return r;
+  const savedGroups = savedRound.groups?.length
+    ? savedRound.groups
+    : [{ groupId: 'general', types: [] as string[], label: savedRound.leadershipLabel, generated: savedRound.generated, interactions: savedRound.interactions, surveys: savedRound.surveys }];
+  const general = savedGroups.find(g => g.groupId === 'general');
+  const next: Round = { ...r };
+  if (general) {
+    if (!next.topic.trim()) next.topic = general.generated.headline ?? '';
+    if (next.contents.length === 0) next.contents = contentsFromGenerated(general.generated, pool);
+    if (next.interactions.length === 0) next.interactions = general.interactions ?? [];
+    if (next.surveys.length === 0) next.surveys = general.surveys ?? [];
+  }
+  next.customGroups = r.customGroups.map(g => {
+    const sg = savedGroups.find(sv => sv.groupId === g.id)
+      ?? savedGroups.find(sv => sv.groupId !== 'general' && sv.types.length > 0 && sv.types.join('·') === g.types.join('·'));
+    if (!sg) return g;
+    return {
+      ...g,
+      topic: g.topic.trim() ? g.topic : (sg.generated.headline ?? ''),
+      contents: g.contents.length > 0 ? g.contents : contentsFromGenerated(sg.generated, pool),
+      interactions: g.interactions.length > 0 ? g.interactions : (sg.interactions ?? []),
+      surveys: g.surveys.length > 0 ? g.surveys : (sg.surveys ?? []),
+    };
+  });
+  return next;
 }
 
 function DeleteConfirmModal({ title, description, onConfirm, onClose }: {
@@ -1203,7 +1259,7 @@ function NewslettersContent() {
   const companies = useCompanyStore(s => s.companies);
 
   // 이어서/수정: 기존 캠페인의 제작 스냅샷으로 위저드를 미리 채워 진입
-  function seedFromNewsletter(nl: Newsletter, mode: 'continue' | 'edit', opts?: { targetRoundIdx?: number; targetStep?: WizardStep; targetGroupId?: string | null }) {
+  async function seedFromNewsletter(nl: Newsletter, mode: 'continue' | 'edit', opts?: { targetRoundIdx?: number; targetStep?: WizardStep; targetGroupId?: string | null }) {
     const a = nl.authoring ?? null;
     const storyline = a?.storyline?.length ? a.storyline : DEFAULT_STORYLINE;
     const totalRounds = a?.totalRounds && a.totalRounds > 0 ? a.totalRounds : (nl.totalRounds || storyline.length);
@@ -1217,14 +1273,15 @@ function NewslettersContent() {
     const madeIdx = new Set(
       generatedRounds.filter(r => r.generated?.headline).map(r => r.vol - 1)
     );
-    // 이어서: 완료 회차는 구성 유지(폴백 회차라면 저장된 인터랙션·설문만 복원), 미완성 회차만 주제·콘텐츠를 비워 새로 작성
-    const rounds = mode === 'continue'
-      ? baseRounds.map((r, i) => {
-          if (!madeIdx.has(i)) return { ...r, topic: '', contents: [] };
-          const savedRound = generatedRounds.find(sr => sr.vol - 1 === i);
-          return savedRound ? { ...r, interactions: savedRound.interactions, surveys: savedRound.surveys } : r;
-        })
-      : baseRounds;
+    // 완료 회차의 비어 있는 구성(주제·콘텐츠·인터랙션·설문)은 저장 본문에서 복원 —
+    // 수정/이어서 진입 직후 AI가 새로 자동 선택하지 않고 원래 쓰인 구성이 그대로 보이도록.
+    // 콘텐츠 풀을 조회해 실물 아이템으로 복원 (조회 실패 시 저장 섹션 정보로 재구성).
+    const pool = madeIdx.size > 0 ? await getContentList().catch(() => [] as ContentPoolItem[]) : [];
+    const rounds = baseRounds.map((r, i) => {
+      // 이어서: 미완성 회차는 주제·콘텐츠를 비워 새로 작성
+      if (mode === 'continue' && !madeIdx.has(i)) return { ...r, topic: '', contents: [] };
+      return restoreRoundFromSaved(r, generatedRounds.find(sr => sr.vol - 1 === i), pool);
+    });
     // 이어서 진입 회차: 지정 회차 우선 → 저장된 마지막 회차 → 첫 미완성 회차(모두 완료면 0)
     const firstIncomplete = baseRounds.findIndex((_, i) => !madeIdx.has(i));
     const activeRoundIdx = opts?.targetRoundIdx
