@@ -41,39 +41,55 @@ const LEADERSHIP_DESC: Record<string, { summary: string; coaching: string }> = {
   '불명확형':  { summary: '리더십 유형이 명확히 분류되지 않은 상태', coaching: '자기 리더십 스타일을 파악하고, 강점과 약점을 구체적으로 인식하는 성찰 훈련이 필요합니다.' },
 };
 
-// ── 목 스텝 데이터 ──
-const MOCK_STEPS = [
-  { step: 1, title: '자기인식: 나의 리더십 패턴', sentAt: '2026-04-21', openedAt: '2026-04-22', interactionRate: 90, completed: true },
-  { step: 2, title: '팀원의 시선: 360° 피드백 이해', sentAt: '2026-04-28', openedAt: '2026-04-29', interactionRate: 75, completed: true },
-  { step: 3, title: '갈등 관리와 심리적 안전감', sentAt: '2026-05-12', openedAt: null, interactionRate: 0, completed: false },
-  { step: 4, title: '변화를 이끄는 리더: 신뢰와 동기부여', sentAt: null, openedAt: null, interactionRate: 0, completed: false },
-  { step: 5, title: '성장 지원: 코칭형 리더십', sentAt: null, openedAt: null, interactionRate: 0, completed: false },
-];
+// ── 서버(by-token)에서 받는 본인 응답 기록 ──
+type ResponseRow = {
+  kind: 'quiz' | 'scenario' | 'selfcheck' | 'survey-always' | 'survey-periodic';
+  elementKey: string;
+  roundIndex: number;
+  response: Record<string, unknown>;
+  updatedAt: string;
+};
 
-// ── 목 활동 로그 ──
-const MOCK_LOGS = [
-  { date: '2026-05-07 14:32', action: '뉴스레터 열람', detail: 'Step 3 — 소통의 재발견', type: 'open', response: null },
-  { date: '2026-05-07 14:45', action: '성찰 질문 제출', detail: '"나는 팀원의 말을 얼마나 끝까지 듣는가?"', type: 'interact', response: '솔직히 말하면 팀원이 말할 때 이미 내 답을 생각하고 있을 때가 많습니다. 앞으로는 말이 끝날 때까지 기다리고, 요약해서 확인하는 습관을 들이겠습니다.' },
-  { date: '2026-05-07 14:50', action: '체크리스트 완료', detail: '경청 실천 3가지 항목 체크', type: 'interact', response: '✅ 회의 중 핸드폰 내려놓기\n✅ 팀원 발언 도중 끼어들지 않기\n☐ 발언 후 요약 확인하기' },
-  { date: '2026-05-07 15:10', action: '상시설문 완료', detail: '뉴스레터 만족도 설문 제출', type: 'survey', response: { checks: ['콘텐츠 내용이 실무에 도움이 됐다', '읽기 쉽고 구성이 명확했다', '다음 회차도 받고 싶다'], unchecked: ['분량이 적당했다'], text: '내용 자체는 좋았는데 텍스트 위주라 읽다가 중간에 집중력이 떨어졌습니다.' } },
-  { date: '2026-04-29 09:15', action: '뉴스레터 열람', detail: 'Step 2 — 팀원의 시선', type: 'open', response: null },
-  { date: '2026-04-29 09:28', action: '퀴즈 응답', detail: '4/5문항 정답', type: 'interact', response: '1번 ✅  2번 ✅  3번 ✅  4번 ❌  5번 ✅' },
-  { date: '2026-04-22 11:03', action: '뉴스레터 열람', detail: 'Step 1 — 자기인식', type: 'open', response: null },
-  { date: '2026-04-22 11:20', action: '성찰 질문 제출', detail: '"내가 가장 자주 사용하는 리더십 패턴은?"', type: 'interact', response: '저는 결과 중심으로 생각하다 보니 과정보다 성과를 우선시하는 경향이 있습니다.' },
-];
+// 활동 로그(마이페이지)용 정규화 항목 — 전부 본인 응답에서만 생성
+type ActivityLog = {
+  kind: ResponseRow['kind'];
+  type: 'interact' | 'survey';
+  action: string;
+  detail: string;
+  date: string;
+  round: number;
+  response: Record<string, unknown>;
+};
 
-const LOG_ROUNDS: number[] = (() => {
-  let cur = 0;
-  return MOCK_LOGS.map(log => {
-    const m = log.detail.match(/Step (\d+)/);
-    if (m) cur = Number(m[1]);
-    return cur;
-  });
-})();
-const AVAILABLE_ROUNDS = [...new Set(LOG_ROUNDS)].filter(r => r > 0).sort((a, b) => a - b);
+const RESPONSE_ACTION_LABEL: Record<ResponseRow['kind'], string> = {
+  quiz: '퀴즈 응답',
+  scenario: '시나리오 선택',
+  selfcheck: '체크리스트 완료',
+  'survey-always': '상시 만족도 설문 제출',
+  'survey-periodic': '정기 만족도 설문 제출',
+};
+
+// ISO 문자열 → 'YYYY-MM-DD HH:mm' (로컬)
+function formatLogDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function toActivityLog(r: ResponseRow): ActivityLog {
+  return {
+    kind: r.kind,
+    type: r.kind.startsWith('survey-') ? 'survey' : 'interact',
+    action: RESPONSE_ACTION_LABEL[r.kind] ?? '응답 제출',
+    detail: r.elementKey,
+    date: formatLogDate(r.updatedAt),
+    round: r.roundIndex,
+    response: r.response ?? {},
+  };
+}
 
 const logIcon = {
-  open:     { bg: 'bg-blue-50',   icon: 'text-blue-500' },
   interact: { bg: 'bg-purple-50', icon: 'text-purple-500' },
   survey:   { bg: 'bg-gray-200',  icon: 'text-gray-600' },
 };
@@ -92,6 +108,7 @@ export default function ParticipantNewsletterPage() {
     positionGroupCount: 0,
     typeGroupCount: 0,
   });
+  const [responses, setResponses] = useState<ResponseRow[]>([]);
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -99,9 +116,10 @@ export default function ParticipantNewsletterPage() {
         const res = await fetch(`/api/newsletter/by-token/${token}`);
         if (!alive) return;
         if (!res.ok) { setParticipant(null); return; }
-        const data = (await res.json()) as { participant: Participant; newsletter: Newsletter | null; peers: { positionParticipationAvg: number | null; typeParticipationAvg: number | null; positionGroupCount: number; typeGroupCount: number } };
+        const data = (await res.json()) as { participant: Participant; newsletter: Newsletter | null; responses?: ResponseRow[]; peers: { positionParticipationAvg: number | null; typeParticipationAvg: number | null; positionGroupCount: number; typeGroupCount: number } };
         setParticipant(data.participant);
         setNewsletter(data.newsletter);
+        setResponses(data.responses ?? []);
         setPeers(data.peers);
       } catch {
         if (alive) setParticipant(null);
@@ -152,10 +170,11 @@ export default function ParticipantNewsletterPage() {
   const leaderColor = LEADERSHIP_COLOR[participant.leadershipType] ?? 'bg-gray-100 text-gray-600';
   const leaderInfo = LEADERSHIP_DESC[participant.leadershipType];
   const hasStarted = participant.stepCurrent > 0 || participant.deliveryStatus !== '미발송';
-  const activeSteps = hasStarted ? MOCK_STEPS : [];
-  const activeLogs = hasStarted ? MOCK_LOGS : [];
-  const activeAvailableRounds = hasStarted ? AVAILABLE_ROUNDS : [];
-  const progressPct = Math.round((participant.stepCurrent / participant.stepTotal) * 100);
+  // 활동 로그: 본인의 실제 응답만 (최신순 — 서버가 이미 정렬). 회차 필터도 실제 응답 회차 기준.
+  const activeLogs: ActivityLog[] = responses.map(toActivityLog);
+  const logRounds: number[] = activeLogs.map(l => l.round);
+  const activeAvailableRounds = [...new Set(logRounds)].filter(r => r > 0).sort((a, b) => a - b);
+  const progressPct = participant.stepTotal > 0 ? Math.round((participant.stepCurrent / participant.stepTotal) * 100) : 0;
 
   // ── 동료 비교 지표 (서버에서 집계된 평균 사용) ──
   const myParticipationRate = Math.round((participant.stepCurrent / participant.stepTotal) * 100);
@@ -353,9 +372,11 @@ export default function ParticipantNewsletterPage() {
               <div className="flex flex-col gap-0">
                 {DEFAULT_STORYLINE.map((s, i) => {
                   const color = STEP_COLORS[i % STEP_COLORS.length];
-                  const mock = activeSteps[i];
-                  const isDone = mock?.completed ?? false;
-                  const isSent = !!mock?.sentAt && !isDone;
+                  // 실제 진도(stepCurrent) 기준: 지난 회차=완료, 현재 회차=진행 중, 이후=예정
+                  const stepNo = i + 1;
+                  const isDone = stepNo < accessible;
+                  const isSent = stepNo === accessible;
+                  const sentDateLabel = stepNo <= accessible ? (rounds.find(r => r.vol === stepNo)?.dateLabel ?? null) : null;
 
                   return (
                     <div key={s.step} className="flex flex-col">
@@ -382,8 +403,8 @@ export default function ParticipantNewsletterPage() {
                           <p className={`text-sm font-bold leading-tight ${color.titleColor}`}>{s.title}</p>
                           <p className={`text-[11px] font-semibold mb-1 ${color.subtitleColor}`}>{s.subtitle}</p>
                           <p className="text-xs text-gray-500 leading-snug">{s.description}</p>
-                          {mock?.sentAt && (
-                            <p className="text-[10px] text-gray-300 mt-1">{mock.sentAt} 발송</p>
+                          {sentDateLabel && (
+                            <p className="text-[10px] text-gray-300 mt-1">{sentDateLabel} 발송</p>
                           )}
                         </div>
                       </div>
@@ -405,7 +426,7 @@ export default function ParticipantNewsletterPage() {
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-bold text-gray-800">나의 활동 기록</h3>
                 <span className="text-xs text-gray-400">
-                  {activeLogRound === null ? activeLogs.length : activeLogs.filter((_, i) => LOG_ROUNDS[i] === activeLogRound).length}건
+                  {(activeLogRound === null ? activeLogs : activeLogs.filter(l => l.round === activeLogRound)).length}건
                 </span>
               </div>
 
@@ -440,13 +461,10 @@ export default function ParticipantNewsletterPage() {
                     아직 활동 기록이 없습니다.
                   </div>
                 )}
-                {(activeLogRound === null ? activeLogs : activeLogs.filter((_, i) => LOG_ROUNDS[i] === activeLogRound))
-                  .map((log, i) => {
-                    const origIdx = activeLogRound === null ? i : activeLogs.indexOf(log);
-                    const style = logIcon[log.type as keyof typeof logIcon];
-                    const isInteract = log.type === 'interact' && log.response;
-                    const isSurvey = log.type === 'survey' && log.response;
-                    const isExpandable = isInteract || isSurvey;
+                {(activeLogRound === null ? activeLogs.map((log, i) => ({ log, i })) : activeLogs.map((log, i) => ({ log, i })).filter(({ log }) => log.round === activeLogRound))
+                  .map(({ log, i: origIdx }) => {
+                    const style = logIcon[log.type];
+                    const isExpandable = !!log.response && Object.keys(log.response).length > 0;
                     const isExpanded = expandedLog === origIdx;
                     return (
                       <div
@@ -456,11 +474,7 @@ export default function ParticipantNewsletterPage() {
                       >
                         <div className="flex items-start gap-3">
                           <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${style.bg}`}>
-                            {log.type === 'open' ? (
-                              <svg className={`w-3.5 h-3.5 ${style.icon}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                              </svg>
-                            ) : log.type === 'survey' ? (
+                            {log.type === 'survey' ? (
                               <svg className={`w-3.5 h-3.5 ${style.icon}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                               </svg>
@@ -471,7 +485,7 @@ export default function ParticipantNewsletterPage() {
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold text-gray-700">{log.action}</p>
+                            <p className="text-xs font-semibold text-gray-700">{log.action}{log.round > 0 && <span className="ml-1.5 text-[10px] font-medium text-gray-400">{log.round}회차</span>}</p>
                             <p className="text-xs text-gray-400 mt-0.5 truncate">{log.detail}</p>
                           </div>
                           <div className="flex items-center gap-2 flex-shrink-0">
@@ -483,36 +497,11 @@ export default function ParticipantNewsletterPage() {
                             )}
                           </div>
                         </div>
-                        {isInteract && isExpanded && (
-                          <div className="mt-2.5 ml-10 bg-purple-50 rounded-lg px-3 py-2.5">
-                            <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-line">{log.response as string}</p>
+                        {isExpanded && (
+                          <div className="mt-2.5 ml-10">
+                            <ResponseDetail kind={log.kind} response={log.response} />
                           </div>
                         )}
-                        {isSurvey && isExpanded && (() => {
-                          const r = log.response as { checks: string[]; unchecked: string[]; text: string };
-                          return (
-                            <div className="mt-2.5 ml-10 bg-gray-100 rounded-lg px-3 py-3 space-y-3">
-                              <div className="space-y-1.5">
-                                {r.checks.map((item, j) => (
-                                  <div key={j} className="flex items-center gap-2">
-                                    <span className="text-emerald-500 text-xs font-bold">✓</span>
-                                    <p className="text-xs text-gray-600">{item}</p>
-                                  </div>
-                                ))}
-                                {r.unchecked.map((item, j) => (
-                                  <div key={j} className="flex items-center gap-2">
-                                    <span className="text-gray-300 text-xs font-bold">✗</span>
-                                    <p className="text-xs text-gray-400">{item}</p>
-                                  </div>
-                                ))}
-                              </div>
-                              <div className="border-t border-gray-200 pt-2.5">
-                                <p className="text-[10px] font-semibold text-gray-400 mb-1">주관식 응답</p>
-                                <p className="text-xs text-gray-600 leading-relaxed">{r.text}</p>
-                              </div>
-                            </div>
-                          );
-                        })()}
                       </div>
                     );
                   })}
@@ -569,6 +558,96 @@ export default function ParticipantNewsletterPage() {
         )}
 
       </div>
+    </div>
+  );
+}
+
+// ── 활동 로그 응답 상세 (kind별 실제 저장 구조 렌더링) ──
+function ResponseDetail({ kind, response }: { kind: ResponseRow['kind']; response: Record<string, unknown> }) {
+  const str = (v: unknown) => (typeof v === 'string' ? v : v == null ? '' : String(v));
+  const arr = (v: unknown): string[] => (Array.isArray(v) ? v.map(str).filter(Boolean) : []);
+
+  if (kind === 'quiz') {
+    const selected = str(response.selectedLabel);
+    const correct = response.correct === true;
+    return (
+      <div className="bg-purple-50 rounded-lg px-3 py-2.5 space-y-1.5">
+        <div className="flex items-center gap-2">
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${correct ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-500'}`}>{correct ? '정답' : '오답'}</span>
+          {response.question != null && <p className="text-xs text-gray-500 truncate">{str(response.question)}</p>}
+        </div>
+        {selected && <p className="text-xs text-gray-600">내 답변: <span className="font-semibold">{selected}</span></p>}
+      </div>
+    );
+  }
+
+  if (kind === 'scenario') {
+    const selected = str(response.selectedLabel);
+    return (
+      <div className="bg-purple-50 rounded-lg px-3 py-2.5 space-y-1">
+        {response.situation != null && <p className="text-xs text-gray-500">{str(response.situation)}</p>}
+        {selected && <p className="text-xs text-gray-600">내 선택: <span className="font-semibold">{selected}</span></p>}
+      </div>
+    );
+  }
+
+  if (kind === 'selfcheck') {
+    const items = arr(response.items);
+    const checked = new Set(arr(response.checkedItems));
+    const list = items.length > 0 ? items : arr(response.checkedItems);
+    return (
+      <div className="bg-purple-50 rounded-lg px-3 py-2.5 space-y-1.5">
+        {list.map((item, j) => {
+          const on = checked.has(item);
+          return (
+            <div key={j} className="flex items-center gap-2">
+              <span className={`text-xs font-bold ${on ? 'text-emerald-500' : 'text-gray-300'}`}>{on ? '✓' : '✗'}</span>
+              <p className={`text-xs ${on ? 'text-gray-600' : 'text-gray-400'}`}>{item}</p>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  if (kind === 'survey-always') {
+    const rating = str(response.rating);
+    const helpful = arr(response.helpful);
+    const comment = str(response.comment);
+    return (
+      <div className="bg-gray-100 rounded-lg px-3 py-3 space-y-2.5">
+        {rating && <p className="text-xs text-gray-600">만족도: <span className="font-semibold">{rating}</span></p>}
+        {helpful.length > 0 && (
+          <div className="space-y-1">
+            {helpful.map((item, j) => (
+              <div key={j} className="flex items-center gap-2"><span className="text-emerald-500 text-xs font-bold">✓</span><p className="text-xs text-gray-600">{item}</p></div>
+            ))}
+          </div>
+        )}
+        {comment && (
+          <div className="border-t border-gray-200 pt-2">
+            <p className="text-[10px] font-semibold text-gray-400 mb-1">주관식 응답</p>
+            <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-line">{comment}</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // survey-periodic: { answers: [{ question, area, type, answer }] }
+  const answers = Array.isArray(response.answers) ? (response.answers as Array<Record<string, unknown>>) : [];
+  return (
+    <div className="bg-gray-100 rounded-lg px-3 py-3 space-y-2.5">
+      {answers.map((a, j) => {
+        const ans = Array.isArray(a.answer) ? arr(a.answer).join(', ') : str(a.answer);
+        return (
+          <div key={j} className="space-y-0.5">
+            <p className="text-[11px] font-semibold text-gray-500">{str(a.question)}</p>
+            <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-line">{ans || '—'}</p>
+          </div>
+        );
+      })}
+      {answers.length === 0 && <p className="text-xs text-gray-400">응답 내용을 표시할 수 없습니다.</p>}
     </div>
   );
 }

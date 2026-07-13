@@ -52,9 +52,24 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
       ? { ...nl, createdAt: nl.createdAt.toISOString().slice(0, 10), updatedAt: nl.updatedAt.toISOString().slice(0, 10) }
       : null;
 
+    // 본인의 실제 응답 기록(마이페이지 활동 내역용) — 최신순. 다른 참여자 데이터는 포함하지 않음.
+    const responseRows = await prisma.participantResponse.findMany({
+      where: { participantId: participant.id },
+      orderBy: { updatedAt: 'desc' },
+      select: { kind: true, elementKey: true, roundIndex: true, response: true, updatedAt: true },
+    });
+    const responses = responseRows.map(r => ({
+      kind: r.kind,
+      elementKey: r.elementKey,
+      roundIndex: r.roundIndex,
+      response: r.response,
+      updatedAt: r.updatedAt.toISOString(),
+    }));
+
     return NextResponse.json({
       participant,
       newsletter,
+      responses,
       peers: {
         positionParticipationAvg: avg(positionGroup),
         typeParticipationAvg: avg(typeGroup),
