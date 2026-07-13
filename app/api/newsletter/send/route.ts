@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 import { buildEmailHtml, sendNewsletterBatch, type SendNewsletterParams } from '@/lib/email';
 import type { GeneratedNewsletter } from '@/components/newsletter/NewsletterRender';
 import { prisma } from '@/lib/db';
+import { rateLimit, clientIp } from '@/lib/rateLimit';
+
+// 발송 남용 방지: IP 기준 1분당 최대 10회 (인증은 미들웨어에서 이미 강제됨 — 이건 추가 방어선)
+const SEND_RATE = { limit: 10, windowMs: 60_000 };
 
 interface Recipient {
   email: string;
@@ -23,6 +27,14 @@ interface SendRequest {
 
 export async function POST(req: Request) {
   try {
+    const rl = rateLimit(`send:${clientIp(req)}`, SEND_RATE);
+    if (!rl.ok) {
+      return NextResponse.json(
+        { error: `발송 요청이 너무 많습니다. ${rl.retryAfterSec}초 후 다시 시도해주세요.` },
+        { status: 429, headers: { 'Retry-After': String(rl.retryAfterSec) } },
+      );
+    }
+
     if (!process.env.RESEND_API_KEY) {
       return NextResponse.json(
         { error: 'RESEND_API_KEY가 설정되지 않았습니다. .env.local에 API 키를 추가하세요.' },
@@ -58,14 +70,8 @@ export async function POST(req: Request) {
     await Promise.all(recipients.map(async (r) => {
       if (!r.token) return;
       try {
-        let p = await prisma.participant.findFirst({ where: { token: r.token } });
-        if (!p && r.token.startsWith('nl-')) {
-          const id = Number(r.token.slice(3));
-          if (Number.isInteger(id)) {
-            const byId = await prisma.participant.findUnique({ where: { id } });
-            if (byId && !byId.token) p = byId;
-          }
-        }
+        // 발급된 랜덤 토큰으로만 매칭(추측 가능한 nl-<id> 폴백 제거)
+        const p = await prisma.participant.findFirst({ where: { token: r.token } });
         if (!p) return;
         const nextStep = Math.min(p.stepTotal, Math.max(p.stepCurrent, round.vol));
         await prisma.participant.update({
