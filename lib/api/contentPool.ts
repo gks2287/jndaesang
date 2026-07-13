@@ -29,6 +29,7 @@ export interface ContentPoolItem {
   body: string;
   summary?: string;
   createdAt: string;
+  sourceUrl?: string;      // AI 큐레이션 콘텐츠의 원문 출처 링크 (웹서칭 결과). 있으면 카드에 출처 표시
 }
 
 export interface ContentListFilter {

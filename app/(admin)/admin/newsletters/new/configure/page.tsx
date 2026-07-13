@@ -100,6 +100,15 @@ function toISODate(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+// 출처 링크에서 표시용 호스트명 추출 (매체명이 없을 때 대체 라벨). 실패 시 원본 URL 반환.
+function hostFromUrl(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+}
+
 // ── 저장소 불러오기 모달 ─────────────────────────────────────────────
 function StorageImportModal({ onImport, onClose }: {
   onImport: (generated: GeneratedNewsletter, headline: string) => void;
@@ -2004,6 +2013,20 @@ function ConfigureContent() {
                           <div className="flex-1 min-w-0"><div className="flex items-center gap-1 mb-0.5"><span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${item.type === 'original' ? 'bg-blue-50 text-blue-600' : 'bg-orange-50 text-orange-600'}`}>{item.type === 'original' ? 'J& 오리지널' : '큐레이션'}</span><span className="text-[10px] text-gray-400">{item.category} · {item.duration}분</span></div><p className="text-xs font-semibold text-gray-700 truncate">{item.title}</p></div>
                           <button onClick={() => opts.removeContent(item.id)} className="flex-shrink-0 text-gray-300 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"><svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
                         </div>
+                        {/* 출처: AI가 가져온 큐레이션 콘텐츠의 원문 링크/매체명 (있을 때만) */}
+                        {(item.sourceUrl || item.author) && (
+                          <div className="mt-1.5 flex items-center gap-1 min-w-0">
+                            <svg className="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 010 5.656l-3 3a4 4 0 01-5.656-5.656l1.5-1.5m6.656-1.828a4 4 0 010-5.656l3-3a4 4 0 015.656 5.656l-1.5 1.5" /></svg>
+                            <span className="text-[10px] text-gray-400 flex-shrink-0">출처</span>
+                            {item.sourceUrl ? (
+                              <a href={item.sourceUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[10px] text-[#55A4DA] hover:text-[#2E7DB5] hover:underline truncate" title={item.sourceUrl}>
+                                {item.author?.trim() || hostFromUrl(item.sourceUrl)}
+                              </a>
+                            ) : (
+                              <span className="text-[10px] text-gray-500 truncate" title={item.author}>{item.author}</span>
+                            )}
+                          </div>
+                        )}
                         {item.body && <button onClick={() => setContentPreviewItem(item)} className="mt-1.5 text-[11px] text-[#55A4DA] hover:text-[#2E7DB5] font-medium transition-colors">내용 보기 →</button>}
                       </div>
                     ))}
