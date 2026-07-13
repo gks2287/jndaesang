@@ -1491,9 +1491,71 @@ function ConfigureContent() {
     router.push(`/admin/newsletters?tab=${encodeURIComponent(status)}`);
   }
 
-  function handleSaveInPlace() {
+  // 저장용 생성 본문: 현재 화면 기준 재구성본과 기존 저장본을 회차(vol)·그룹(groupId) 단위로 병합.
+  // 그룹 재편 등으로 키가 어긋나 재구성본에서 빠진 회차/그룹 본문이 저장 시 유실되지 않도록 한다.
+  function buildPersistedContent(): SavedNewsletterContent | undefined {
+    const rebuilt = buildSavedContent();
+    const seeded = editingNewsletterId != null ? configDraft.seededGeneratedContent : null;
+    if (!rebuilt?.rounds?.length) return rebuilt ?? seeded ?? undefined;
+    if (!seeded?.rounds?.length) return rebuilt;
+    const byVol = new Map(rebuilt.rounds.map(r => [r.vol, r]));
+    const merged: SavedNewsletterRound[] = seeded.rounds.map(sr => {
+      const nr = byVol.get(sr.vol);
+      if (!nr) return sr; // 재구성에서 빠진 회차는 저장본 유지
+      const newGroupIds = new Set((nr.groups ?? []).map(g => g.groupId));
+      const keptGroups = (sr.groups ?? []).filter(g => !newGroupIds.has(g.groupId));
+      return { ...nr, groups: [...(nr.groups ?? []), ...keptGroups] };
+    });
+    rebuilt.rounds.forEach(nr => { if (!seeded.rounds.some(sr => sr.vol === nr.vol)) merged.push(nr); });
+    merged.sort((a, b) => a.vol - b.vol);
+    return { rounds: merged };
+  }
+
+  // 위저드 스냅샷 + 지금까지 생성된 본문을 DB에 저장 (상태 변경 없이).
+  // 신규 작성 중이면 최초 1회 '제작 중' 캠페인을 만들고 이후엔 같은 레코드를 갱신한다.
+  const savedCampaignIdRef = useRef<number | null>(null);
+  async function persistInPlace(): Promise<void> {
+    const company = targetCompanies[0];
+    const allLeaderTypes = [...new Set(selectedParticipants.map(p => p.leadershipType))].filter(Boolean);
+    const generated = buildPersistedContent();
+    const existingId = editingNewsletterId ?? savedCampaignIdRef.current;
+    if (existingId != null) {
+      // 기존 캠페인: 스냅샷·본문만 갱신 (status/completedRounds는 건드리지 않음)
+      await updateNewsletter(existingId, {
+        authoring: buildAuthoring(),
+        ...(generated ? { generatedContent: generated } : {}),
+      });
+      return;
+    }
+    const created = await addNewsletter({
+      title: `${company?.name ?? '대상 기업'} 리더십 코칭`.trim(),
+      companyId: company?.id ?? 0,
+      companyName: company?.name ?? '미지정',
+      leadershipType: leadershipTypes.length > 0 ? leadershipTypes[0] : '미지정',
+      status: '제작 중',
+      stepCount: customStoryline.length,
+      positiveLeaders: { types: [], count: 0 },
+      negativeLeaders: { types: allLeaderTypes, count: selectedParticipants.length },
+      totalRounds: customStoryline.length,
+      completedRounds: 0,
+      type: 'general',
+      leaderType: 'negative',
+      totalLeaders: selectedParticipants.length,
+      generatedContent: generated,
+      authoring: buildAuthoring(),
+    });
+    if (created) savedCampaignIdRef.current = created.id;
+  }
+
+  async function handleSaveInPlace() {
     localStorage.setItem('newsletter_draft_saved', JSON.stringify({ savedByUser: true }));
-    setToastMessage('저장되었습니다');
+    try {
+      await persistInPlace();
+      setToastMessage('저장되었습니다');
+    } catch (e) {
+      console.error('저장 오류:', e);
+      setToastMessage('저장에 실패했습니다');
+    }
     setShowDraftToast(true);
     setTimeout(() => setShowDraftToast(false), 1500);
   }
@@ -1522,6 +1584,8 @@ function ConfigureContent() {
       type: 'general' as const,
       leaderType: 'negative' as const,
       totalLeaders: selectedParticipants.length,
+      // 5단계에서 생성한 본문도 함께 저장 — 임시저장 후 재진입 시 본문이 유실되지 않도록
+      generatedContent: buildPersistedContent(),
       authoring: buildAuthoring(),
     };
     if (editingNewsletterId != null) {
@@ -1571,7 +1635,7 @@ function ConfigureContent() {
       },
     });
     try {
-      await handleSave('제작완료', buildSavedContent());
+      await handleSave('제작완료', buildPersistedContent());
     } catch {
       confirmingRef.current = false;
       setIsConfirming(false);
@@ -3200,7 +3264,9 @@ function ConfigureContent() {
                           ) : regenerating ? (
                             <div className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#EAF4FC] text-[#2E7DB5] text-sm font-semibold">
                               <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" /></svg>
-                              변경사항 반영 중 · 본문을 다시 생성하고 있어요 (약 1분)
+                              {livePreviewContent[targetKey]
+                                ? '변경사항 반영 중 · 본문을 다시 생성하고 있어요 (약 1분)'
+                                : '저장된 본문이 없어 새로 준비하고 있어요 (약 1분)'}
                             </div>
                           ) : regenFailed ? (
                             <div className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-red-50 text-red-500 text-sm font-semibold">
