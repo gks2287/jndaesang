@@ -4,7 +4,6 @@ import { useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { signOut, useSession } from 'next-auth/react';
 import { useCompanyStore } from '@/store/companyStore';
 import { useParticipantStore } from '@/store/participantStore';
 import { useNewsletterStore } from '@/store/newsletterStore';
@@ -59,8 +58,6 @@ const navItems = [
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { data: session } = useSession();
-  const initial = session?.user?.name?.[0]?.toUpperCase() ?? 'A';
 
   // 관리자 진입 시 기업·직책자·뉴스레터 목록을 DB에서 1회 로드 (전 페이지 공유)
   const loadCompanies = useCompanyStore(s => s.loadCompanies);
@@ -112,13 +109,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
             <span className="text-[10px]">설정</span>
-          </button>
-          <button
-            onClick={() => signOut({ callbackUrl: '/auth/login' })}
-            className="w-9 h-9 rounded-full bg-[#55A4DA] text-white text-sm font-bold flex items-center justify-center hover:bg-[#3A8BC4] transition-colors"
-            title="로그아웃"
-          >
-            {initial}
           </button>
         </div>
       </aside>
