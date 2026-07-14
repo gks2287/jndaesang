@@ -215,13 +215,16 @@ export default function AnalyticsPage() {
 
                   {/* 범례 */}
                   <div className="flex flex-col gap-2 min-w-0">
-                    {leadershipDist.filter(s => s.count > 0).map(seg => (
-                      <div key={seg.type} className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ backgroundColor: LEADERSHIP_COLORS[seg.type] ?? '#9CA3AF' }} />
-                        <span className="text-[10px] text-text-secondary whitespace-nowrap">{seg.type}</span>
-                        <span className="text-[10px] text-text-secondary ml-auto pl-2">{seg.count}명</span>
-                      </div>
-                    ))}
+                    {leadershipDist.filter(s => s.count > 0).map(seg => {
+                      const color = LEADERSHIP_COLORS[seg.type] ?? '#9CA3AF';
+                      return (
+                        <div key={seg.type} className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ backgroundColor: color }} />
+                          <span className="text-[10px] font-medium whitespace-nowrap" style={{ color }}>{seg.type}</span>
+                          <span className="text-[10px] text-text-secondary ml-auto pl-2">{seg.count}명</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
