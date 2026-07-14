@@ -65,10 +65,12 @@ export default function AnalyticsPage() {
       const openRate = sent > 0 ? Math.round((opened / sent) * 100) : 0;
       const completionRate = members.length > 0 ? Math.round((completed / members.length) * 100) : 0;
 
-      const leadershipDist = (Object.keys(LEADERSHIP_COLORS) as LeadershipType[]).map(type => ({
-        type,
-        count: members.filter(p => p.leadershipType === type).length,
-      }));
+      const leadershipDist = Object.entries(
+        members.reduce<Record<string, number>>((acc, p) => {
+          if (p.leadershipType) acc[p.leadershipType] = (acc[p.leadershipType] ?? 0) + 1;
+          return acc;
+        }, {})
+      ).map(([type, count]) => ({ type, count }));
 
       const companyNewsletters = newsletters.filter(n => n.companyId === company.id);
       const totalRounds = companyNewsletters.reduce((sum, n) => sum + (n.totalRounds ?? 0), 0);
@@ -203,7 +205,7 @@ export default function AnalyticsPage() {
                     <DonutChart
                       segments={leadershipDist.filter(s => s.count > 0).map(s => ({
                         value: s.count,
-                        color: LEADERSHIP_COLORS[s.type],
+                        color: LEADERSHIP_COLORS[s.type] ?? '#9CA3AF',
                         label: s.type,
                       }))}
                       size={120}
@@ -215,7 +217,7 @@ export default function AnalyticsPage() {
                   <div className="flex flex-col gap-2 min-w-0">
                     {leadershipDist.filter(s => s.count > 0).map(seg => (
                       <div key={seg.type} className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ backgroundColor: LEADERSHIP_COLORS[seg.type] }} />
+                        <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ backgroundColor: LEADERSHIP_COLORS[seg.type] ?? '#9CA3AF' }} />
                         <span className="text-[10px] text-text-secondary whitespace-nowrap">{seg.type}</span>
                         <span className="text-[10px] text-text-secondary ml-auto pl-2">{seg.count}명</span>
                       </div>
