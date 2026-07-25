@@ -34,7 +34,10 @@ export const authOptions: NextAuthOptions = {
   ],
   session: {
     strategy: 'jwt',
-    maxAge: 8 * 60 * 60, // 8시간
+    // 롤링 세션: 세션이 조회될 때(페이지 이동·창 포커스 등 활동)마다 만료 시각이 갱신되고,
+    // 마지막 활동 후 3시간 동안 사용이 없으면 만료된다. 사용 중에는 계속 유지.
+    maxAge: 3 * 60 * 60, // 3시간 (미활동 만료 창)
+    updateAge: 15 * 60, // 15분마다 활동 시 토큰 갱신
   },
   callbacks: {
     async jwt({ token, user }) {
