@@ -13,8 +13,8 @@ async function main() {
 
   const admin = await prisma.adminUser.upsert({
     where: { email },
-    update: { passwordHash, role: 'super_admin', name: '슈퍼관리자' },
-    create: { email, passwordHash, role: 'super_admin', name: '슈퍼관리자' },
+    update: { passwordHash, role: 'super_admin', name: '김재순' },
+    create: { email, passwordHash, role: 'super_admin', name: '김재순' },
   });
 
   console.log(`슈퍼관리자 계정 준비 완료: ${admin.email} (role=${admin.role})`);
