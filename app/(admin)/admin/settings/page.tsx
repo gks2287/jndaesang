@@ -13,6 +13,13 @@ type AdminRow = {
 
 const roleLabel = (role: string) => (role === 'super_admin' ? '슈퍼관리자' : '관리자');
 
+const formatDate = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '-';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())}`;
+};
+
 export default function SettingsPage() {
   const { data: session } = useSession();
   const myEmail = session?.user?.email ?? '';
@@ -226,8 +233,14 @@ function AdminManagementSection({ myEmail }: { myEmail: string }) {
 
   return (
     <Card title="관리자 계정 관리" desc="J&컴퍼니 직원용 관리자 계정을 발급·삭제합니다. 초기 비밀번호는 당사자에게 전달하고, 당사자가 로그인 후 '내 계정'에서 변경합니다.">
-      {/* 목록 */}
-      <div className="border border-border rounded-sm divide-y divide-border mb-5">
+      {/* 계정 목록 */}
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-xs font-semibold text-text-secondary">
+          관리자 계정 목록{!loading && !listErr ? ` (${admins.length})` : ''}
+        </p>
+        <p className="text-[11px] text-text-secondary">※ 보안상 비밀번호는 표시되지 않습니다</p>
+      </div>
+      <div className="border border-border rounded-sm overflow-x-auto mb-5">
         {loading ? (
           <p className="text-sm text-text-secondary px-4 py-3">불러오는 중...</p>
         ) : listErr ? (
@@ -235,30 +248,49 @@ function AdminManagementSection({ myEmail }: { myEmail: string }) {
         ) : admins.length === 0 ? (
           <p className="text-sm text-text-secondary px-4 py-3">등록된 관리자가 없습니다.</p>
         ) : (
-          admins.map((a) => {
-            const isSelf = a.email === myEmail;
-            const protectedRow = isSelf || a.role === 'super_admin';
-            return (
-              <div key={a.id} className="flex items-center justify-between px-4 py-3">
-                <div className="min-w-0">
-                  <p className="text-sm text-text-primary font-medium truncate">
-                    {a.name || a.email}
-                    <span className="ml-2 text-[11px] text-icon">{roleLabel(a.role)}</span>
-                    {isSelf && <span className="ml-1 text-[11px] text-text-secondary">(나)</span>}
-                  </p>
-                  <p className="text-xs text-text-secondary truncate">{a.email}</p>
-                </div>
-                {!protectedRow && (
-                  <button
-                    onClick={() => remove(a)}
-                    className="shrink-0 text-xs text-status-error hover:underline"
-                  >
-                    삭제
-                  </button>
-                )}
-              </div>
-            );
-          })
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-surface text-text-secondary text-xs">
+                <th className="text-left font-medium px-3 py-2">이름</th>
+                <th className="text-left font-medium px-3 py-2">아이디</th>
+                <th className="text-left font-medium px-3 py-2">권한</th>
+                <th className="text-left font-medium px-3 py-2">생성일</th>
+                <th className="px-3 py-2" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {admins.map((a) => {
+                const isSelf = a.email === myEmail;
+                const protectedRow = isSelf || a.role === 'super_admin';
+                return (
+                  <tr key={a.id} className="text-text-primary">
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {a.name || '-'}
+                      {isSelf && <span className="ml-1 text-[11px] text-text-secondary">(나)</span>}
+                    </td>
+                    <td className="px-3 py-2 text-text-secondary">{a.email}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <span
+                        className={`text-[11px] px-1.5 py-0.5 rounded-sm ${
+                          a.role === 'super_admin' ? 'bg-brand/10 text-brand' : 'bg-gray-100 text-text-secondary'
+                        }`}
+                      >
+                        {roleLabel(a.role)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-text-secondary">{formatDate(a.createdAt)}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      {!protectedRow && (
+                        <button onClick={() => remove(a)} className="text-xs text-status-error hover:underline">
+                          삭제
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         )}
       </div>
 
