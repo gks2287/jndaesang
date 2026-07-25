@@ -1,5 +1,7 @@
 import { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
+import bcrypt from 'bcryptjs';
+import { prisma } from '@/lib/db';
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -12,24 +14,21 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
-        // TODO: DB 조회로 교체
-        // const user = await prisma.adminUser.findUnique({ where: { email: credentials.email } });
-        // if (!user || !await bcrypt.compare(credentials.password, user.password_hash)) return null;
+        // 입력값은 로그인 폼의 ID 필드(이메일 또는 아이디) → admin_users.email 과 매칭
+        const user = await prisma.adminUser.findUnique({
+          where: { email: credentials.email },
+        });
+        if (!user) return null;
 
-        // 개발용 임시 계정
-        if (
-          credentials.email === 'admin@jcompany.co.kr' &&
-          credentials.password === 'admin1234'
-        ) {
-          return {
-            id: '1',
-            email: 'admin@jcompany.co.kr',
-            name: '관리자',
-            role: 'super_admin',
-          };
-        }
+        const valid = await bcrypt.compare(credentials.password, user.passwordHash);
+        if (!valid) return null;
 
-        return null;
+        return {
+          id: String(user.id),
+          email: user.email,
+          name: user.name || user.email,
+          role: user.role,
+        };
       },
     }),
   ],

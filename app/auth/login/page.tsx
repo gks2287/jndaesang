@@ -203,43 +203,27 @@ function LoginForm() {
               </button>
             </form>
 
-            {/* 접근 권한 문의 구분선 */}
+            {/* 시스템 문의 구분선 */}
             <div className="flex items-center gap-3 mt-6">
               <div className="flex-1 h-px bg-gray-200" />
-              <p className="text-xs text-gray-400 whitespace-nowrap">접근 권한 문의</p>
+              <p className="text-xs text-gray-400 whitespace-nowrap">시스템 문의</p>
               <div className="flex-1 h-px bg-gray-200" />
             </div>
 
-            {/* 계정 도움말 */}
-            <div className="mt-auto pt-4">
-              <div className="grid grid-cols-3 gap-3 mb-3">
-                {/* 계정 문의 */}
-                <button className="flex flex-col items-center gap-1.5 py-4 border border-gray-200 rounded-sm hover:border-brand hover:bg-brand/5 transition group">
-                  <svg className="w-5 h-5 text-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                  <span className="text-xs font-semibold text-gray-700 group-hover:text-brand">계정 문의</span>
-                  <span className="text-[10px] text-gray-400">Account Help</span>
-                </button>
-
-                {/* 비밀번호 재설정 */}
-                <button className="flex flex-col items-center gap-1.5 py-4 border border-gray-200 rounded-sm hover:border-brand hover:bg-brand/5 transition group">
-                  <svg className="w-5 h-5 text-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                  </svg>
-                  <span className="text-xs font-semibold text-gray-700 group-hover:text-brand">비밀번호 재설정</span>
-                  <span className="text-[10px] text-gray-400">Reset Password</span>
-                </button>
-
-                {/* 서비스 안내 */}
-                <button className="flex flex-col items-center gap-1.5 py-4 border border-gray-200 rounded-sm hover:border-brand hover:bg-brand/5 transition group">
-                  <svg className="w-5 h-5 text-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span className="text-xs font-semibold text-gray-700 group-hover:text-brand">서비스 안내</span>
-                  <span className="text-[10px] text-gray-400">Service Guide</span>
-                </button>
-              </div>
+            {/* 관리자 문의 안내 */}
+            <div className="mt-auto pt-4 flex flex-col items-center gap-2 text-center">
+              <p className="text-xs text-gray-500 leading-relaxed">
+                계정 발급·비밀번호 재설정은 시스템 관리자에게 문의해 주세요.
+              </p>
+              <a
+                href="mailto:mm@jncompany.net"
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand hover:text-brand-dark transition"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                mm@jncompany.net
+              </a>
             </div>
 
             {/* 하단 카피 */}
