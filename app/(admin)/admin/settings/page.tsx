@@ -27,6 +27,9 @@ export default function SettingsPage() {
   const myRole = (session?.user as { role?: string })?.role ?? '';
   const isSuper = myRole === 'super_admin';
 
+  // 관리자 목록 상태를 상위에서 소유 → 좌측 '추가 폼'과 우측 '목록'이 공유(추가/삭제 시 즉시 갱신).
+  const { admins, loading, listErr, load } = useAdmins(isSuper);
+
   return (
     <div className="flex flex-col h-full p-6 gap-4 overflow-y-auto">
       <div>
@@ -34,13 +37,55 @@ export default function SettingsPage() {
         <h1 className="text-xl font-bold text-text-primary">설정</h1>
       </div>
 
-      <div className="flex flex-col gap-5 max-w-2xl w-full">
-        <MyAccountSection email={myEmail} name={myName} role={myRole} />
-        {isSuper && <AdminManagementSection myEmail={myEmail} />}
-        <LogoutSection />
-      </div>
+      {isSuper ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 w-full max-w-6xl items-start">
+          {/* 좌측: 내 계정 · 관리자 추가 · 로그아웃 */}
+          <div className="flex flex-col gap-5">
+            <MyAccountSection email={myEmail} name={myName} role={myRole} />
+            <AdminCreateSection onCreated={load} />
+            <LogoutSection />
+          </div>
+          {/* 우측: 관리자 계정 목록 */}
+          <div className="flex flex-col gap-5">
+            <AdminListSection admins={admins} loading={loading} listErr={listErr} myEmail={myEmail} onChanged={load} />
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-5 max-w-2xl w-full">
+          <MyAccountSection email={myEmail} name={myName} role={myRole} />
+          <LogoutSection />
+        </div>
+      )}
     </div>
   );
+}
+
+/* 관리자 목록 데이터 훅 — enabled(슈퍼관리자)일 때만 조회. */
+function useAdmins(enabled: boolean) {
+  const [admins, setAdmins] = useState<AdminRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [listErr, setListErr] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setListErr('');
+    try {
+      const res = await fetch('/api/admin/admins');
+      const data = await res.json();
+      if (!res.ok) setListErr(data.error ?? '목록을 불러오지 못했습니다.');
+      else setAdmins(data);
+    } catch {
+      setListErr('목록을 불러오지 못했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (enabled) load();
+  }, [enabled, load]);
+
+  return { admins, loading, listErr, load };
 }
 
 /* ── 카드 공통 래퍼 ── */
@@ -154,36 +199,13 @@ function MyAccountSection({ email, name, role }: { email: string; name: string; 
   );
 }
 
-/* ── 2. 관리자 계정 관리 (슈퍼관리자 전용) ── */
-function AdminManagementSection({ myEmail }: { myEmail: string }) {
-  const [admins, setAdmins] = useState<AdminRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [listErr, setListErr] = useState('');
-
+/* ── 2. 관리자 추가 (슈퍼관리자 전용, 좌측) ── */
+function AdminCreateSection({ onCreated }: { onCreated: () => void }) {
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [createMsg, setCreateMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [creating, setCreating] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setListErr('');
-    try {
-      const res = await fetch('/api/admin/admins');
-      const data = await res.json();
-      if (!res.ok) setListErr(data.error ?? '목록을 불러오지 못했습니다.');
-      else setAdmins(data);
-    } catch {
-      setListErr('목록을 불러오지 못했습니다.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -207,7 +229,7 @@ function AdminManagementSection({ myEmail }: { myEmail: string }) {
         setEmail('');
         setName('');
         setPassword('');
-        load();
+        onCreated();
       }
     } catch {
       setCreateMsg({ type: 'err', text: '요청 중 오류가 발생했습니다.' });
@@ -216,6 +238,66 @@ function AdminManagementSection({ myEmail }: { myEmail: string }) {
     }
   };
 
+  return (
+    <Card title="관리자 추가" desc="J&컴퍼니 직원용 관리자 계정을 발급합니다. 초기 비밀번호는 당사자에게 전달하고, 당사자가 로그인 후 '내 계정'에서 변경합니다.">
+      <form onSubmit={create} className="flex flex-col gap-2">
+        <input
+          type="text"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="아이디 (이메일)"
+          autoComplete="off"
+          required
+          className={inputClass}
+        />
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="이름"
+          autoComplete="off"
+          className={inputClass}
+        />
+        <input
+          type="text"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="초기 비밀번호 (8자 이상)"
+          autoComplete="off"
+          required
+          className={inputClass}
+        />
+        {createMsg && (
+          <p className={`text-xs ${createMsg.type === 'ok' ? 'text-status-success' : 'text-status-error'}`}>
+            {createMsg.text}
+          </p>
+        )}
+        <button
+          type="submit"
+          disabled={creating}
+          className="self-start mt-1 bg-brand hover:bg-brand-dark disabled:opacity-60 text-text-onBrand text-sm font-semibold px-4 py-2 rounded-sm transition-colors"
+        >
+          {creating ? '생성 중...' : '관리자 추가'}
+        </button>
+      </form>
+    </Card>
+  );
+}
+
+/* ── 관리자 계정 목록 (슈퍼관리자 전용, 우측) ── */
+function AdminListSection({
+  admins,
+  loading,
+  listErr,
+  myEmail,
+  onChanged,
+}: {
+  admins: AdminRow[];
+  loading: boolean;
+  listErr: string;
+  myEmail: string;
+  onChanged: () => void;
+}) {
   const remove = async (row: AdminRow) => {
     if (!window.confirm(`관리자 '${row.email}' 계정을 삭제할까요?`)) return;
     try {
@@ -225,22 +307,16 @@ function AdminManagementSection({ myEmail }: { myEmail: string }) {
         window.alert(data.error ?? '삭제에 실패했습니다.');
         return;
       }
-      load();
+      onChanged();
     } catch {
       window.alert('요청 중 오류가 발생했습니다.');
     }
   };
 
   return (
-    <Card title="관리자 계정 관리" desc="J&컴퍼니 직원용 관리자 계정을 발급·삭제합니다. 초기 비밀번호는 당사자에게 전달하고, 당사자가 로그인 후 '내 계정'에서 변경합니다.">
-      {/* 계정 목록 */}
-      <div className="mb-2 flex items-center justify-between">
-        <p className="text-xs font-semibold text-text-secondary">
-          관리자 계정 목록{!loading && !listErr ? ` (${admins.length})` : ''}
-        </p>
-        <p className="text-[11px] text-text-secondary">※ 보안상 비밀번호는 표시되지 않습니다</p>
-      </div>
-      <div className="border border-border rounded-sm overflow-x-auto mb-5">
+    <Card title={`관리자 계정 목록${!loading && !listErr ? ` (${admins.length})` : ''}`}>
+      <p className="text-[11px] text-text-secondary -mt-3 mb-3">※ 보안상 비밀번호는 표시되지 않습니다</p>
+      <div className="border border-border rounded-sm overflow-x-auto">
         {loading ? (
           <p className="text-sm text-text-secondary px-4 py-3">불러오는 중...</p>
         ) : listErr ? (
@@ -293,49 +369,6 @@ function AdminManagementSection({ myEmail }: { myEmail: string }) {
           </table>
         )}
       </div>
-
-      {/* 추가 폼 */}
-      <p className="text-xs font-semibold text-text-secondary mb-2">새 관리자 추가</p>
-      <form onSubmit={create} className="flex flex-col gap-2">
-        <input
-          type="text"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="아이디 (이메일)"
-          autoComplete="off"
-          required
-          className={inputClass}
-        />
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="이름"
-          autoComplete="off"
-          className={inputClass}
-        />
-        <input
-          type="text"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="초기 비밀번호 (8자 이상)"
-          autoComplete="off"
-          required
-          className={inputClass}
-        />
-        {createMsg && (
-          <p className={`text-xs ${createMsg.type === 'ok' ? 'text-status-success' : 'text-status-error'}`}>
-            {createMsg.text}
-          </p>
-        )}
-        <button
-          type="submit"
-          disabled={creating}
-          className="self-start mt-1 bg-brand hover:bg-brand-dark disabled:opacity-60 text-text-onBrand text-sm font-semibold px-4 py-2 rounded-sm transition-colors"
-        >
-          {creating ? '생성 중...' : '관리자 추가'}
-        </button>
-      </form>
     </Card>
   );
 }
