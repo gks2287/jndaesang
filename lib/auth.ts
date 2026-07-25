@@ -1,4 +1,4 @@
-import { NextAuthOptions } from 'next-auth';
+import { NextAuthOptions, getServerSession } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/db';
@@ -55,3 +55,12 @@ export const authOptions: NextAuthOptions = {
     error: '/auth/login',
   },
 };
+
+// 현재 로그인한 관리자(admin_users 레코드)를 세션 email로 조회한다.
+// 세션이 없거나 계정이 삭제됐으면 null. 라우트에서 인증·역할 확인에 사용.
+export async function getCurrentAdmin() {
+  const session = await getServerSession(authOptions);
+  const email = session?.user?.email;
+  if (!email) return null;
+  return prisma.adminUser.findUnique({ where: { email } });
+}
