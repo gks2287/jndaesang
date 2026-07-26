@@ -19,7 +19,7 @@ export function DonutChart({
   segments,
   size = 120,
   strokeWidth = 14,
-  gapDeg = 6,
+  gapDeg = 2,
 }: DonutChartProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
@@ -82,7 +82,7 @@ export function DonutChart({
             fill="none"
             stroke={p.color}
             strokeWidth={strokeWidth}
-            strokeLinecap="round"
+            strokeLinecap="butt"
             style={{
               transition: 'opacity 0.15s',
               opacity: hoveredIndex !== null && hoveredIndex !== i ? 0.4 : 1,
