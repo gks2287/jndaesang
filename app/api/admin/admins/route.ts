@@ -18,10 +18,13 @@ export async function GET() {
   const gate = await requireSuperAdmin();
   if (gate.error) return gate.error;
   try {
+    // 생성 오래된 순(추가된 것이 아래로) 정렬 후, 슈퍼관리자를 맨 위로 고정.
+    // (Array.sort는 안정 정렬이라 같은 그룹 내 createdAt 오름차순 유지)
     const admins = await prisma.adminUser.findMany({
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: 'asc' },
       select: { id: true, email: true, name: true, role: true, createdAt: true },
     });
+    admins.sort((a, b) => (a.role === 'super_admin' ? 0 : 1) - (b.role === 'super_admin' ? 0 : 1));
     return NextResponse.json(admins);
   } catch (err) {
     console.error('[admin/admins GET]', err);
