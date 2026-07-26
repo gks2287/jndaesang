@@ -82,10 +82,6 @@ function RoundChart({ members }: { members: Participant[] }) {
 
   const total = members.length;
   const max = Math.max(...data.map(d => d.count), 1);
-  const chartH = 120;
-  const colW = data.length > 0 ? Math.max(36, Math.min(60, 432 / data.length)) : 36;
-  const barW = Math.round(colW * 0.5);
-  const svgW = colW * data.length;
 
   if (data.length === 0) {
     return <p className="text-center text-xs text-gray-300 py-10">회차 데이터가 없습니다.</p>;
@@ -93,37 +89,30 @@ function RoundChart({ members }: { members: Participant[] }) {
 
   return (
     <div className="w-full">
-      <svg viewBox={`0 0 ${svgW} ${chartH + 28}`} className="w-full">
-        {[0, 0.5, 1].map((ratio) => {
-          const y = chartH - ratio * chartH;
-          return (
-            <line key={ratio} x1="0" y1={y} x2={svgW} y2={y}
-              stroke="#f3f4f6" strokeWidth="1" />
-          );
-        })}
+      {/* 막대 */}
+      <div className="flex items-end gap-2.5 h-36">
         {data.map((d, i) => {
-          const barH = max > 0 ? (d.count / max) * chartH : 0;
-          const x = i * colW + (colW - barW) / 2;
-          const y = chartH - barH;
           const rate = total > 0 ? Math.round((d.count / total) * 100) : 0;
+          const hPct = max > 0 ? (d.count / max) * 100 : 0;
           return (
-            <g key={i}>
-              <rect x={x} y={y} width={barW} height={barH}
-                rx="4" fill={barH > 0 ? '#55A4DA' : '#f3f4f6'} />
+            <div key={i} className="flex-1 flex flex-col items-center justify-end h-full">
               {d.count > 0 && (
-                <text x={x + barW / 2} y={y - 4} textAnchor="middle"
-                  fontSize="9" fill="#6b7280" fontWeight="600">
-                  {d.count}명 ({rate}%)
-                </text>
+                <span className="text-[10px] font-semibold text-gray-500 mb-1 whitespace-nowrap">{d.count}명·{rate}%</span>
               )}
-              <text x={x + barW / 2} y={chartH + 16} textAnchor="middle"
-                fontSize="9" fill="#9ca3af">
-                {d.label}
-              </text>
-            </g>
+              <div
+                className={`w-full max-w-[38px] rounded-t-md transition-all ${d.count > 0 ? 'bg-[#55A4DA]' : 'bg-gray-100'}`}
+                style={{ height: d.count > 0 ? `${Math.max(hPct, 6)}%` : '5px' }}
+              />
+            </div>
           );
         })}
-      </svg>
+      </div>
+      {/* 회차 라벨 */}
+      <div className="flex gap-2.5 mt-2 border-t border-gray-100 pt-2">
+        {data.map((d, i) => (
+          <span key={i} className="flex-1 text-center text-[11px] text-gray-400">{d.label}</span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -531,23 +520,40 @@ export default function CompanyDetailPage() {
           </div>
         </div>
 
-        {/* 리더십 유형 분포 (핵심 지표·회차별 열람 추이 통합) */}
+        {/* 코칭 현황 (지표·분포·추이·만족도 통합) */}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-          <p className="text-sm font-bold text-gray-800 mb-5">리더십 유형 분포</p>
-          <div className="flex flex-col lg:flex-row gap-8 items-start">
-            {/* 좌: 분포 + 핵심 지표 */}
-            <div className="w-full lg:w-[46%] lg:flex-shrink-0 flex flex-col gap-6">
-              {/* 도넛 + 범례 */}
-              <div className="flex items-center gap-6">
+          {/* 상단 KPI 스트립 */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: '대상 리더', value: stats.total, unit: '명', color: 'text-gray-800' },
+              { label: '발송 완료', value: stats.sent, unit: '명', color: 'text-gray-800' },
+              { label: '열람률', value: stats.openRate, unit: '%', color: 'text-[#55A4DA]' },
+              { label: '참여 완료율', value: stats.completionRate, unit: '%', color: 'text-emerald-500' },
+            ].map(item => (
+              <div key={item.label} className="rounded-xl bg-gray-50 px-4 py-3.5">
+                <p className="text-xs text-gray-400 mb-1">{item.label}</p>
+                <p className={`text-2xl font-bold leading-none ${item.color}`}>
+                  {item.value}<span className="text-sm font-medium text-gray-400 ml-0.5">{item.unit}</span>
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {/* 2단: 리더십 유형 분포 / 회차별 열람 추이 */}
+          <div className="flex flex-col lg:flex-row gap-8 mt-7">
+            {/* 좌: 리더십 유형 분포 + 상태별 인원 */}
+            <div className="w-full lg:w-[44%] lg:flex-shrink-0">
+              <p className="text-sm font-bold text-gray-800 mb-4">리더십 유형 분포</p>
+              <div className="flex items-center gap-5">
                 <DonutChart segments={leadershipDist} total={stats.total} />
-                <div className="flex flex-col gap-2.5 flex-1 min-w-0">
+                <div className="flex flex-col gap-2 flex-1 min-w-0">
                   {leadershipDist.map(seg => (
                     <div key={seg.type} className="flex items-center gap-2">
-                      <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: LEADERSHIP_COLORS[seg.type] }} />
-                      <span className="text-sm text-gray-600 flex-1 min-w-0 truncate">{seg.type}</span>
-                      <span className="text-sm font-bold text-gray-800">{seg.count}명</span>
+                      <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: LEADERSHIP_COLORS[seg.type] }} />
+                      <span className="text-[13px] text-gray-600 flex-1 min-w-0 truncate">{seg.type}</span>
+                      <span className="text-[13px] font-bold text-gray-800">{seg.count}</span>
                       {stats.total > 0 && (
-                        <span className="text-xs text-gray-400 w-8 text-right">
+                        <span className="text-[11px] text-gray-400 w-8 text-right">
                           {Math.round((seg.count / stats.total) * 100)}%
                         </span>
                       )}
@@ -555,32 +561,15 @@ export default function CompanyDetailPage() {
                   ))}
                 </div>
               </div>
-              {/* 핵심 지표 4개 */}
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { label: '대상 리더', value: stats.total, unit: '명', color: 'text-gray-800' },
-                  { label: '발송 완료', value: stats.sent, unit: '명', color: 'text-gray-800' },
-                  { label: '열람률', value: stats.openRate, unit: '%', color: 'text-[#55A4DA]' },
-                  { label: '참여 완료율', value: stats.completionRate, unit: '%', color: 'text-emerald-500' },
-                ].map(item => (
-                  <div key={item.label} className="border border-gray-200 rounded-xl p-4 text-center flex flex-col items-center justify-center">
-                    <p className="text-xs text-gray-400 mb-1.5">{item.label}</p>
-                    <p className={`text-2xl font-bold ${item.color}`}>
-                      {item.value}
-                      <span className="text-sm font-medium text-gray-400 ml-1">{item.unit}</span>
-                    </p>
-                  </div>
-                ))}
-              </div>
               {/* 상태별 인원 */}
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-4 gap-2 mt-6">
                 {[
                   { label: '완료', value: statusCounts.done, dot: 'bg-emerald-500' },
                   { label: '진행 중', value: statusCounts.reading, dot: 'bg-[#55A4DA]' },
                   { label: '미열람', value: statusCounts.unopened, dot: 'bg-amber-400' },
                   { label: '미발송', value: statusCounts.notSent, dot: 'bg-gray-300' },
                 ].map(s => (
-                  <div key={s.label} className="flex flex-col items-center gap-1 py-2 rounded-lg bg-gray-50">
+                  <div key={s.label} className="flex flex-col items-center gap-1 py-2.5 rounded-lg bg-gray-50">
                     <span className="flex items-center gap-1">
                       <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
                       <span className="text-[11px] text-gray-500">{s.label}</span>
@@ -592,23 +581,23 @@ export default function CompanyDetailPage() {
                 ))}
               </div>
             </div>
-            {/* 우: 회차별 열람 추이 */}
+
+            {/* 우: 회차별 열람 추이 + 유형별 열람률 */}
             <div className="w-full lg:flex-1 min-w-0 lg:border-l lg:border-gray-100 lg:pl-8">
-              <p className="text-sm font-bold text-gray-800 mb-5">회차별 열람 추이</p>
+              <p className="text-sm font-bold text-gray-800 mb-4">회차별 열람 추이</p>
               <RoundChart members={yearMembers} />
 
-              {/* 유형별 열람률 */}
               {typeOpenRates.length > 0 && (
-                <div className="mt-8">
+                <div className="mt-7">
                   <p className="text-sm font-bold text-gray-800 mb-3">유형별 열람률</p>
                   <div className="flex flex-col gap-2">
                     {typeOpenRates.map(t => (
                       <div key={t.type} className="flex items-center gap-3">
-                        <span className="text-xs text-gray-600 w-36 flex-shrink-0 truncate">{t.type}</span>
-                        <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+                        <span className="text-[13px] text-gray-600 w-32 flex-shrink-0 truncate">{t.type}</span>
+                        <div className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
                           <div className="h-full rounded-full" style={{ width: `${t.rate}%`, backgroundColor: LEADERSHIP_COLORS[t.type] }} />
                         </div>
-                        <span className="text-xs font-semibold text-gray-700 w-9 text-right flex-shrink-0">{t.rate}%</span>
+                        <span className="text-[11px] font-semibold text-gray-500 w-8 text-right flex-shrink-0">{t.rate}%</span>
                       </div>
                     ))}
                   </div>
