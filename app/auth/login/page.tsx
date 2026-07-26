@@ -2,15 +2,14 @@
 
 import { useState, Suspense } from 'react';
 import { signIn } from 'next-auth/react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+
+// 로그인 후 항상 이 화면(진단대상)으로 진입. 원래 가려던 목적지(callbackUrl)는 무시한다.
+const LANDING_PATH = '/admin/dashboard';
 
 function LoginForm() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  // 미들웨어가 미인증 접근 시 붙여주는 원래 목적지. admin 경로만 허용(오픈 리다이렉트 방지), 없으면 대시보드.
-  const rawCallback = searchParams.get('callbackUrl');
-  const callbackUrl = rawCallback && rawCallback.startsWith('/admin') ? rawCallback : '/admin/dashboard';
   const [userId, setUserId] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -40,7 +39,7 @@ function LoginForm() {
       if (result?.error) {
         setError('아이디 또는 비밀번호가 올바르지 않습니다.');
       } else {
-        router.push(callbackUrl);
+        router.push(LANDING_PATH);
       }
     } catch {
       setError('로그인 중 오류가 발생했습니다. 다시 시도해 주세요.');
