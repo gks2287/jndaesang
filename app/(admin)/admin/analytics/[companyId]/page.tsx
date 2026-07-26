@@ -247,6 +247,25 @@ export default function CompanyDetailPage() {
     [yearMembers],
   );
 
+  // 발송 상태별 인원 (발송완료=미열람, 열람=진행 중)
+  const statusCounts = useMemo(() => ({
+    done: yearMembers.filter(p => p.deliveryStatus === '완료').length,
+    reading: yearMembers.filter(p => p.deliveryStatus === '열람').length,
+    unopened: yearMembers.filter(p => p.deliveryStatus === '발송완료').length,
+    notSent: yearMembers.filter(p => p.deliveryStatus === '미발송').length,
+  }), [yearMembers]);
+
+  // 리더십 유형별 열람률 (열람률 높은 순)
+  const typeOpenRates = useMemo(() =>
+    leadershipDist.map(({ type }) => {
+      const ps = yearMembers.filter(p => p.leadershipType === type);
+      const sent = ps.filter(p => p.deliveryStatus !== '미발송').length;
+      const opened = ps.filter(p => p.deliveryStatus === '열람' || p.deliveryStatus === '완료').length;
+      return { type, count: ps.length, rate: sent > 0 ? Math.round((opened / sent) * 100) : 0 };
+    }).sort((a, b) => b.rate - a.rate),
+    [leadershipDist, yearMembers],
+  );
+
   const [activeLogRound, setActiveLogRound] = useState<number | 'all'>('all');
   const [activeBottomTab, setActiveBottomTab] = useState<'summary' | 'log'>('summary');
 
@@ -514,11 +533,48 @@ export default function CompanyDetailPage() {
                   </div>
                 ))}
               </div>
+              {/* 상태별 인원 */}
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { label: '완료', value: statusCounts.done, dot: 'bg-emerald-500' },
+                  { label: '진행 중', value: statusCounts.reading, dot: 'bg-[#55A4DA]' },
+                  { label: '미열람', value: statusCounts.unopened, dot: 'bg-amber-400' },
+                  { label: '미발송', value: statusCounts.notSent, dot: 'bg-gray-300' },
+                ].map(s => (
+                  <div key={s.label} className="flex flex-col items-center gap-1 py-2 rounded-lg bg-gray-50">
+                    <span className="flex items-center gap-1">
+                      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+                      <span className="text-[11px] text-gray-500">{s.label}</span>
+                    </span>
+                    <span className="text-sm font-bold text-gray-800">
+                      {s.value}<span className="text-[10px] text-gray-400 ml-0.5">명</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
             {/* 우: 회차별 열람 추이 */}
             <div className="w-full lg:flex-1 min-w-0 lg:border-l lg:border-gray-100 lg:pl-8">
               <p className="text-sm font-bold text-gray-800 mb-5">회차별 열람 추이</p>
               <RoundChart members={yearMembers} />
+
+              {/* 유형별 열람률 */}
+              {typeOpenRates.length > 0 && (
+                <div className="mt-8">
+                  <p className="text-sm font-bold text-gray-800 mb-3">유형별 열람률</p>
+                  <div className="flex flex-col gap-2">
+                    {typeOpenRates.map(t => (
+                      <div key={t.type} className="flex items-center gap-3">
+                        <span className="text-xs text-gray-600 w-36 flex-shrink-0 truncate">{t.type}</span>
+                        <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${t.rate}%`, backgroundColor: LEADERSHIP_COLORS[t.type] }} />
+                        </div>
+                        <span className="text-xs font-semibold text-gray-700 w-9 text-right flex-shrink-0">{t.rate}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
