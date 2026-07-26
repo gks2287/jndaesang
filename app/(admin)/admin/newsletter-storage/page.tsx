@@ -44,6 +44,23 @@ export default function NewsletterStoragePage() {
   const [preview, setPreview] = useState<{ title: string; content: SavedNewsletterContent } | null>(null);
   const [reuseToast, setReuseToast] = useState<string | null>(null);
 
+  // 뉴스레터별 만족도 { [newsletterId]: { avg, count } }
+  const [satisfaction, setSatisfaction] = useState<Record<number, { avg: number; count: number }>>({});
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/admin/newsletter-satisfaction');
+        if (!res.ok || !alive) return;
+        const data = (await res.json()) as { satisfaction: Record<number, { avg: number; count: number }> };
+        if (alive) setSatisfaction(data.satisfaction ?? {});
+      } catch (e) {
+        console.error('만족도 로드 오류:', e);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
   // PDF 다운로드 — 화면 밖에 실제 뉴스레터 본문을 렌더링해 html2canvas로 캡처 후 PDF로 저장
   const [pdfTarget, setPdfTarget] = useState<{ key: string; fileName: string; round: SavedNewsletterRound } | null>(null);
   const [pdfBusyKey, setPdfBusyKey] = useState<string | null>(null);
@@ -221,6 +238,24 @@ export default function NewsletterStoragePage() {
                   </div>
 
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    {/* 만족도 (PDF 좌측) */}
+                    {(() => {
+                      const s = satisfaction[item.newsletterId];
+                      return s && s.count > 0 ? (
+                        <div
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-50 whitespace-nowrap"
+                          title={`만족도 ${s.avg.toFixed(1)}/5 · ${s.count}명 응답`}
+                        >
+                          <svg className="w-3.5 h-3.5 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                          </svg>
+                          <span className="text-xs font-bold text-amber-600">{s.avg.toFixed(1)}</span>
+                          <span className="text-[10px] text-amber-400">/5</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-300 px-1.5 whitespace-nowrap" title="아직 만족도 응답이 없습니다">만족도 —</span>
+                      );
+                    })()}
                     <button
                       onClick={() => handleDownloadPDF(item)}
                       disabled={!hasContent || pdfBusyKey === `${item.newsletterId}-${item.roundNum}`}
