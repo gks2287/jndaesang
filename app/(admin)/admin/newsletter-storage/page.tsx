@@ -44,21 +44,37 @@ export default function NewsletterStoragePage() {
   const [preview, setPreview] = useState<{ title: string; content: SavedNewsletterContent } | null>(null);
   const [reuseToast, setReuseToast] = useState<string | null>(null);
 
-  // 북마크 — 행 키(`${newsletterId}-${roundNum}`) 집합, 브라우저에 저장(새로고침 유지)
+  // 북마크 — 행 키(`${newsletterId}-${roundNum}`) 집합, 계정 단위로 DB 저장
   const [bookmarks, setBookmarks] = useState<Set<string>>(new Set());
+  const [onlyBookmarked, setOnlyBookmarked] = useState(false);
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem('newsletter-bookmarks');
-      if (raw) setBookmarks(new Set(JSON.parse(raw) as string[]));
-    } catch { /* noop */ }
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/admin/bookmarks');
+        if (!res.ok || !alive) return;
+        const data = (await res.json()) as { keys: string[] };
+        if (alive) setBookmarks(new Set(data.keys ?? []));
+      } catch (e) {
+        console.error('북마크 로드 오류:', e);
+      }
+    })();
+    return () => { alive = false; };
   }, []);
-  const toggleBookmark = (key: string) => {
+  const toggleBookmark = (item: StorageRoundItem) => {
+    const key = `${item.newsletterId}-${item.roundNum}`;
+    const willBookmark = !bookmarks.has(key);
+    // 낙관적 업데이트
     setBookmarks(prev => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      try { localStorage.setItem('newsletter-bookmarks', JSON.stringify([...next])); } catch { /* noop */ }
+      if (willBookmark) next.add(key); else next.delete(key);
       return next;
     });
+    fetch('/api/admin/bookmarks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newsletterId: item.newsletterId, roundNum: item.roundNum, bookmarked: willBookmark }),
+    }).catch(e => console.error('북마크 저장 오류:', e));
   };
 
   // 뉴스레터별 만족도 { [newsletterId]: { avg, count } }
@@ -122,8 +138,9 @@ export default function NewsletterStoragePage() {
         r.companyName.includes(q) || r.leadershipType.includes(q) || (r.topic ?? '').includes(q)
       );
     }
+    if (onlyBookmarked) list = list.filter(r => bookmarks.has(`${r.newsletterId}-${r.roundNum}`));
     return list;
-  }, [allRounds, companyFilter, search]);
+  }, [allRounds, companyFilter, search, onlyBookmarked, bookmarks]);
 
   const storageCompanyIds = useMemo(() =>
     [...new Set(allRounds.map(r => r.companyId))],
@@ -212,6 +229,20 @@ export default function NewsletterStoragePage() {
               <option key={c.id} value={String(c.id)}>{c.name}</option>
             ))}
           </select>
+          {/* 북마크만 보기 */}
+          <button
+            onClick={() => setOnlyBookmarked(v => !v)}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium border transition-colors ${
+              onlyBookmarked
+                ? 'bg-[#55A4DA] border-[#55A4DA] text-white'
+                : 'bg-gray-50 border-gray-200 text-gray-600 hover:border-[#55A4DA]'
+            }`}
+          >
+            <svg className="w-4 h-4" fill={onlyBookmarked ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+            </svg>
+            북마크만
+          </button>
         </div>
 
         {/* 카드 목록 */}
@@ -221,7 +252,7 @@ export default function NewsletterStoragePage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
             <p className="text-sm font-medium">
-              {allRounds.length === 0 ? '아직 제작완료된 뉴스레터가 없습니다.' : '검색 결과가 없습니다.'}
+              {allRounds.length === 0 ? '아직 제작완료된 뉴스레터가 없습니다.' : onlyBookmarked ? '북마크한 뉴스레터가 없습니다.' : '검색 결과가 없습니다.'}
             </p>
             <p className="text-xs text-gray-300 mt-1">뉴스레터 제작을 완료하면 이 목록에 자동으로 표시됩니다.</p>
           </div>
@@ -241,7 +272,7 @@ export default function NewsletterStoragePage() {
                     const marked = bookmarks.has(key);
                     return (
                       <button
-                        onClick={() => toggleBookmark(key)}
+                        onClick={() => toggleBookmark(item)}
                         className={`flex-shrink-0 transition-colors ${marked ? 'text-[#55A4DA]' : 'text-gray-300 hover:text-[#55A4DA]'}`}
                         title={marked ? '북마크 해제' : '북마크'}
                         aria-label={marked ? '북마크 해제' : '북마크'}

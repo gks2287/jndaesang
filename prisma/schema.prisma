@@ -142,7 +142,23 @@ model AdminUser {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  bookmarks    NewsletterBookmark[]
+
   @@map("admin_users")
+}
+
+// 뉴스레터 저장소 북마크 — 관리자 계정 단위. 행 식별은 (newsletterId, roundNum).
+model NewsletterBookmark {
+  id           Int       @id @default(autoincrement())
+  adminUser    AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  adminUserId  Int
+  newsletterId Int
+  roundNum     Int
+  createdAt    DateTime  @default(now())
+
+  @@unique([adminUserId, newsletterId, roundNum])
+  @@index([adminUserId])
+  @@map("newsletter_bookmarks")
 }
 
 // 콘텐츠 풀 — 관리자가 등록/큐레이션한 콘텐츠. (기존 파일 기반 저장을 DB로 이전)
