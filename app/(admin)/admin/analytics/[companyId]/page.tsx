@@ -473,24 +473,52 @@ export default function CompanyDetailPage() {
           </div>
         </div>
 
-        {/* 리더십 유형 분포 */}
+        {/* 리더십 유형 분포 (핵심 지표·회차별 열람 추이 통합) */}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
           <p className="text-sm font-bold text-gray-800 mb-5">리더십 유형 분포</p>
-          <div className="flex items-center gap-8">
-            <DonutChart segments={leadershipDist} total={stats.total} />
-            <div className="flex flex-col gap-3 flex-1">
-              {leadershipDist.map(seg => (
-                <div key={seg.type} className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: LEADERSHIP_COLORS[seg.type] }} />
-                  <span className="text-sm text-gray-600 flex-1">{seg.type}</span>
-                  <span className="text-sm font-bold text-gray-800">{seg.count}명</span>
-                  {stats.total > 0 && (
-                    <span className="text-xs text-gray-400 w-8 text-right">
-                      {Math.round((seg.count / stats.total) * 100)}%
-                    </span>
-                  )}
+          <div className="flex flex-col lg:flex-row gap-8 items-start">
+            {/* 좌: 분포 + 핵심 지표 */}
+            <div className="w-full lg:w-[46%] lg:flex-shrink-0 flex flex-col gap-6">
+              {/* 도넛 + 범례 */}
+              <div className="flex items-center gap-6">
+                <DonutChart segments={leadershipDist} total={stats.total} />
+                <div className="flex flex-col gap-2.5 flex-1 min-w-0">
+                  {leadershipDist.map(seg => (
+                    <div key={seg.type} className="flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: LEADERSHIP_COLORS[seg.type] }} />
+                      <span className="text-sm text-gray-600 flex-1 min-w-0 truncate">{seg.type}</span>
+                      <span className="text-sm font-bold text-gray-800">{seg.count}명</span>
+                      {stats.total > 0 && (
+                        <span className="text-xs text-gray-400 w-8 text-right">
+                          {Math.round((seg.count / stats.total) * 100)}%
+                        </span>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
+              {/* 핵심 지표 4개 */}
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: '대상 리더', value: stats.total, unit: '명', color: 'text-gray-800' },
+                  { label: '발송 완료', value: stats.sent, unit: '명', color: 'text-gray-800' },
+                  { label: '열람률', value: stats.openRate, unit: '%', color: 'text-[#55A4DA]' },
+                  { label: '참여 완료율', value: stats.completionRate, unit: '%', color: 'text-emerald-500' },
+                ].map(item => (
+                  <div key={item.label} className="border border-gray-200 rounded-xl p-4 text-center flex flex-col items-center justify-center">
+                    <p className="text-xs text-gray-400 mb-1.5">{item.label}</p>
+                    <p className={`text-2xl font-bold ${item.color}`}>
+                      {item.value}
+                      <span className="text-sm font-medium text-gray-400 ml-1">{item.unit}</span>
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* 우: 회차별 열람 추이 */}
+            <div className="w-full lg:flex-1 min-w-0 lg:border-l lg:border-gray-100 lg:pl-8">
+              <p className="text-sm font-bold text-gray-800 mb-5">회차별 열람 추이</p>
+              <RoundChart members={yearMembers} />
             </div>
           </div>
         </div>
@@ -584,32 +612,6 @@ export default function CompanyDetailPage() {
           </div>
         )}
 
-        {/* 핵심 지표 + 월간 열람 추이 */}
-        <div className="flex gap-4 items-stretch">
-          {/* 핵심 지표 */}
-          <div className="flex flex-col gap-4 flex-shrink-0 w-[32%]">
-            {[
-              { label: '대상 리더', value: stats.total, unit: '명', color: 'text-gray-800' },
-              { label: '발송 완료', value: stats.sent, unit: '명', color: 'text-gray-800' },
-              { label: '열람률', value: stats.openRate, unit: '%', color: 'text-[#55A4DA]' },
-              { label: '참여 완료율', value: stats.completionRate, unit: '%', color: 'text-emerald-500' },
-            ].map(item => (
-              <div key={item.label} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 text-center flex-1 flex flex-col items-center justify-center">
-                <p className="text-xs text-gray-400 mb-2">{item.label}</p>
-                <p className={`text-3xl font-bold ${item.color}`}>
-                  {item.value}
-                  <span className="text-sm font-medium text-gray-400 ml-1">{item.unit}</span>
-                </p>
-              </div>
-            ))}
-          </div>
-
-          {/* 회차별 열람 추이 */}
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 flex-1">
-            <p className="text-sm font-bold text-gray-800 mb-5">회차별 열람 추이</p>
-            <RoundChart members={yearMembers} />
-          </div>
-        </div>
 
         {/* 리더 목록 */}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
