@@ -26,6 +26,15 @@ const deliveryBadge: Record<string, string> = {
   '미발송':  'bg-gray-50 text-gray-400',
 };
 
+// 뉴스레터 만족도 5단계 (점수·색상). 높은 만족=초록, 낮음=빨강.
+const SATISFACTION_LEVELS = [
+  { label: '매우 만족', color: '#2FB380' },
+  { label: '만족', color: '#7BC96F' },
+  { label: '보통', color: '#E8C34D' },
+  { label: '불만족', color: '#ED8A4E' },
+  { label: '매우 불만족', color: '#E05263' },
+];
+
 function DonutChart({ segments, total }: {
   segments: { type: LeadershipType; count: number }[];
   total: number;
@@ -364,6 +373,36 @@ export default function CompanyDetailPage() {
     return () => { alive = false; };
   }, [companyId]);
 
+  // 뉴스레터 만족도 — 전반적 만족도 문항(상시 rating / 정기 조사 Q1)을 5점 척도로 집계. 연도 대상자 기준.
+  const satisfaction = useMemo(() => {
+    const scoreMap: Record<string, number> = { '매우 만족': 5, '만족': 4, '보통': 3, '불만족': 2, '매우 불만족': 1 };
+    const memberIds = new Set(yearMembers.map(p => p.id));
+    const dist: Record<string, number> = {};
+    let sum = 0;
+    let count = 0;
+    const add = (label: unknown) => {
+      const l = String(label ?? '').trim();
+      if (l in scoreMap) {
+        dist[l] = (dist[l] ?? 0) + 1;
+        sum += scoreMap[l];
+        count += 1;
+      }
+    };
+    for (const row of companyResponses) {
+      if (!memberIds.has(row.participant.id)) continue;
+      if (row.kind === 'survey-always') {
+        add(row.response?.rating);
+      } else if (row.kind === 'survey-periodic') {
+        const answers = Array.isArray(row.response?.answers)
+          ? (row.response.answers as { question?: string; answer?: unknown }[])
+          : [];
+        const overall = answers.find(a => typeof a?.question === 'string' && a.question.includes('전반적으로') && a.question.includes('만족'));
+        if (overall) add(overall.answer);
+      }
+    }
+    return { avg: count > 0 ? sum / count : 0, count, dist };
+  }, [companyResponses, yearMembers]);
+
   const typeQuestions = useMemo(() => {
     if (!activeLeadership) return [];
     const memberIds = new Set(typeMembers.map(p => p.id));
@@ -576,6 +615,44 @@ export default function CompanyDetailPage() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* 뉴스레터 만족도 */}
+          <div className="mt-6 pt-5 border-t border-gray-100">
+            <div className="flex items-center gap-2 mb-3">
+              <p className="text-sm font-bold text-gray-800">뉴스레터 만족도</p>
+              <span className="text-xs text-gray-400">{satisfaction.count}명 응답</span>
+            </div>
+            {satisfaction.count === 0 ? (
+              <p className="text-sm text-gray-300">아직 만족도 응답이 없습니다.</p>
+            ) : (
+              <div className="flex flex-col sm:flex-row items-center gap-8">
+                {/* 평균 점수 */}
+                <div className="flex-shrink-0 text-center">
+                  <p className="text-3xl font-bold text-[#55A4DA]">
+                    {satisfaction.avg.toFixed(1)}
+                    <span className="text-base font-medium text-gray-400"> / 5</span>
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">평균 만족도</p>
+                </div>
+                {/* 등급별 분포 */}
+                <div className="flex-1 w-full flex flex-col gap-1.5">
+                  {SATISFACTION_LEVELS.map(lv => {
+                    const c = satisfaction.dist[lv.label] ?? 0;
+                    const pct = satisfaction.count > 0 ? Math.round((c / satisfaction.count) * 100) : 0;
+                    return (
+                      <div key={lv.label} className="flex items-center gap-3">
+                        <span className="text-xs text-gray-600 w-16 flex-shrink-0">{lv.label}</span>
+                        <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: lv.color }} />
+                        </div>
+                        <span className="text-xs text-gray-500 w-9 text-right flex-shrink-0">{c}명</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
