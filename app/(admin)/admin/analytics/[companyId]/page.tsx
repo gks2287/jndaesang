@@ -539,7 +539,7 @@ export default function CompanyDetailPage() {
             ))}
           </div>
 
-          {/* 2단: 리더십 유형 분포 / 회차별 열람 추이 */}
+          {/* 2단: 리더십 유형 분포 / 회차별 발송 현황 */}
           <div className="flex flex-col lg:flex-row gap-8 mt-7">
             {/* 좌: 리더십 유형 분포 + 상태별 인원 */}
             <div className="w-full lg:w-[44%] lg:flex-shrink-0">
@@ -582,9 +582,9 @@ export default function CompanyDetailPage() {
               </div>
             </div>
 
-            {/* 우: 회차별 열람 추이 + 유형별 열람률 */}
+            {/* 우: 회차별 발송 현황 + 유형별 열람률 */}
             <div className="w-full lg:flex-1 min-w-0 lg:border-l lg:border-gray-100 lg:pl-8">
-              <p className="text-sm font-bold text-gray-800 mb-4">회차별 열람 추이</p>
+              <p className="text-sm font-bold text-gray-800 mb-4">회차별 발송 현황</p>
               <RoundChart members={yearMembers} />
 
               {typeOpenRates.length > 0 && (
