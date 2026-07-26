@@ -44,6 +44,23 @@ export default function NewsletterStoragePage() {
   const [preview, setPreview] = useState<{ title: string; content: SavedNewsletterContent } | null>(null);
   const [reuseToast, setReuseToast] = useState<string | null>(null);
 
+  // 북마크 — 행 키(`${newsletterId}-${roundNum}`) 집합, 브라우저에 저장(새로고침 유지)
+  const [bookmarks, setBookmarks] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('newsletter-bookmarks');
+      if (raw) setBookmarks(new Set(JSON.parse(raw) as string[]));
+    } catch { /* noop */ }
+  }, []);
+  const toggleBookmark = (key: string) => {
+    setBookmarks(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      try { localStorage.setItem('newsletter-bookmarks', JSON.stringify([...next])); } catch { /* noop */ }
+      return next;
+    });
+  };
+
   // 뉴스레터별 만족도 { [newsletterId]: { avg, count } }
   const [satisfaction, setSatisfaction] = useState<Record<number, { avg: number; count: number }>>({});
   useEffect(() => {
@@ -218,6 +235,24 @@ export default function NewsletterStoragePage() {
                   key={`${item.newsletterId}-${item.roundNum}`}
                   className="flex items-center gap-4 border border-gray-200 rounded-xl px-5 py-3.5 bg-white hover:shadow-sm transition-shadow"
                 >
+                  {/* 북마크 (좌측) */}
+                  {(() => {
+                    const key = `${item.newsletterId}-${item.roundNum}`;
+                    const marked = bookmarks.has(key);
+                    return (
+                      <button
+                        onClick={() => toggleBookmark(key)}
+                        className={`flex-shrink-0 transition-colors ${marked ? 'text-[#55A4DA]' : 'text-gray-300 hover:text-[#55A4DA]'}`}
+                        title={marked ? '북마크 해제' : '북마크'}
+                        aria-label={marked ? '북마크 해제' : '북마크'}
+                      >
+                        <svg className="w-5 h-5" fill={marked ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                        </svg>
+                      </button>
+                    );
+                  })()}
+
                   <CompanyLogo name={item.companyName} size={36} />
 
                   <div className="flex-1 min-w-0">
