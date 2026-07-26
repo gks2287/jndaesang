@@ -4,24 +4,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useCompanyStore } from '@/store/companyStore';
 import { useParticipantStore, type LeadershipType, type Participant } from '@/store/participantStore';
+import { LEADERSHIP_COLORS } from '@/lib/leadership';
 import * as XLSX from 'xlsx';
 import CompanyLogo from '@/components/CompanyLogo';
 
-const LEADERSHIP_COLORS: Record<LeadershipType, string> = {
-  '독재형':     '#2E7DB5',
-  '방관형':     '#55A4DA',
-  '성과압박형': '#7EC8E3',
-  '불통형':     '#A8D8EA',
-  '불명확형':   '#9B7BB8',
-  '감정기복형': '#B8D4E8',
-  '완벽주의형': '#4A90C4',
-  '우유부단형': '#6EB5D8',
-  '코칭형':     '#34C97A',
-  '민주형':     '#50C4A0',
-  '서번트형':   '#38B2AC',
-  '비전형':     '#4299E1',
-  '관계중심형': '#68D391',
-};
 
 const statusDot: Record<string, string> = {
   '진행 중':   'bg-[#55A4DA]',

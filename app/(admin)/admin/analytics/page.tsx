@@ -3,28 +3,14 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useCompanyStore } from '@/store/companyStore';
-import { useParticipantStore, type LeadershipType } from '@/store/participantStore';
+import { useParticipantStore } from '@/store/participantStore';
+import { LEADERSHIP_COLORS, LEADERSHIP_FALLBACK } from '@/lib/leadership';
 import { useNewsletterStore } from '@/store/newsletterStore';
 import { DonutChart } from '@/components/ui/donut-chart';
 import CompanyLogo from '@/components/CompanyLogo';
 
 const YEARS = ['2026', '2025', '2024'];
 
-const LEADERSHIP_COLORS: Record<LeadershipType, string> = {
-  '독재형':     '#2E7DB5',
-  '방관형':     '#55A4DA',
-  '성과압박형': '#7EC8E3',
-  '불통형':     '#A8D8EA',
-  '불명확형':   '#9B7BB8',
-  '감정기복형': '#B8D4E8',
-  '완벽주의형': '#4A90C4',
-  '우유부단형': '#6EB5D8',
-  '코칭형':     '#34C97A',
-  '민주형':     '#50C4A0',
-  '서번트형':   '#38B2AC',
-  '비전형':     '#4299E1',
-  '관계중심형': '#68D391',
-};
 
 const statusDot: Record<string, string> = {
   '진행 중':   'bg-brand',
@@ -205,7 +191,7 @@ export default function AnalyticsPage() {
                     <DonutChart
                       segments={leadershipDist.filter(s => s.count > 0).map(s => ({
                         value: s.count,
-                        color: LEADERSHIP_COLORS[s.type] ?? '#9CA3AF',
+                        color: LEADERSHIP_COLORS[s.type] ?? LEADERSHIP_FALLBACK,
                         label: s.type,
                       }))}
                       size={120}
@@ -216,7 +202,7 @@ export default function AnalyticsPage() {
                   {/* 범례 */}
                   <div className="flex flex-col gap-2 min-w-0">
                     {leadershipDist.filter(s => s.count > 0).map(seg => {
-                      const color = LEADERSHIP_COLORS[seg.type] ?? '#9CA3AF';
+                      const color = LEADERSHIP_COLORS[seg.type] ?? LEADERSHIP_FALLBACK;
                       return (
                         <div key={seg.type} className="flex items-center gap-1.5">
                           <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ backgroundColor: color }} />
