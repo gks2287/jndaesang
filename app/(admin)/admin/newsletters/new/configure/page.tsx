@@ -118,6 +118,24 @@ function StorageImportModal({ onImport, onClose }: {
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
+  // 북마크 — 행 키(`${newsletterId}-${roundNum}`) 집합, 계정 단위로 DB 저장 (뉴스레터 저장소와 동일 API)
+  const [bookmarks, setBookmarks] = useState<Set<string>>(new Set());
+  const [onlyBookmarked, setOnlyBookmarked] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/admin/bookmarks');
+        if (!res.ok || !alive) return;
+        const data = (await res.json()) as { keys: string[] };
+        if (alive) setBookmarks(new Set(data.keys ?? []));
+      } catch (e) {
+        console.error('북마크 로드 오류:', e);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
   const storageNLs = useMemo(() =>
     newsletters
       .filter(n => n.status === '제작완료' && n.generatedContent?.rounds?.some(r => r.generated?.headline))
@@ -127,11 +145,19 @@ function StorageImportModal({ onImport, onClose }: {
 
   const filtered = useMemo(() => {
     const q = search.trim();
-    if (!q) return storageNLs;
-    return storageNLs.filter(n =>
-      n.companyName?.includes(q) || n.leadershipType?.includes(q) || n.title?.includes(q)
-    );
-  }, [storageNLs, search]);
+    let list = storageNLs;
+    if (q) {
+      list = list.filter(n =>
+        n.companyName?.includes(q) || n.leadershipType?.includes(q) || n.title?.includes(q)
+      );
+    }
+    if (onlyBookmarked) {
+      list = list.filter(n =>
+        (n.generatedContent?.rounds ?? []).some((r, i) => r.generated?.headline && bookmarks.has(`${n.id}-${i + 1}`))
+      );
+    }
+    return list;
+  }, [storageNLs, search, onlyBookmarked, bookmarks]);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
@@ -145,20 +171,36 @@ function StorageImportModal({ onImport, onClose }: {
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
-        <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0">
-          <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5">
+        <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0 flex items-center gap-2">
+          <div className="flex-1 flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5">
             <svg className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
             <input type="text" placeholder="기업명·유형·제목 검색" value={search} onChange={e => setSearch(e.target.value)}
               className="bg-transparent text-sm text-gray-600 placeholder-gray-400 outline-none w-full" autoFocus />
           </div>
+          <button
+            type="button"
+            onClick={() => setOnlyBookmarked(v => !v)}
+            className={`flex-shrink-0 flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium border transition-colors ${
+              onlyBookmarked
+                ? 'bg-[#55A4DA] border-[#55A4DA] text-white'
+                : 'bg-gray-50 border-gray-200 text-gray-600 hover:border-[#55A4DA]'
+            }`}
+          >
+            <svg className="w-3.5 h-3.5" fill={onlyBookmarked ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+            </svg>
+            북마크만
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
           {filtered.length === 0 ? (
             <p className="text-sm text-gray-400 text-center py-8">
-              {storageNLs.length === 0 ? '저장소에 제작완료된 뉴스레터가 없습니다.' : '검색 결과가 없습니다.'}
+              {storageNLs.length === 0 ? '저장소에 제작완료된 뉴스레터가 없습니다.' : onlyBookmarked ? '북마크한 뉴스레터가 없습니다.' : '검색 결과가 없습니다.'}
             </p>
           ) : filtered.map(nl => {
-            const rounds = (nl.generatedContent?.rounds ?? []).filter(r => r.generated?.headline);
+            const rounds = (nl.generatedContent?.rounds ?? [])
+              .map((r, i) => ({ r, roundNum: i + 1 }))
+              .filter(({ r, roundNum }) => r.generated?.headline && (!onlyBookmarked || bookmarks.has(`${nl.id}-${roundNum}`)));
             const isOpen = expanded.has(nl.id);
             return (
               <div key={nl.id} className="border border-gray-200 rounded-xl overflow-hidden">
@@ -178,13 +220,18 @@ function StorageImportModal({ onImport, onClose }: {
                 </button>
                 {isOpen && (
                   <div className="border-t border-gray-100 divide-y divide-gray-50">
-                    {rounds.map((r, i) => (
+                    {rounds.map(({ r, roundNum }) => (
                       <button
-                        key={i}
+                        key={roundNum}
                         onClick={() => { if (r.generated) { onImport(r.generated, r.generated.headline ?? ''); } }}
                         className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[#55A4DA]/5 transition-colors text-left group"
                       >
                         <span className="text-xs font-bold text-gray-400 w-10 flex-shrink-0">{r.vol}회차</span>
+                        {bookmarks.has(`${nl.id}-${roundNum}`) && (
+                          <svg className="w-3.5 h-3.5 text-[#55A4DA] flex-shrink-0" fill="currentColor" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                          </svg>
+                        )}
                         <span className="flex-1 text-sm text-gray-700 truncate">{r.generated?.headline}</span>
                         <span className="text-xs font-semibold text-[#55A4DA] opacity-0 group-hover:opacity-100 flex-shrink-0 transition-opacity">불러오기</span>
                       </button>
